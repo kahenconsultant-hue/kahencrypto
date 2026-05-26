@@ -20,6 +20,7 @@ import { Reveal } from "@/components/motion/reveal";
 
 export default async function DashboardPage() {
   const aiSummariesPanel = await AiSummariesPanel();
+  const showPublicOperationsPanel = process.env.CMIP_SHOW_PUBLIC_OPS === "true" && process.env.NODE_ENV !== "production";
 
   return (
     <div className="space-y-4">
@@ -74,9 +75,11 @@ export default async function DashboardPage() {
       <Reveal delay={0.33}>
         <DataQualityPanel />
       </Reveal>
-      <div className="grid gap-4">
-        <OperationsPanel />
-      </div>
+      {showPublicOperationsPanel ? (
+        <div className="grid gap-4">
+          <OperationsPanel />
+        </div>
+      ) : null}
     </div>
   );
 }

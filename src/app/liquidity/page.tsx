@@ -5,12 +5,14 @@ export const metadata = {
 };
 
 export default function LiquidityPage() {
+  const showPublicOperationsPanel = process.env.CMIP_SHOW_PUBLIC_OPS === "true" && process.env.NODE_ENV !== "production";
+
   return (
     <div className="space-y-4">
       <LiquidityPanel />
       <MacroSummaryPanel />
       <EtfFlowsPanel />
-      <OperationsPanel />
+      {showPublicOperationsPanel ? <OperationsPanel /> : null}
     </div>
   );
 }

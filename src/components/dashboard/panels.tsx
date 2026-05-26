@@ -15,24 +15,29 @@ import {
   Waves,
 } from "lucide-react";
 import {
-  categoryLabels,
-  pricingPlans,
-  usdtRiskCenter,
-} from "@/lib/production-data";
+  DASHBOARD_REFRESH_INTERVAL_MINUTES,
+  dashboardCategoryLabels as categoryLabels,
+  dashboardPricingPlans as pricingPlans,
+  dashboardUsdtRiskCenter as usdtRiskCenter,
+  getDashboardAiStatus as getAiLayerStatus,
+  getDashboardAlerts as generateSmartAlerts,
+  getDashboardAssetImpactProfiles as getAssetImpactProfiles,
+  getDashboardCorrelationReport as getDynamicCorrelationReport,
+  getDashboardDerivedSignals as getDerivedSignalReport,
+  getDashboardEventExplanations as getLatestEventExplanations,
+  getDashboardIngestionFoundationStatus as getIngestionFoundationStatusSync,
+  getDashboardLatestRawEvents as getLatestRawEventsSync,
+  getDashboardLiquidityReport as getLiquidityReport,
+  getDashboardMarketRegime as getMarketRegimeReport,
+  getDashboardMinutesSinceEngineUpdate as minutesSinceEngineUpdate,
+  getDashboardRefreshHealth as getRefreshHealth,
+  getDashboardReliabilityReport as getIntelligenceReliabilityReportSync,
+  getDashboardSentimentReport as getSentimentReport,
+  getDashboardSignalSnapshot as getSignalSnapshot,
+  getDashboardSourceDefinitions,
+  getDashboardSourceSummary as summarizeSources,
+} from "@/server/dashboard/dashboard-service";
 import { formatCompactUsd, formatNumber, severityColor } from "@/lib/utils";
-import { getDynamicCorrelationReport } from "@/server/analytics/correlation-engine";
-import { getDerivedSignalReport } from "@/server/analytics/derived-signal-engine";
-import { getAssetImpactProfiles } from "@/server/analytics/asset-impact-engine";
-import { getLiquidityReport } from "@/server/analytics/liquidity-engine";
-import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
-import { getSentimentReport } from "@/server/analytics/sentiment-engine";
-import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
-import { getAiLayerStatus, getLatestEventExplanations } from "@/server/ai/event-explanation-layer";
-import { getRefreshHealth, getSignalSnapshot, minutesSinceEngineUpdate, REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
-import { getIntelligenceReliabilityReportSync } from "@/server/intelligence/reliability-engine";
-import { productionSources, summarizeSources } from "@/collectors/registry";
-import { getIngestionFoundationStatusSync } from "@/health/source-health";
-import { getLatestRawEventsSync } from "@/storage/ingestion-store";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataSourceBadge } from "@/components/ui/data-source-badge";
@@ -71,7 +76,7 @@ function LastUpdated({ minutes = minutesSinceEngineUpdate() }: { minutes?: numbe
   const effectiveMinutes = health.ageMinutes ?? minutes;
   return (
     <span className={health.failedRefresh ? "text-[11px] text-red-200" : "text-[11px] text-muted-foreground"}>
-      آخرین بروزرسانی: {effectiveMinutes} دقیقه پیش · refresh هر {REFRESH_INTERVAL_MINUTES} دقیقه
+      آخرین بروزرسانی: {effectiveMinutes} دقیقه پیش · refresh هر {DASHBOARD_REFRESH_INTERVAL_MINUTES} دقیقه
       {health.warning ? ` · هشدار: ${health.warning}` : ""}
     </span>
   );
@@ -1205,7 +1210,7 @@ export function OperationsPanel() {
           ))}
         </div>
         <div className="space-y-2">
-          {productionSources.slice(0, 12).map((source) => {
+          {getDashboardSourceDefinitions().slice(0, 12).map((source) => {
             const health = healthBySource.get(source.id);
             const status = health?.status === "success" ? "live" : health?.status === "degraded" ? "partial_live" : health ? "unavailable" : "delayed";
             return (
@@ -1231,7 +1236,7 @@ export function OperationsPanel() {
 export function DataQualityPanel() {
   const snapshot = getSignalSnapshot();
   const failedSources = snapshot.signals.filter((signal) => signal.quality === "unavailable" || signal.error);
-  const nextUpdate = Math.max(0, REFRESH_INTERVAL_MINUTES - minutesSinceEngineUpdate());
+  const nextUpdate = Math.max(0, DASHBOARD_REFRESH_INTERVAL_MINUTES - minutesSinceEngineUpdate());
 
   return (
     <Card>

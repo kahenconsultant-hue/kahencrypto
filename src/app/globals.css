@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 32% 6%;
+    --foreground: 210 28% 92%;
+    --card: 222 30% 9%;
+    --card-foreground: 210 28% 92%;
+    --popover: 222 30% 9%;
+    --popover-foreground: 210 28% 92%;
+    --primary: 171 70% 44%;
+    --primary-foreground: 220 35% 5%;
+    --secondary: 222 24% 14%;
+    --secondary-foreground: 210 28% 92%;
+    --muted: 221 22% 16%;
+    --muted-foreground: 216 14% 65%;
+    --accent: 42 92% 57%;
+    --accent-foreground: 220 35% 5%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 219 20% 20%;
+    --input: 219 20% 20%;
+    --ring: 171 70% 44%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    direction: rtl;
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: Tahoma, Arial, "Segoe UI", sans-serif;
+    letter-spacing: 0;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.24);
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer components {
+  .terminal-grid {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.34) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.22) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .scrollbar-thin {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.38) transparent;
+    scrollbar-width: thin;
+  }
+
+  .metric-label {
+    @apply text-[11px] font-medium uppercase text-muted-foreground;
+  }
+
+  .number-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.font-semibold,
+.font-bold,
+.font-black {
+  font-weight: 400;
+}

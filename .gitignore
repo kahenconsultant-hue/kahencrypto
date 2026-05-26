@@ -1,0 +1,11 @@
+node_modules
+.next
+.cache
+.vercel
+.env
+.env.local
+.env.production
+*.tsbuildinfo
+dist
+coverage
+services/python/.venv

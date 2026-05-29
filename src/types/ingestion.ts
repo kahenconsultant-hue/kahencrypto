@@ -231,6 +231,55 @@ export interface RegimeInputSnapshotInput {
   generatedAt: string;
 }
 
+export interface MarketSnapshotInput {
+  runId?: string;
+  snapshotKey: string;
+  asset?: string;
+  metricSet: string;
+  sourceType: "direct" | "derived" | "proxy" | "unavailable";
+  quality: DataQuality;
+  freshnessStatus: FreshnessStatus;
+  sourceIds: string[];
+  metricCount: number;
+  payload: Record<string, unknown>;
+  observedAt: string;
+}
+
+export interface IntelligenceOutputInput {
+  runId?: string;
+  outputKey: string;
+  moduleName: string;
+  outputType: string;
+  asset?: string;
+  timeframe?: string;
+  sourceType: "direct" | "derived" | "proxy" | "unavailable";
+  status: "available" | "degraded" | "unavailable" | "suppressed";
+  score: number | null;
+  confidence: number | null;
+  confidenceLabel?: string;
+  dataQuality: DataQuality;
+  usedSignals: string[];
+  missingSignals: string[];
+  staleSignals: string[];
+  narrativeFa?: string;
+  calculations: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  generatedAt: string;
+}
+
+export interface TelemetryLogInput {
+  runId?: string;
+  scope: string;
+  eventType: string;
+  level: "debug" | "info" | "warning" | "error" | "critical";
+  message: string;
+  durationMs?: number;
+  sourceId?: string;
+  tableName?: string;
+  payload: Record<string, unknown>;
+  observedAt: string;
+}
+
 export interface CollectorOutput {
   source: SourceDefinition;
   status: IngestionSourceStatus;

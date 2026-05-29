@@ -54,7 +54,19 @@ export default async function AdminIngestionPage() {
     getLatestIngestionLogs(120),
     getLatestDeadLetters(80),
     getEnvironmentValidationReport(),
-    getSupabaseTableCounts(["raw_events", "normalized_events", "event_clusters", "derived_signals", "liquidity_scores", "regime_inputs", "reliability_snapshots"]),
+    getSupabaseTableCounts([
+      "raw_events",
+      "raw_metrics",
+      "normalized_events",
+      "event_clusters",
+      "market_snapshots",
+      "intelligence_outputs",
+      "telemetry_logs",
+      "derived_signals",
+      "liquidity_scores",
+      "regime_inputs",
+      "reliability_snapshots",
+    ]),
     getIntelligenceReliabilityReport(),
   ]);
 
@@ -191,8 +203,12 @@ export default async function AdminIngestionPage() {
           <CardContent className="space-y-2 text-sm">
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">raw_events {countByTable.get("raw_events")?.count ?? "?"}</Badge>
+              <Badge variant="outline">raw_metrics {countByTable.get("raw_metrics")?.count ?? "?"}</Badge>
               <Badge variant="outline">normalized_events {countByTable.get("normalized_events")?.count ?? "?"}</Badge>
               <Badge variant="outline">event_clusters {countByTable.get("event_clusters")?.count ?? "?"}</Badge>
+              <Badge variant="outline">market_snapshots {countByTable.get("market_snapshots")?.count ?? "?"}</Badge>
+              <Badge variant="outline">intelligence_outputs {countByTable.get("intelligence_outputs")?.count ?? "?"}</Badge>
+              <Badge variant="outline">telemetry_logs {countByTable.get("telemetry_logs")?.count ?? "?"}</Badge>
               <Badge variant="outline">derived_signals {countByTable.get("derived_signals")?.count ?? "?"}</Badge>
               <Badge variant="outline">liquidity_scores {countByTable.get("liquidity_scores")?.count ?? "?"}</Badge>
               <Badge variant="outline">regime_inputs {countByTable.get("regime_inputs")?.count ?? "?"}</Badge>

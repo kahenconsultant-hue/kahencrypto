@@ -7,6 +7,8 @@ import type {
   IngestionRunSummary,
   IngestionStorageMode,
   EventClusterInput,
+  IntelligenceOutputInput,
+  MarketSnapshotInput,
   NormalizedEventInput,
   DerivedSignalInput,
   LiquidityScoreSnapshotInput,
@@ -17,6 +19,7 @@ import type {
   SourceHealthSnapshot,
   SourceDefinition,
   StorageWriteReport,
+  TelemetryLogInput,
 } from "@/types/ingestion";
 
 const INGESTION_STORE_DIR = process.env.CMIP_INGESTION_STORE_PATH ?? join(process.cwd(), ".cache", "cmip", "ingestion");
@@ -44,6 +47,48 @@ function readLatest<T>(filename: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function minutesSince(timestamp: string | null | undefined) {
+  if (!timestamp) return null;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((Date.now() - parsed) / 60_000));
+}
+
+function freshnessStatusFromTimestamp(timestamp: string | null | undefined) {
+  const age = minutesSince(timestamp);
+  if (age === null) return "unavailable" as const;
+  if (age <= 15) return "live" as const;
+  if (age <= 45) return "fresh" as const;
+  if (age <= 90) return "delayed" as const;
+  if (age <= 180) return "stale" as const;
+  return "stale_critical" as const;
+}
+
+function sourceTypeReliability(sourceType: string) {
+  if (sourceType === "websocket") return 86;
+  if (sourceType === "api") return 82;
+  if (sourceType === "filings") return 78;
+  if (sourceType === "rss") return 58;
+  if (sourceType === "scraper") return 48;
+  if (sourceType === "social") return 42;
+  return 35;
+}
+
+function degradationState(health: SourceHealthSnapshot) {
+  if (health.status === "disabled") return "sparse";
+  if (health.status === "failed" || health.consecutiveFailures >= 3) return "unreliable";
+  if (health.status === "api_key_missing") return "sparse";
+  if (health.status === "degraded") return "degraded";
+  if (health.freshnessMinutes !== null && health.freshnessMinutes > 180) return "unstable";
+  return "healthy";
+}
+
+function sourceHealthReliability(health: SourceHealthSnapshot) {
+  const freshnessPenalty = health.freshnessMinutes === null ? 20 : health.freshnessMinutes > 180 ? 45 : health.freshnessMinutes > 90 ? 28 : health.freshnessMinutes > 45 ? 14 : 0;
+  const statusPenalty = health.status === "success" ? 0 : health.status === "degraded" ? 20 : health.status === "api_key_missing" ? 45 : health.status === "disabled" ? 55 : 70;
+  return Math.max(0, Math.min(100, 100 - freshnessPenalty - statusPenalty - health.consecutiveFailures * 6 - Math.round(health.errorRate * 20)));
 }
 
 function writeStorageReport(report: StorageWriteReport) {
@@ -112,6 +157,7 @@ function sourceDefinitionRow(source: SourceDefinition) {
 
 function rawEventRow(event: RawEventInput) {
   const now = new Date().toISOString();
+  const delayMinutes = minutesSince(event.timestamp);
   return {
     source_id_text: event.sourceId,
     source_name: event.sourceName,
@@ -125,6 +171,10 @@ function rawEventRow(event: RawEventInput) {
     raw_payload: event.rawPayload ?? {},
     dedup_hash: event.dedupHash,
     quality: event.quality,
+    source_reliability: sourceTypeReliability(event.sourceType),
+    freshness_status: freshnessStatusFromTimestamp(event.timestamp),
+    delay_minutes: delayMinutes,
+    retry_count: 0,
     last_seen_at: now,
     updated_at: now,
   };
@@ -191,6 +241,9 @@ function rawMetricRow(metric: RawMetricInput) {
     quality: metric.quality,
     reliability: metric.reliability,
     sample_size: metric.sampleSize ?? 0,
+    freshness_status: freshnessStatusFromTimestamp(metric.timestamp),
+    delay_minutes: minutesSince(metric.timestamp),
+    confidence_base: metric.reliability,
     error: metric.error ?? null,
     raw_payload: metric.rawPayload ?? {},
   };
@@ -206,11 +259,68 @@ function sourceHealthRow(health: SourceHealthSnapshot) {
     freshness_minutes: health.freshnessMinutes,
     error_rate: health.errorRate,
     consecutive_failures: health.consecutiveFailures,
+    degradation_state: degradationState(health),
+    reliability_score: sourceHealthReliability(health),
     last_success_at: health.lastSuccessAt,
     last_failure_at: health.lastFailureAt,
     last_error: health.lastError ?? null,
     next_retry_at: health.nextRetryAt ?? null,
     updated_at: health.updatedAt,
+  };
+}
+
+function marketSnapshotRow(snapshot: MarketSnapshotInput) {
+  return {
+    run_id: snapshot.runId ?? null,
+    snapshot_key: snapshot.snapshotKey,
+    asset: snapshot.asset ?? null,
+    metric_set: snapshot.metricSet,
+    source_type: snapshot.sourceType,
+    quality: snapshot.quality,
+    freshness_status: snapshot.freshnessStatus,
+    source_ids: snapshot.sourceIds,
+    metric_count: snapshot.metricCount,
+    payload: snapshot.payload,
+    observed_at: snapshot.observedAt,
+  };
+}
+
+function intelligenceOutputRow(output: IntelligenceOutputInput) {
+  return {
+    run_id: output.runId ?? null,
+    output_key: output.outputKey,
+    module_name: output.moduleName,
+    output_type: output.outputType,
+    asset: output.asset ?? null,
+    timeframe: output.timeframe ?? null,
+    source_type: output.sourceType,
+    status: output.status,
+    score: output.score,
+    confidence: output.confidence,
+    confidence_label: output.confidenceLabel ?? null,
+    data_quality: output.dataQuality,
+    used_signals: output.usedSignals,
+    missing_signals: output.missingSignals,
+    stale_signals: output.staleSignals,
+    narrative_fa: output.narrativeFa ?? null,
+    calculations: output.calculations,
+    payload: output.payload,
+    generated_at: output.generatedAt,
+  };
+}
+
+function telemetryLogRow(log: TelemetryLogInput) {
+  return {
+    run_id: log.runId ?? null,
+    scope: log.scope,
+    event_type: log.eventType,
+    level: log.level,
+    message: log.message,
+    duration_ms: log.durationMs ?? null,
+    source_id_text: log.sourceId ?? null,
+    table_name: log.tableName ?? null,
+    payload: log.payload,
+    observed_at: log.observedAt,
   };
 }
 
@@ -456,6 +566,27 @@ export async function persistRegimeInputSnapshot(input: RegimeInputSnapshotInput
   return supabaseWrite.storageMode;
 }
 
+export async function persistMarketSnapshots(snapshots: MarketSnapshotInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
+  const supabaseWrite = await trySupabaseInsert("market_snapshots", snapshots.map(marketSnapshotRow));
+  writeLatest("latest-market-snapshots.json", snapshots);
+  if (supabaseWrite.storageMode === "supabase") return { persisted: snapshots.length, storageMode: "supabase" };
+  return { persisted: snapshots.length, storageMode: "local_fallback" };
+}
+
+export async function persistIntelligenceOutputs(outputs: IntelligenceOutputInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
+  const supabaseWrite = await trySupabaseInsert("intelligence_outputs", outputs.map(intelligenceOutputRow));
+  writeLatest("latest-intelligence-outputs.json", outputs);
+  if (supabaseWrite.storageMode === "supabase") return { persisted: outputs.length, storageMode: "supabase" };
+  return { persisted: outputs.length, storageMode: "local_fallback" };
+}
+
+export async function persistTelemetryLogs(logs: TelemetryLogInput[]): Promise<IngestionStorageMode> {
+  const supabaseWrite = await trySupabaseInsert("telemetry_logs", logs.map(telemetryLogRow));
+  appendJsonl("telemetry-logs.jsonl", logs);
+  writeLatest("latest-telemetry-logs.json", logs.slice(0, 200));
+  return supabaseWrite.storageMode;
+}
+
 export function getLatestRawEventsSync(limit = 40) {
   return readLatest<RawEventInput[]>("latest-events.json", []).slice(0, limit);
 }
@@ -504,6 +635,18 @@ export function getLatestRegimeInputSync() {
   return readLatest<RegimeInputSnapshotInput | null>("latest-regime-input.json", null);
 }
 
+export function getLatestMarketSnapshotsSync(limit = 100) {
+  return readLatest<MarketSnapshotInput[]>("latest-market-snapshots.json", []).slice(0, limit);
+}
+
+export function getLatestIntelligenceOutputsSync(limit = 100) {
+  return readLatest<IntelligenceOutputInput[]>("latest-intelligence-outputs.json", []).slice(0, limit);
+}
+
+export function getLatestTelemetryLogsSync(limit = 100) {
+  return readLatest<TelemetryLogInput[]>("latest-telemetry-logs.json", []).slice(0, limit);
+}
+
 async function selectSupabaseRows<T>(table: string, orderBy: string, limit: number): Promise<T[]> {
   const client = createSupabaseServerClient();
   if (!client) return [];
@@ -520,6 +663,9 @@ type IngestionRunRow = ReturnType<typeof ingestionRunRow> & { id?: string; creat
 type DeadLetterRow = ReturnType<typeof deadLetterRow> & { id?: string };
 type NormalizedEventRow = ReturnType<typeof normalizedEventRow> & { id?: string; created_at?: string };
 type EventClusterRow = ReturnType<typeof eventClusterRow> & { id?: string; created_at?: string };
+type MarketSnapshotRow = ReturnType<typeof marketSnapshotRow> & { id?: string; created_at?: string };
+type IntelligenceOutputRow = ReturnType<typeof intelligenceOutputRow> & { id?: string; created_at?: string };
+type TelemetryLogRow = ReturnType<typeof telemetryLogRow> & { id?: string; created_at?: string };
 
 function rawEventFromRow(row: RawEventRow): RawEventInput {
   return {
@@ -536,6 +682,61 @@ function rawEventFromRow(row: RawEventRow): RawEventInput {
     rawPayload: row.raw_payload,
     dedupHash: row.dedup_hash,
     quality: row.quality as RawEventInput["quality"],
+  };
+}
+
+function marketSnapshotFromRow(row: MarketSnapshotRow): MarketSnapshotInput {
+  return {
+    runId: row.run_id ?? undefined,
+    snapshotKey: row.snapshot_key,
+    asset: row.asset ?? undefined,
+    metricSet: row.metric_set,
+    sourceType: row.source_type as MarketSnapshotInput["sourceType"],
+    quality: row.quality as MarketSnapshotInput["quality"],
+    freshnessStatus: row.freshness_status as MarketSnapshotInput["freshnessStatus"],
+    sourceIds: row.source_ids ?? [],
+    metricCount: Number(row.metric_count),
+    payload: row.payload ?? {},
+    observedAt: row.observed_at,
+  };
+}
+
+function intelligenceOutputFromRow(row: IntelligenceOutputRow): IntelligenceOutputInput {
+  return {
+    runId: row.run_id ?? undefined,
+    outputKey: row.output_key,
+    moduleName: row.module_name,
+    outputType: row.output_type,
+    asset: row.asset ?? undefined,
+    timeframe: row.timeframe ?? undefined,
+    sourceType: row.source_type as IntelligenceOutputInput["sourceType"],
+    status: row.status as IntelligenceOutputInput["status"],
+    score: row.score === null ? null : Number(row.score),
+    confidence: row.confidence === null ? null : Number(row.confidence),
+    confidenceLabel: row.confidence_label ?? undefined,
+    dataQuality: row.data_quality as IntelligenceOutputInput["dataQuality"],
+    usedSignals: row.used_signals ?? [],
+    missingSignals: row.missing_signals ?? [],
+    staleSignals: row.stale_signals ?? [],
+    narrativeFa: row.narrative_fa ?? undefined,
+    calculations: row.calculations ?? {},
+    payload: row.payload ?? {},
+    generatedAt: row.generated_at,
+  };
+}
+
+function telemetryLogFromRow(row: TelemetryLogRow): TelemetryLogInput {
+  return {
+    runId: row.run_id ?? undefined,
+    scope: row.scope,
+    eventType: row.event_type,
+    level: row.level as TelemetryLogInput["level"],
+    message: row.message,
+    durationMs: row.duration_ms === null ? undefined : Number(row.duration_ms),
+    sourceId: row.source_id_text ?? undefined,
+    tableName: row.table_name ?? undefined,
+    payload: row.payload ?? {},
+    observedAt: row.observed_at,
   };
 }
 
@@ -726,6 +927,21 @@ export async function getLatestDeadLetters(limit = 100) {
 export async function getLatestIngestionRun() {
   const rows = await selectSupabaseRows<IngestionRunRow>("ingestion_runs", "finished_at", 1);
   return rows.length ? ingestionRunFromRow(rows[0]) : getLatestIngestionRunSync();
+}
+
+export async function getLatestMarketSnapshots(limit = 100) {
+  const rows = await selectSupabaseRows<MarketSnapshotRow>("market_snapshots", "observed_at", limit);
+  return rows.length ? rows.map(marketSnapshotFromRow) : getLatestMarketSnapshotsSync(limit);
+}
+
+export async function getLatestIntelligenceOutputs(limit = 100) {
+  const rows = await selectSupabaseRows<IntelligenceOutputRow>("intelligence_outputs", "generated_at", limit);
+  return rows.length ? rows.map(intelligenceOutputFromRow) : getLatestIntelligenceOutputsSync(limit);
+}
+
+export async function getLatestTelemetryLogs(limit = 100) {
+  const rows = await selectSupabaseRows<TelemetryLogRow>("telemetry_logs", "observed_at", limit);
+  return rows.length ? rows.map(telemetryLogFromRow) : getLatestTelemetryLogsSync(limit);
 }
 
 export async function getSupabaseTableCounts(tableNames: string[]) {

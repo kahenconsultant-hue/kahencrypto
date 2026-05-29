@@ -28,6 +28,7 @@ const migrations = [
   "202605250005_normalized_events_clusters.sql",
   "202605250006_normalized_events_conflict_key.sql",
   "202605250007_free_data_proxy_model.sql",
+  "202605250008_data_foundation_contracts.sql",
 ];
 
 function connectionConfig() {

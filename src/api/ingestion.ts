@@ -18,11 +18,13 @@ import {
   persistReliabilitySnapshot,
   persistRawEvents,
   persistRawMetrics,
+  persistMarketSnapshots,
   persistSourceDefinitions,
   persistSourceHealth,
+  persistTelemetryLogs,
   getLatestStorageWriteReportsSync,
 } from "@/storage/ingestion-store";
-import type { Collector, IngestionDeadLetterEntry, IngestionRunSummary, IngestionStorageMode, SourceDefinition } from "@/types/ingestion";
+import type { Collector, FreshnessStatus, IngestionDeadLetterEntry, IngestionRunSummary, IngestionStorageMode, MarketSnapshotInput, RawMetricInput, SourceDefinition, TelemetryLogInput } from "@/types/ingestion";
 
 function collectorFor(source: SourceDefinition): Collector {
   if (source.parser === "market_signals") return marketSignalCollector;
@@ -45,6 +47,80 @@ function collectorFor(source: SourceDefinition): Collector {
 
 function hasRequiredEnv(source: SourceDefinition) {
   return (source.requiredEnvKeys ?? []).every((key) => Boolean(process.env[key]));
+}
+
+function minutesSince(timestamp: string | null | undefined) {
+  if (!timestamp) return null;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((Date.now() - parsed) / 60_000));
+}
+
+function freshnessStatus(timestamp: string | null | undefined): FreshnessStatus {
+  const age = minutesSince(timestamp);
+  if (age === null) return "unavailable";
+  if (age <= 15) return "live";
+  if (age <= 45) return "fresh";
+  if (age <= 90) return "delayed";
+  if (age <= 180) return "stale";
+  return "stale_critical";
+}
+
+function aggregateQuality(metrics: RawMetricInput[]) {
+  if (!metrics.length) return "unavailable" as const;
+  if (metrics.some((metric) => metric.quality === "unavailable")) return "partial_live" as const;
+  if (metrics.some((metric) => metric.quality === "estimated")) return "estimated" as const;
+  if (metrics.some((metric) => metric.quality === "delayed")) return "delayed" as const;
+  if (metrics.some((metric) => metric.quality === "partial_live")) return "partial_live" as const;
+  return "live" as const;
+}
+
+function buildMarketSnapshotsFromMetrics(runId: string, metrics: RawMetricInput[], observedAt: string): MarketSnapshotInput[] {
+  const usable = metrics.filter((metric) => metric.value !== null && metric.quality !== "unavailable" && metric.quality !== "estimated");
+  const grouped = new Map<string, RawMetricInput[]>();
+  for (const metric of usable) {
+    const key = metric.asset ? `asset:${metric.asset}` : `group:${metric.group}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), metric]);
+  }
+
+  return Array.from(grouped.entries()).map(([key, rows]) => {
+    const [kind, label] = key.split(":");
+    const latestTimestamp =
+      rows
+        .map((row) => row.timestamp)
+        .filter((timestamp): timestamp is string => Boolean(timestamp))
+        .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? observedAt;
+
+    return {
+      runId,
+      snapshotKey: key,
+      asset: kind === "asset" ? label : undefined,
+      metricSet: kind === "asset" ? "asset_market_metrics" : label,
+      sourceType: "direct",
+      quality: aggregateQuality(rows),
+      freshnessStatus: freshnessStatus(latestTimestamp),
+      sourceIds: Array.from(new Set(rows.map((row) => row.sourceId))),
+      metricCount: rows.length,
+      observedAt,
+      payload: {
+        metrics: rows.map((row) => ({
+          sourceId: row.sourceId,
+          sourceName: row.sourceName,
+          asset: row.asset ?? null,
+          group: row.group,
+          metric: row.metric,
+          value: row.value,
+          previousValue: row.previousValue ?? null,
+          changeAbs: row.changeAbs ?? null,
+          changePct: row.changePct ?? null,
+          quality: row.quality,
+          reliability: row.reliability,
+          sampleSize: row.sampleSize ?? 0,
+          timestamp: row.timestamp,
+        })),
+      },
+    };
+  });
 }
 
 export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
@@ -78,6 +154,9 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
   const rawMetrics = results.flatMap((result) => result.output.rawMetrics);
   const eventStore = await persistRawEvents(rawEvents);
   const metricStore = await persistRawMetrics(rawMetrics);
+  const observedAt = new Date().toISOString();
+  const marketSnapshots = buildMarketSnapshotsFromMetrics(runId, rawMetrics, observedAt);
+  const marketSnapshotStore = await persistMarketSnapshots(marketSnapshots);
   const recentRawEvents = await getRecentRawEventsForNormalization(500);
   const normalization = normalizeAndClusterRawEvents(recentRawEvents);
   const normalizedStore = await persistNormalizedEvents(normalization.normalizedEvents);
@@ -124,7 +203,8 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
     logStore === "supabase" ||
     deadLetterStore === "supabase" ||
     normalizedStore.storageMode === "supabase" ||
-    clusterStore.storageMode === "supabase"
+    clusterStore.storageMode === "supabase" ||
+    marketSnapshotStore.storageMode === "supabase"
       ? "supabase"
       : "local_fallback";
 
@@ -153,6 +233,29 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
   };
   await persistIngestionRun(summary);
   const envReport = await getEnvironmentValidationReport();
+  const telemetryLogs: TelemetryLogInput[] = [
+    {
+      runId,
+      scope: "ingestion",
+      eventType: "ingestion_run_completed",
+      level: summary.failedSources ? "warning" : "info",
+      message: `Ingestion completed with ${summary.pulledEvents} raw events, ${summary.pulledMetrics} raw metrics and ${marketSnapshots.length} market snapshots.`,
+      durationMs: Math.max(0, Date.parse(summary.finishedAt) - Date.parse(summary.startedAt)),
+      tableName: "ingestion_runs",
+      payload: {
+        storageMode: summary.storageMode,
+        rawEventsInserted: summary.rawEventsInserted,
+        rawEventsUpdated: summary.rawEventsUpdated,
+        normalizedEventsCreated: summary.normalizedEventsCreated,
+        eventClustersCreated: summary.eventClustersCreated,
+        marketSnapshotsCreated: marketSnapshotStore.persisted,
+        deadLetters: summary.deadLetters,
+        failedSources: summary.failedSources,
+      },
+      observedAt: summary.finishedAt,
+    },
+  ];
+  const telemetryStore = await persistTelemetryLogs(telemetryLogs);
   await persistReliabilitySnapshot({
     runId,
     storageMode: summary.storageMode,
@@ -171,6 +274,8 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
       rawEventsUpdated: summary.rawEventsUpdated,
       normalizedEventsCreated: summary.normalizedEventsCreated,
       eventClustersCreated: summary.eventClustersCreated,
+      marketSnapshotsCreated: marketSnapshotStore.persisted,
+      telemetryLogsCreated: telemetryStore === "supabase" ? telemetryLogs.length : 0,
       duplicatesDetected: summary.duplicatesDetected,
       dedupAudit,
     },

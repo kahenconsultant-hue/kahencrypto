@@ -17,14 +17,45 @@ const assetNames: Record<IntelligenceAssetSymbol, string> = {
 
 function assetTrend(asset: IntelligenceAssetSymbol) {
   const { byKey } = getSignalSnapshot();
-  if (asset === "BTC") return byKey.btc_trend_24h?.value ?? 0;
-  if (asset === "ETH") return byKey.eth_trend_24h?.value ?? 0;
-  if (asset === "SOL") return byKey.sol_trend_24h?.value ?? 0;
-  if (asset === "DXY") return byKey.dxy_trend_24h?.value ?? 0;
-  if (asset === "Gold") return byKey.gold_trend_24h?.value ?? 0;
-  if (asset === "Nasdaq") return byKey.nasdaq_trend_24h?.value ?? 0;
-  if (asset === "US10Y") return byKey.us10y_trend_24h?.value ?? 0;
-  return byKey.usdt_supply_7d?.value ?? 0;
+  if (asset === "BTC") return usableValue(byKey.btc_trend_24h);
+  if (asset === "ETH") return usableValue(byKey.eth_trend_24h);
+  if (asset === "SOL") return usableValue(byKey.sol_trend_24h);
+  if (asset === "DXY") return usableValue(byKey.dxy_trend_24h);
+  if (asset === "Gold") return usableValue(byKey.gold_trend_24h);
+  if (asset === "Nasdaq") return usableValue(byKey.nasdaq_trend_24h);
+  if (asset === "US10Y") return usableValue(byKey.us10y_trend_24h);
+  return usableValue(byKey.usdt_supply_7d);
+}
+
+function usableValue(signal: ReturnType<typeof getSignalSnapshot>["byKey"][string] | undefined) {
+  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  return signal.value;
+}
+
+function dataGroupsAvailable() {
+  const { signals } = getSignalSnapshot();
+  return new Set(
+    signals
+      .filter((signal) => signal.value !== null && signal.quality !== "unavailable" && signal.quality !== "estimated")
+      .map((signal) => signal.group),
+  );
+}
+
+function unavailableScenarios(asset: IntelligenceAssetSymbol, reason: string): AssetScenario[] {
+  const name = assetNames[asset];
+  const shared = {
+    probability: 0,
+    triggerConditions: [reason],
+    expectedDrivers: [`برای ${name} داده کافی برای احتمال‌گذاری معتبر وجود ندارد؛ سیستم احتمال ساختگی تولید نمی‌کند.`],
+    riskFactors: ["بعد از فعال شدن حداقل چهار گروه مستقل سیگنال، سناریوهای پایه، مثبت و منفی دوباره محاسبه می‌شوند."],
+  };
+
+  return [
+    { name: "base", labelFa: "سناریوی پایه", ...shared },
+    { name: "bullish", labelFa: "سناریوی مثبت", ...shared },
+    { name: "bearish", labelFa: "سناریوی منفی", ...shared },
+    { name: "invalidation", labelFa: "ابطال سناریو", ...shared },
+  ];
 }
 
 export function generateAssetScenarios(asset: IntelligenceAssetSymbol): AssetScenario[] {
@@ -32,12 +63,25 @@ export function generateAssetScenarios(asset: IntelligenceAssetSymbol): AssetSce
   const regime = getMarketRegimeReport().engine;
   const { byKey } = getSignalSnapshot();
   const trend = assetTrend(asset);
-  const dxy = byKey.dxy_trend_24h?.value ?? null;
-  const us10y = byKey.us10y_trend_24h?.value ?? null;
-  const stablecoin = byKey.stablecoin_market_cap_7d?.value ?? null;
-  const btcEtf = byKey.btc_etf_flow_24h?.value ?? null;
-  const macroPressure = (dxy ?? 0) > 0.15 || (us10y ?? 0) > 0.03;
-  const realLiquidityConfirmed = (liquidity.realSpotLiquidityScore ?? 0) > 25 && (stablecoin ?? 0) >= 0.35;
+  const groups = dataGroupsAvailable();
+  const dxy = usableValue(byKey.dxy_trend_24h);
+  const us10y = usableValue(byKey.us10y_trend_24h);
+  const stablecoin = usableValue(byKey.stablecoin_market_cap_7d);
+  const btcEtf = usableValue(byKey.btc_etf_flow_24h);
+  const criticalMissing = [
+    trend === null ? "روند دارایی" : "",
+    dxy === null ? "DXY" : "",
+    us10y === null ? "US10Y" : "",
+    stablecoin === null ? "stablecoin market cap" : "",
+  ].filter(Boolean);
+
+  if (groups.size < 4 || trend === null || dxy === null || us10y === null || stablecoin === null) {
+    return unavailableScenarios(asset, `پوشش سیگنال کافی نیست: ${groups.size}/4 گروه مستقل فعال است؛ داده‌های ناقص: ${criticalMissing.join("، ") || "ندارد"}.`);
+  }
+
+  const macroPressure = dxy > 0.15 || us10y > 0.03;
+  const realSpotLiquidityScore = liquidity.realSpotLiquidityScore ?? null;
+  const realLiquidityConfirmed = realSpotLiquidityScore !== null && realSpotLiquidityScore > 25 && stablecoin >= 0.35;
   const leverageHot = liquidity.leverageStress >= 70;
   const name = assetNames[asset];
 
@@ -48,8 +92,8 @@ export function generateAssetScenarios(asset: IntelligenceAssetSymbol): AssetSce
     bullish += trend > 1 ? 8 : 0;
   }
   if (asset === "Gold") {
-    bullish += (byKey.geopolitical_event_score?.value ?? 0) > 55 ? 14 : 0;
-    bearish += (us10y ?? 0) > 0.05 ? 7 : 0;
+    bullish += (usableValue(byKey.geopolitical_event_score) ?? 0) > 55 ? 14 : 0;
+    bearish += us10y > 0.05 ? 7 : 0;
   }
   if (asset === "DXY" || asset === "US10Y") {
     bullish = 30 + (trend > 0 ? 14 : 0) + (macroPressure ? 10 : 0);
@@ -57,7 +101,7 @@ export function generateAssetScenarios(asset: IntelligenceAssetSymbol): AssetSce
   }
   if (asset === "USDT") {
     bullish = 0;
-    bearish = 28 + ((stablecoin ?? 0) < -0.35 ? 16 : 0);
+    bearish = 28 + (stablecoin < -0.35 ? 16 : 0);
   }
   bearish = clampPercent(bearish);
   bullish = clampPercent(bullish);

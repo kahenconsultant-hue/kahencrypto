@@ -16,7 +16,7 @@ export function buildWordPressPayload() {
         failedSources: foundation.failedSources,
         degradedSources: foundation.degradedSources,
         interpretationFa:
-          "در فاز foundation، payload وردپرس فقط وضعیت ingestion، سلامت منابع و raw events معتبر را منتشر می‌کند؛ تحلیل رژیم یا هشدار جهت‌دار بازار تولید نمی‌شود.",
+          "این payload فقط وضعیت جمع‌آوری داده، سلامت منابع و رویدادهای معتبر ذخیره‌شده را منتشر می‌کند؛ اگر تحلیل جهت‌دار داده کافی نداشته باشد، مقدار ساختگی تولید نمی‌شود.",
       },
       alerts: [...smartAlerts].sort((left, right) => right.importance - left.importance).slice(0, 8).map((alert) => ({
         id: alert.id,
@@ -31,7 +31,7 @@ export function buildWordPressPayload() {
         id: item.dedupHash,
         source: item.sourceName,
         title: item.title,
-        summaryFa: item.content ?? "این رویداد خام هنوز توسط لایه AI/translation پردازش نشده است.",
+        summaryFa: item.content ?? "خلاصه فارسی قابل اتکا هنوز آماده نیست؛ فقط عنوان و منبع معتبر نمایش داده می‌شود.",
         importance: null,
         timestamp: item.timestamp,
       })),

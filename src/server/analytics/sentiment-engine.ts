@@ -184,7 +184,7 @@ function sentimentConfidence(headlines: StructuredHeadlineSignal[]): ConfidenceR
       available: false,
       score: null,
       label: "unavailable",
-      formula: "Sentiment confidence unavailable: حداقل ۵ normalized_event و پوشش خبری کافی لازم است.",
+      formula: "Sentiment confidence unavailable: حداقل ۵ رویداد خبری معتبر و پوشش خبری کافی لازم است.",
       availableGroups: headlines.length ? ["news"] : [],
       missingGroups: ["sentiment"],
       explanation: "اطمینان سنتیمنت ناموجود است؛ تعداد رویدادهای نرمال‌شده یا پوشش منابع خبری کافی نیست.",
@@ -199,7 +199,7 @@ function sentimentConfidence(headlines: StructuredHeadlineSignal[]): ConfidenceR
     formula: "Sentiment confidence = میانگین اعتبار منبع، تازگی، novelty، شدت خبر و تأیید واکنش بازار؛ سپس با سقف reliability محدود می‌شود.",
     availableGroups: ["news", "sentiment"],
     missingGroups: [],
-    explanation: "سنتیمنت از normalized_events واقعی ساخته شده و با reliability engine سقف‌گذاری شده است.",
+    explanation: "سنتیمنت از رویدادهای خبری واقعی ساخته شده و با مدل اعتبارسنجی منابع سقف‌گذاری شده است.",
   };
 }
 
@@ -247,7 +247,7 @@ export function getSentimentReport() {
       ? "واگرایی خبر و قیمت دیده می‌شود؛ هر تیتر باید با واکنش بازار و نقدینگی تأیید شود."
       : "واگرایی مهم بین خبر و واکنش بازار در داده فعلی تأیید نشده است.",
     whatChanged: events.length
-      ? `${events.length} normalized_event واقعی برای سنتیمنت بررسی شد؛ خروجی از source reliability، تازگی، novelty، شدت خبر و واکنش قیمت ساخته شده است.`
-      : "normalized_event معتبری برای تحلیل سنتیمنت وجود ندارد؛ سیستم امتیاز جهت‌دار تولید نمی‌کند.",
+      ? `${events.length} رویداد خبری واقعی برای سنتیمنت بررسی شد؛ خروجی از اعتبار منبع، تازگی، تازگی روایت، شدت خبر و واکنش قیمت ساخته شده است.`
+      : "رویداد خبری معتبر کافی برای تحلیل سنتیمنت وجود ندارد؛ سیستم امتیاز جهت‌دار تولید نمی‌کند.",
   };
 }

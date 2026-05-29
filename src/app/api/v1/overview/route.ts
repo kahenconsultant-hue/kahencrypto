@@ -16,7 +16,7 @@ import { getSignalSnapshot, REFRESH_INTERVAL_MINUTES } from "@/server/analytics/
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
 import { getAiLayerStatus } from "@/server/ai/event-explanation-layer";
 import { getIntelligenceReliabilityReport } from "@/server/intelligence/reliability-engine";
-import { moduleDataSourceStatus } from "@/lib/data-source-status";
+import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
 import { getIngestionFoundationStatusSync } from "@/health/source-health";
 
 export function OPTIONS() {
@@ -27,6 +27,7 @@ export async function GET() {
   const snapshot = getSignalSnapshot();
   const ingestionFoundation = getIngestionFoundationStatusSync();
   const reliability = await getIntelligenceReliabilityReport();
+  const dataSourceStatus = getDashboardModuleDataSourceStatus();
   const etfFlows = [
     { issuer: "BTC ETF basket", signal: snapshot.byKey.btc_etf_flow_24h },
     { issuer: "ETH ETF basket", signal: snapshot.byKey.eth_etf_flow_24h },
@@ -46,7 +47,7 @@ export async function GET() {
       disclaimer:
         "این API فقط هوش سناریومحور و آموزشی بازار را ارائه می‌کند و مشاوره سرمایه‌گذاری، سیگنال خرید/فروش یا پیشنهاد اهرم معاملاتی نیست.",
     },
-    dataSourceStatus: moduleDataSourceStatus,
+    dataSourceStatus,
     ingestionFoundation,
     intelligenceReliability: reliability,
     aiLayer: getAiLayerStatus(),

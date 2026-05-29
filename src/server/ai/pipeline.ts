@@ -1,16 +1,6 @@
 import type { AssetImpact, MarketRegime, NewsCategory, ProcessedNewsItem } from "@/lib/types";
 import type { RawItem } from "@/server/ingestion/pipeline";
 
-export interface AiProcessingTrace {
-  rawFingerprint: string;
-  stages: Array<{
-    name: "cleaning" | "translation" | "classification" | "impact_analysis" | "market_regime" | "alerting";
-    status: "completed" | "skipped" | "failed";
-    detailFa: string;
-    latencyMs: number;
-  }>;
-}
-
 export interface ProcessingPromptContext {
   targetAssets: string[];
   legalGuardrails: string[];
@@ -50,20 +40,6 @@ export function cleanRawItem(rawItem: RawItem): RawItem {
 
 export function classifyCategory(rawItem: RawItem): NewsCategory {
   return rawItem.category;
-}
-
-export function generateProcessingTrace(item: ProcessedNewsItem): AiProcessingTrace {
-  return {
-    rawFingerprint: item.fingerprintHash,
-    stages: [
-      { name: "cleaning", status: "completed", detailFa: "حذف نویز متنی، normalization و کنترل fingerprint انجام شد.", latencyMs: 42 },
-      { name: "translation", status: "completed", detailFa: "عنوان، خلاصه و نکات کلیدی فارسی تولید شد.", latencyMs: 380 },
-      { name: "classification", status: "completed", detailFa: `دسته ${item.category} و tagهای ${item.tags.slice(0, 3).join(", ")} ثبت شد.`, latencyMs: 88 },
-      { name: "impact_analysis", status: "completed", detailFa: "اثر کوتاه‌مدت، میان‌مدت و بلندمدت روی دارایی‌ها ساخته شد.", latencyMs: 510 },
-      { name: "market_regime", status: "completed", detailFa: `regimeهای مرتبط: ${item.marketRegime.join(", ")}`, latencyMs: 95 },
-      { name: "alerting", status: "completed", detailFa: `سطح هشدار ${item.alertLevel} تعیین شد.`, latencyMs: 34 },
-    ],
-  };
 }
 
 export function summarizeImpactForAsset(impacts: AssetImpact[], asset: string) {

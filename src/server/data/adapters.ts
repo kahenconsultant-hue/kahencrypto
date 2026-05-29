@@ -20,7 +20,8 @@ export interface DataAdapter<T = number> {
   fetchPoint(key: string): Promise<AdapterResult<T>>;
 }
 
-const allowDevelopmentFallback = process.env.CMIP_ALLOW_DEV_FALLBACK === "true";
+const developmentFallbackRequested = process.env.CMIP_ALLOW_DEV_FALLBACK === "true";
+const allowDevelopmentFallback = developmentFallbackRequested && process.env.NODE_ENV !== "production";
 const requestTimeoutMs = 8_000;
 
 function unavailable(source: string, error: string, reliability = 0): AdapterResult {
@@ -67,6 +68,10 @@ function devFallback(params: {
   reliability: number;
   reason: string;
 }): AdapterResult {
+  if (developmentFallbackRequested && process.env.NODE_ENV === "production") {
+    return unavailable(params.source, "fallback توسعه در محیط production غیرفعال است؛ مقدار برآوردی تولید نمی‌شود.", params.reliability);
+  }
+
   if (!allowDevelopmentFallback) {
     return unavailable(params.source, "منبع زنده یا cache معتبر در دسترس نیست؛ fallback توسعه فقط با CMIP_ALLOW_DEV_FALLBACK=true فعال می‌شود.", params.reliability);
   }

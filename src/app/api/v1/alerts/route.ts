@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { apiJson, apiOptions } from "@/lib/api-response";
-import { moduleDataSourceStatus } from "@/lib/data-source-status";
+import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
 import type { AlertLevel, AssetSymbol } from "@/lib/types";
 import { filterAlerts } from "@/server/alerts/smart-alert-engine";
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
   return apiJson({
     generatedAt: new Date().toISOString(),
-    dataSourceStatus: moduleDataSourceStatus.topAlerts,
+    dataSourceStatus: getDashboardModuleDataSourceStatus().topAlerts,
     alerts: filterAlerts({
       asset: asset ?? undefined,
       minLevel: minLevel ?? undefined,

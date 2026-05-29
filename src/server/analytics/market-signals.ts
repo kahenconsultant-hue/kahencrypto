@@ -1,5 +1,5 @@
 import type { AssetSymbol, DataPoint, DataSeriesPoint, IntelligenceAssetSymbol, NormalizedSignal, SignalScores, TransmissionChannel } from "@/lib/types";
-import { clampPercent, scoresToLegacyScores, weightedSum } from "@/server/analytics/scoring-engine";
+import { clampPercent, scoresToLegacyScores } from "@/server/analytics/scoring-engine";
 import { getCachedDataPointsSync, getSignalCacheStatusSync } from "@/server/data/signal-cache";
 import { freshnessStatus } from "@/server/analytics/quality-engine";
 
@@ -151,35 +151,17 @@ export function getSignalSnapshot(points?: DataPoint[]) {
   return buildSignalSnapshot(points, cacheStatus);
 }
 
-export const sourceQualityLayer = getSignalSnapshot().sourceQualityLayer;
-
-function valueOf(key: string, fallback = 0) {
-  return getSignalSnapshot().byKey[key]?.value ?? fallback;
+function usableSignalValue(snapshot: ReturnType<typeof getSignalSnapshot>, key: string) {
+  const signal = snapshot.byKey[key];
+  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  return signal.value;
 }
 
-export const marketSignalSnapshot = {
-  dxyPressure: 50 + valueOf("dxy_trend_24h") * 20,
-  us10yPressure: 50 + valueOf("us10y_trend_24h") * 180,
-  fedRepricing: 58,
-  etfFlowImpulse: 50 + Math.max(-40, Math.min(40, valueOf("btc_etf_flow_24h") / 8_000_000)),
-  stablecoinSupplyImpulse: 50 + valueOf("stablecoin_market_cap_7d") * 18,
-  exchangeReserveDrain: 50 + Math.abs(Math.min(0, valueOf("exchange_reserves_btc_7d"))) * 22,
-  fundingHeat: 50 + valueOf("funding_btc") * 950,
-  openInterestHeat: 50 + valueOf("open_interest_btc_24h") * 4,
-  liquidationDensity: 58,
-  whaleExchangeInflow: 47,
-  volatilityPressure: 50 + valueOf("vix_trend_24h") * 2.2,
-  fearGreed: 48,
-  geopoliticalStress: valueOf("geopolitical_event_score", 0),
-  nasdaqMomentum: 50 + valueOf("nasdaq_trend_24h") * 14,
-  goldHedgeDemand: 50 + valueOf("gold_trend_24h") * 16,
-  ethNetworkActivity: 57,
-  ethStakingRisk: 54,
-  solDexActivity: 73,
-  solRetailMomentum: 78,
-  usdtIssuerRisk: 49,
-  usdtLocalPremiumRisk: 62,
-};
+function weightedAvailableScore(values: Array<{ value: number | null; weight: number }>) {
+  const available = values.filter((item): item is { value: number; weight: number } => item.value !== null && Number.isFinite(item.value));
+  if (!available.length) return null;
+  return clampPercent(weightedAverage(available));
+}
 
 export function calculateConfidence(params: {
   sources: SourceQuality[];
@@ -206,31 +188,45 @@ export function calculateConfidence(params: {
 
 export function deriveBaseScores(): SignalScores {
   const snapshot = getSignalSnapshot();
-  const macroStressScore = clampPercent(
-    weightedSum(
-      {
-        dxy: 50 + (snapshot.byKey.dxy_trend_24h?.value ?? 0) * 18,
-        us10y: 50 + (snapshot.byKey.us10y_trend_24h?.value ?? 0) * 180,
-        vix: 50 + (snapshot.byKey.vix_trend_24h?.value ?? 0) * 2,
-        news: 50 + Math.abs(Math.min(0, snapshot.byKey.news_sentiment_macro?.value ?? 0)) * 0.7,
-      },
-      { dxy: 0.3, us10y: 0.34, vix: 0.18, news: 0.18 },
-    ),
-  );
-  const liquidityScore = clampPercent(
-    weightedSum(
-      {
-        stablecoins: 50 + (snapshot.byKey.stablecoin_market_cap_7d?.value ?? 0) * 18,
-        etf: 50 + Math.max(-35, Math.min(35, (snapshot.byKey.btc_etf_flow_24h?.value ?? 0) / 7_000_000)),
-        reserves: 50 + Math.abs(Math.min(0, snapshot.byKey.exchange_reserves_btc_7d?.value ?? 0)) * 18,
-        spot: 50 + (snapshot.byKey.spot_volume_btc_24h?.value ?? 0) * 2,
-      },
-      { stablecoins: 0.28, etf: 0.32, reserves: 0.18, spot: 0.22 },
-    ),
-  );
-  const volatilityRisk = clampPercent(50 + (snapshot.byKey.vix_trend_24h?.value ?? 0) * 2.1 + (snapshot.byKey.open_interest_btc_24h?.value ?? 0) * 1.8);
-  const marketRiskScore = clampPercent(macroStressScore * 0.48 + volatilityRisk * 0.3 + Math.max(0, 100 - liquidityScore) * 0.22);
-  const narrativeStrength = clampPercent(50 + Math.abs(snapshot.byKey.news_sentiment_macro?.value ?? 0) * 0.25 + Math.abs(snapshot.byKey.geopolitical_event_score?.value ?? 0) * 0.18);
+  const dxy = usableSignalValue(snapshot, "dxy_trend_24h");
+  const us10y = usableSignalValue(snapshot, "us10y_trend_24h");
+  const vix = usableSignalValue(snapshot, "vix_trend_24h");
+  const newsSentiment = usableSignalValue(snapshot, "news_sentiment_macro");
+  const stablecoins = usableSignalValue(snapshot, "stablecoin_market_cap_7d");
+  const btcEtfFlow = usableSignalValue(snapshot, "btc_etf_flow_24h");
+  const exchangeReserves = usableSignalValue(snapshot, "exchange_reserves_btc_7d");
+  const spotVolume = usableSignalValue(snapshot, "spot_volume_btc_24h");
+  const openInterest = usableSignalValue(snapshot, "open_interest_btc_24h");
+  const geopolitical = usableSignalValue(snapshot, "geopolitical_event_score");
+
+  const macroStressComponent = weightedAvailableScore([
+    { value: dxy === null ? null : 50 + dxy * 18, weight: 0.3 },
+    { value: us10y === null ? null : 50 + us10y * 180, weight: 0.34 },
+    { value: vix === null ? null : 50 + vix * 2, weight: 0.18 },
+    { value: newsSentiment === null ? null : 50 + Math.abs(Math.min(0, newsSentiment)) * 0.7, weight: 0.18 },
+  ]);
+  const liquidityComponent = weightedAvailableScore([
+    { value: stablecoins === null ? null : 50 + stablecoins * 18, weight: 0.28 },
+    { value: btcEtfFlow === null ? null : 50 + Math.max(-35, Math.min(35, btcEtfFlow / 7_000_000)), weight: 0.32 },
+    { value: exchangeReserves === null ? null : 50 + Math.abs(Math.min(0, exchangeReserves)) * 18, weight: 0.18 },
+    { value: spotVolume === null ? null : 50 + spotVolume * 2, weight: 0.22 },
+  ]);
+  const volatilityComponent = weightedAvailableScore([
+    { value: vix === null ? null : 50 + vix * 2.1, weight: 0.54 },
+    { value: openInterest === null ? null : 50 + openInterest * 1.8, weight: 0.46 },
+  ]);
+  const macroStressScore = macroStressComponent ?? 0;
+  const liquidityScore = liquidityComponent ?? 0;
+  const volatilityRisk = volatilityComponent ?? 0;
+  const marketRiskScore = weightedAvailableScore([
+    { value: macroStressComponent, weight: 0.48 },
+    { value: volatilityComponent, weight: 0.3 },
+    { value: liquidityComponent === null ? null : Math.max(0, 100 - liquidityComponent), weight: 0.22 },
+  ]) ?? 0;
+  const narrativeStrength = weightedAvailableScore([
+    { value: newsSentiment === null ? null : 50 + Math.abs(newsSentiment) * 0.25, weight: 0.58 },
+    { value: geopolitical === null ? null : 50 + Math.abs(geopolitical) * 0.18, weight: 0.42 },
+  ]) ?? 0;
 
   return scoresToLegacyScores({ marketRisk: marketRiskScore, liquidity: liquidityScore, macroStress: macroStressScore, narrative: narrativeStrength, volatility: volatilityRisk });
 }

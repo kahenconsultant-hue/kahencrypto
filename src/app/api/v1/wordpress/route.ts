@@ -1,5 +1,5 @@
 import { apiJson, apiOptions } from "@/lib/api-response";
-import { moduleDataSourceStatus } from "@/lib/data-source-status";
+import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
 import { buildWordPressPayload } from "@/server/wordpress/adapter";
 
 export function OPTIONS() {
@@ -8,7 +8,7 @@ export function OPTIONS() {
 
 export async function GET() {
   return apiJson({
-    dataSourceStatus: moduleDataSourceStatus.widgetEmbed,
+    dataSourceStatus: getDashboardModuleDataSourceStatus().widgetEmbed,
     ...buildWordPressPayload(),
   });
 }

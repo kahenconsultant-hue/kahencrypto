@@ -1,10 +1,11 @@
 import { type NextRequest } from "next/server";
 import { apiJson, apiOptions } from "@/lib/api-response";
 import { assetIntelligence, getNewsItems } from "@/lib/production-data";
-import { assetStatusKey, moduleDataSourceStatus } from "@/lib/data-source-status";
+import { assetStatusKey } from "@/lib/data-source-status";
 import { generateAssetImpactProfile } from "@/server/analytics/asset-impact-engine";
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
 import { summarizeImpactForAsset } from "@/server/ai/pipeline";
+import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
 
 type Params = {
   params: Promise<{ symbol: string }>;
@@ -29,7 +30,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
   return apiJson({
     generatedAt: new Date().toISOString(),
-    dataSourceStatus: moduleDataSourceStatus[assetStatusKey(key)],
+    dataSourceStatus: getDashboardModuleDataSourceStatus()[assetStatusKey(key)],
     asset,
     directionalImpact: generateAssetImpactProfile(asset.symbol),
     alerts: generateSmartAlerts().filter((alert) => alert.affectedAssets.includes(asset.symbol)).sort((left, right) => right.importance - left.importance),

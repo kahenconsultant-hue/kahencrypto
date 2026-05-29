@@ -1,6 +1,6 @@
 import { apiJson, apiOptions } from "@/lib/api-response";
-import { moduleDataSourceStatus } from "@/lib/data-source-status";
 import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
+import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
 
 export function OPTIONS() {
   return apiOptions();
@@ -8,7 +8,7 @@ export function OPTIONS() {
 
 export async function GET() {
   return apiJson({
-    dataSourceStatus: moduleDataSourceStatus.marketRegime,
+    dataSourceStatus: getDashboardModuleDataSourceStatus().marketRegime,
     ...getMarketRegimeReport(),
   });
 }

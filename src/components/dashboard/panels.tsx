@@ -30,6 +30,7 @@ import {
   getDashboardLiquidityReport as getLiquidityReport,
   getDashboardMarketRegime as getMarketRegimeReport,
   getDashboardMinutesSinceEngineUpdate as minutesSinceEngineUpdate,
+  getDashboardModuleDataSourceStatus as getModuleDataSourceStatus,
   getDashboardRefreshHealth as getRefreshHealth,
   getDashboardReliabilityReport as getIntelligenceReliabilityReportSync,
   getDashboardSentimentReport as getSentimentReport,
@@ -43,7 +44,23 @@ import { Badge } from "@/components/ui/badge";
 import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { Metric } from "@/components/ui/metric";
 import { Progress } from "@/components/ui/progress";
-import { dataSourceStatusLabels, moduleDataSourceStatus } from "@/lib/data-source-status";
+import { dataSourceStatusLabels, type DataSourceStatus, type ModuleStatusKey } from "@/lib/data-source-status";
+
+const moduleDataSourceStatus = new Proxy({} as Record<ModuleStatusKey, DataSourceStatus>, {
+  get: (_target, property: string | symbol) => {
+    if (typeof property !== "string") return undefined;
+    return getModuleDataSourceStatus()[property as ModuleStatusKey];
+  },
+  ownKeys: () => Reflect.ownKeys(getModuleDataSourceStatus()),
+  getOwnPropertyDescriptor: (_target, property: string | symbol) => {
+    if (typeof property !== "string") return undefined;
+    return {
+      configurable: true,
+      enumerable: true,
+      value: getModuleDataSourceStatus()[property as ModuleStatusKey],
+    };
+  },
+});
 
 function alertVariant(level: string): "danger" | "warning" | "default" | "muted" {
   if (level === "Critical") return "danger";
@@ -1042,7 +1059,7 @@ export function GeopoliticalRiskPanel() {
               <span className="text-[11px] text-muted-foreground">{new Date(item.timestamp).toLocaleString("fa-IR")}</span>
             </div>
             <h3 className="mt-3 text-sm font-black leading-6">{item.title}</h3>
-            <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "این رویداد خام هنوز توسط پردازش AI/translation تحلیل نشده است."}</p>
+            <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "برای این رویداد هنوز خلاصه فارسی قابل اتکا آماده نشده است؛ تا تکمیل پردازش، فقط تیتر، زمان و منبع معتبر نمایش داده می‌شود."}</p>
           </div>
         )) : <p className="rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground md:col-span-2">داده کافی برای تحلیل معتبر وجود ندارد. هنوز رویداد ژئوپلیتیک واقعی از ingestion foundation ثبت نشده است.</p>}
       </CardContent>
@@ -1100,10 +1117,10 @@ export function LatestNewsFeedPanel() {
                       </span>
                     </div>
                     <h3 className="mt-3 text-sm font-black leading-7">{item.title}</h3>
-                    <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "این آیتم خام هنوز پردازش، ترجمه و تحلیل اثر نشده است."}</p>
+                    <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "خلاصه فارسی قابل اتکا هنوز آماده نیست؛ سیستم به‌جای متن ساختگی، فقط عنوان و منبع را نمایش می‌دهد."}</p>
                     <div className="mt-3 rounded-sm border bg-secondary/35 p-2 text-xs leading-6">
-                      <span className="font-bold text-primary">وضعیت پردازش: </span>
-                      raw event ثبت شده؛ تحلیل اثر در فازهای بعدی فعال می‌شود.
+                      <span className="font-bold text-primary">وضعیت تحلیل: </span>
+                      ترجمه و تفسیر فارسی معتبر هنوز آماده نیست؛ تا تکمیل داده، خروجی ساختگی نمایش داده نمی‌شود.
                     </div>
                   </div>
                 );
@@ -1128,7 +1145,7 @@ export async function AiSummariesPanel() {
             <Sparkles className="h-4 w-4 text-primary" aria-hidden />
             ترجمه و توضیح رویدادها
           </CardTitle>
-          <CardDescription>لایه AI فقط روی normalized_events واقعی کار می‌کند. اگر کلید OpenAI تنظیم نشده باشد، ترجمه ساخته نمی‌شود و وضعیت به‌صورت شفاف نمایش داده می‌شود.</CardDescription>
+          <CardDescription>توضیح فارسی فقط برای رویدادهای واقعی ذخیره‌شده ساخته می‌شود. اگر کلید OpenAI یا داده معتبر آماده نباشد، سیستم متن ساختگی تولید نمی‌کند.</CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={aiStatus.enabled ? "success" : "warning"}>{aiStatus.status}</Badge>
@@ -1173,7 +1190,7 @@ export async function AiSummariesPanel() {
             ))}
           </div>
         ) : (
-          <p className="rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground">normalized_event معتبری برای توضیح AI وجود ندارد.</p>
+          <p className="rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground">رویداد معتبر کافی برای تولید توضیح فارسی وجود ندارد.</p>
         )}
       </CardContent>
     </Card>
@@ -1320,7 +1337,7 @@ export function WatchlistAndPlansPanel() {
       </CardHeader>
       <CardContent className="grid gap-4 xl:grid-cols-[0.75fr_1.25fr]">
         <div className="rounded-md border bg-secondary/30 p-3">
-          <div className="font-black">تنظیمات نمونه کاربر</div>
+          <div className="font-black">تنظیمات واچ‌لیست کاربر</div>
           <div className="mt-3 grid gap-2 text-xs">
             {["BTC", "ETH", "USDT", "Fed", "DXY", "US10Y"].map((item) => (
               <label key={item} className="flex items-center justify-between rounded-sm border bg-card/60 px-3 py-2">

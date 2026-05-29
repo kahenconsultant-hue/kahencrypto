@@ -104,12 +104,12 @@ function deterministicExplanation(event: NormalizedEventInput): EventExplanation
           : `اثر این رویداد برای ${affectedAssets.join("، ")} فعلاً خنثی یا دوگانه است و برای تحلیل معتبر به سیگنال‌های تکمیلی نیاز دارد.`,
     actionableExplanationFa:
       process.env.OPENAI_API_KEY
-        ? "این خروجی آماده پردازش AI است؛ برای جلوگیری از هزینه و تولید تکراری، اجرای batch باید از worker انجام شود."
-        : "ترجمه و خلاصه AI فعال نیست، چون OPENAI_API_KEY تنظیم نشده است. رویداد ذخیره شده و آماده پردازش است، اما متن فارسی کامل ساخته نمی‌شود.",
+        ? "این رویداد برای تولید توضیح فارسی در صف پردازش هوشمند قرار دارد؛ تا زمان تکمیل پردازش، تحلیل قطعی نمایش داده نمی‌شود."
+        : "لایه ترجمه و خلاصه‌سازی هوشمند فعال نیست، چون کلید سرویس تنظیم نشده است. رویداد ذخیره شده، اما متن فارسی کامل ساخته نمی‌شود.",
     uncertaintyNotesFa: [
       sourceNote,
-      "این توضیح deterministic است و جایگزین تحلیل AI یا امتیازدهی اثر بازار نیست.",
-      !process.env.OPENAI_API_KEY ? "کلید OpenAI موجود نیست؛ بنابراین translationFa و summaryFa برای تیتر انگلیسی عمداً خالی می‌ماند." : "",
+      "این توضیح بر پایه قواعد شفاف و داده موجود ساخته شده و جایگزین امتیازدهی کامل اثر بازار نیست.",
+      !process.env.OPENAI_API_KEY ? "کلید سرویس ترجمه هوشمند موجود نیست؛ بنابراین برای تیتر انگلیسی ترجمه کامل ساخته نمی‌شود." : "",
     ].filter(Boolean),
     transmissionChannel: channel,
     expectedDirection,
@@ -129,8 +129,8 @@ export function getAiLayerStatus() {
     enabled: Boolean(process.env.OPENAI_API_KEY),
     status: process.env.OPENAI_API_KEY ? "ready" : "api_key_missing",
     messageFa: process.env.OPENAI_API_KEY
-      ? "لایه AI آماده پردازش batch رویدادهای normalized است."
-      : "OPENAI_API_KEY تنظیم نشده است؛ سیستم ترجمه یا تحلیل AI تولید نمی‌کند و داده ساختگی جایگزین نمی‌سازد.",
+      ? "لایه ترجمه و توضیح هوشمند آماده پردازش رویدادهای معتبر است."
+      : "کلید سرویس ترجمه هوشمند تنظیم نشده است؛ سیستم متن ساختگی جایگزین نمی‌سازد.",
   };
 }
 

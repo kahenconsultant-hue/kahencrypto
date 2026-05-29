@@ -65,63 +65,89 @@ function biasFromImpact(score: number): DirectionalBias {
   return "mixed";
 }
 
+function usableSignalValue(snapshot: ReturnType<typeof getSignalSnapshot>, key: string) {
+  const signal = snapshot.byKey[key];
+  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  return signal.value;
+}
+
+function scoreValue(value: number | null) {
+  return value ?? 0;
+}
+
+function assetTrendKey(asset: IntelligenceAssetSymbol) {
+  if (asset === "BTC") return "btc_trend_24h";
+  if (asset === "ETH") return "eth_trend_24h";
+  if (asset === "SOL") return "sol_trend_24h";
+  if (asset === "DXY") return "dxy_trend_24h";
+  if (asset === "Gold") return "gold_trend_24h";
+  if (asset === "Nasdaq") return "nasdaq_trend_24h";
+  if (asset === "US10Y") return "us10y_trend_24h";
+  return "usdt_supply_7d";
+}
+
 function assetSpecificInputs(asset: IntelligenceAssetSymbol) {
   const snapshot = getSignalSnapshot();
   const liquidity = getLiquidityReport();
   const regime = getMarketRegimeReport().engine;
   const sentiment = getSentimentReport();
   const correlation = getDynamicCorrelationReport();
-  const assetSentiment = sentiment.byAsset.find((entry) => entry.asset === asset)?.score ?? 0;
+  const assetSentiment = sentiment.confidence.available ? sentiment.byAsset.find((entry) => entry.asset === asset)?.score ?? 0 : 0;
   const btcNasdaq = correlation.signals.find((signal) => signal.assetPair === "BTC ↔ Nasdaq");
   const btcDxy = correlation.signals.find((signal) => signal.assetPair === "BTC ↔ DXY");
   const btcGold = correlation.signals.find((signal) => signal.assetPair === "BTC ↔ Gold");
-  const assetTrend =
-    asset === "BTC"
-      ? snapshot.byKey.btc_trend_24h?.value ?? 0
-      : asset === "ETH"
-        ? snapshot.byKey.eth_trend_24h?.value ?? 0
-        : asset === "SOL"
-          ? snapshot.byKey.sol_trend_24h?.value ?? 0
-          : asset === "DXY"
-            ? snapshot.byKey.dxy_trend_24h?.value ?? 0
-            : asset === "Gold"
-              ? snapshot.byKey.gold_trend_24h?.value ?? 0
-              : asset === "Nasdaq"
-                ? snapshot.byKey.nasdaq_trend_24h?.value ?? 0
-                : asset === "US10Y"
-                  ? snapshot.byKey.us10y_trend_24h?.value ?? 0
-                  : snapshot.byKey.usdt_supply_7d?.value ?? 0;
+  const assetTrend = usableSignalValue(snapshot, assetTrendKey(asset));
+  const nasdaqTrend = usableSignalValue(snapshot, "nasdaq_trend_24h");
+  const dxyTrend = usableSignalValue(snapshot, "dxy_trend_24h");
+  const goldTrend = usableSignalValue(snapshot, "gold_trend_24h");
+  const us10yTrend = usableSignalValue(snapshot, "us10y_trend_24h");
+  const geopoliticalScore = usableSignalValue(snapshot, "geopolitical_event_score");
+  const btcEtfFlow = usableSignalValue(snapshot, "btc_etf_flow_24h");
+  const ethEtfFlow = usableSignalValue(snapshot, "eth_etf_flow_24h");
+  const exchangeReserves = usableSignalValue(snapshot, "exchange_reserves_btc_7d");
+  const usdtSupply = usableSignalValue(snapshot, "usdt_supply_7d");
+  const solTrend = usableSignalValue(snapshot, "sol_trend_24h");
+  const ethTrend = usableSignalValue(snapshot, "eth_trend_24h");
+  const vixTrend = usableSignalValue(snapshot, "vix_trend_24h");
+  const missingInputs = [
+    assetTrend === null ? `${asset} trend` : "",
+    nasdaqTrend === null && (asset === "BTC" || asset === "ETH" || asset === "SOL" || asset === "Nasdaq") ? "Nasdaq" : "",
+    dxyTrend === null && (asset === "BTC" || asset === "DXY") ? "DXY" : "",
+    us10yTrend === null && (asset === "Gold" || asset === "US10Y") ? "US10Y" : "",
+    btcEtfFlow === null && asset === "BTC" ? "BTC ETF flow" : "",
+    ethEtfFlow === null && asset === "ETH" ? "ETH ETF flow" : "",
+  ].filter(Boolean);
   const regimeBias = biasForRegimeAsset(regime.regimeLabel, asset);
   const regimeScore = regimeBias === "bullish" ? 55 : regimeBias === "bearish" ? -55 : regimeBias === "neutral" ? 0 : -12;
   const liquidityScore =
     asset === "DXY" || asset === "US10Y"
-      ? -liquidity.liquidityScoreSigned
+      ? liquidity.dataQuality === "unavailable" ? 0 : -liquidity.liquidityScoreSigned
       : asset === "Gold"
         ? regime.regimeLabel === "Geopolitical Shock"
           ? 34
-          : liquidity.liquidityScoreSigned * 0.2
+          : liquidity.dataQuality === "unavailable" ? 0 : liquidity.liquidityScoreSigned * 0.2
         : asset === "USDT"
-          ? liquidity.stablecoinExpansion - 50
-          : liquidity.liquidityScoreSigned * (asset === "SOL" ? 1.25 : asset === "ETH" ? 1.05 : 1);
+          ? liquidity.stablecoinExpansion ? liquidity.stablecoinExpansion - 50 : 0
+          : liquidity.dataQuality === "unavailable" ? 0 : liquidity.liquidityScoreSigned * (asset === "SOL" ? 1.25 : asset === "ETH" ? 1.05 : 1);
   const correlationScore =
     asset === "BTC"
-      ? clampSigned((btcNasdaq?.correlation7D ?? 0) * (snapshot.byKey.nasdaq_trend_24h?.value ?? 0) * 18 - (btcDxy?.correlation7D ?? 0) * (snapshot.byKey.dxy_trend_24h?.value ?? 0) * 22 + (btcGold?.correlation7D ?? 0) * (snapshot.byKey.gold_trend_24h?.value ?? 0) * 8)
+      ? clampSigned(scoreValue(btcNasdaq?.correlation7D ?? null) * scoreValue(nasdaqTrend) * 18 - scoreValue(btcDxy?.correlation7D ?? null) * scoreValue(dxyTrend) * 22 + scoreValue(btcGold?.correlation7D ?? null) * scoreValue(goldTrend) * 8)
       : asset === "ETH" || asset === "SOL"
-        ? clampSigned((snapshot.byKey.nasdaq_trend_24h?.value ?? 0) * 20)
+        ? clampSigned(scoreValue(nasdaqTrend) * 20)
         : asset === "Gold"
-          ? clampSigned((snapshot.byKey.geopolitical_event_score?.value ?? 0) * 0.45 - (snapshot.byKey.us10y_trend_24h?.value ?? 0) * 120)
+          ? clampSigned(scoreValue(geopoliticalScore) * 0.45 - scoreValue(us10yTrend) * 120)
           : 0;
   const flowScore =
     asset === "BTC"
-      ? clampSigned((snapshot.byKey.btc_etf_flow_24h?.value ?? 0) / 2_200_000 + -(snapshot.byKey.exchange_reserves_btc_7d?.value ?? 0) * 18)
+      ? clampSigned(scoreValue(btcEtfFlow) / 2_200_000 + -scoreValue(exchangeReserves) * 18)
       : asset === "ETH"
-        ? clampSigned((snapshot.byKey.eth_etf_flow_24h?.value ?? 0) / 2_000_000)
+        ? clampSigned(scoreValue(ethEtfFlow) / 2_000_000)
         : asset === "USDT"
-          ? clampSigned((snapshot.byKey.usdt_supply_7d?.value ?? 0) * 22)
+          ? clampSigned(scoreValue(usdtSupply) * 22)
           : asset === "SOL"
-            ? clampSigned((snapshot.byKey.sol_trend_24h?.value ?? 0) * 14)
+            ? clampSigned(scoreValue(solTrend) * 14)
             : 0;
-  const volatilityScore = asset === "USDT" ? -15 : clampSigned(-(snapshot.byKey.vix_trend_24h?.value ?? 0) * (asset === "SOL" ? 4.2 : asset === "ETH" ? 3.2 : 2.4));
+  const volatilityScore = asset === "USDT" ? -15 : clampSigned(-scoreValue(vixTrend) * (asset === "SOL" ? 4.2 : asset === "ETH" ? 3.2 : 2.4));
   const newsSeverityScore = assetSentiment;
   let impact = calculateImpactScore({
     regime_score: regimeScore,
@@ -135,24 +161,24 @@ function assetSpecificInputs(asset: IntelligenceAssetSymbol) {
 
   if (asset === "ETH") {
     impact = {
-      score: clampSigned(regimeScore * 0.18 + liquidityScore * 0.18 + correlationScore * 0.18 + assetSentiment * 0.12 + flowScore * 0.12 + volatilityScore * 0.07 + (snapshot.byKey.eth_trend_24h?.value ?? 0) * 4),
+      score: clampSigned(regimeScore * 0.18 + liquidityScore * 0.18 + correlationScore * 0.18 + assetSentiment * 0.12 + flowScore * 0.12 + volatilityScore * 0.07 + scoreValue(ethTrend) * 4),
       formula: "ETH: ۰٫۱۸×رژیم + ۰٫۱۸×نقدینگی + ۰٫۱۸×همبستگی/tech beta + ۰٫۱۲×سنتیمنت + ۰٫۱۲×ETF/flow + ۰٫۰۷×نوسان + وزن روند ETH.",
     };
   }
   if (asset === "SOL") {
     impact = {
-      score: clampSigned(regimeScore * 0.2 + liquidityScore * 0.18 + correlationScore * 0.16 + assetSentiment * 0.1 + flowScore * 0.09 - liquidity.leverageStress * 0.12 + volatilityScore * 0.1),
+      score: clampSigned(regimeScore * 0.2 + liquidityScore * 0.18 + correlationScore * 0.16 + assetSentiment * 0.1 + flowScore * 0.09 - (liquidity.dataQuality === "unavailable" ? 0 : liquidity.leverageStress) * 0.12 + volatilityScore * 0.1),
       formula: "SOL: ۰٫۲۰×رژیم + ۰٫۱۸×نقدینگی + ۰٫۱۶×همبستگی با risk appetite + ۰٫۱۰×سنتیمنت + ۰٫۰۹×جریان اکوسیستم + جریمه اهرم + ۰٫۱۰×نوسان.",
     };
   }
   if (asset === "USDT") {
     impact = {
-      score: clampSigned(-(100 - liquidity.stablecoinExpansion) * 0.28 - Math.max(0, -liquidity.liquidityScoreSigned) * 0.2 - Math.max(0, liquidity.leverageStress - 65) * 0.22 + flowScore * 0.18 - Math.max(0, assetSentiment) * 0.05),
+      score: clampSigned(-(liquidity.stablecoinExpansion ? 100 - liquidity.stablecoinExpansion : 0) * 0.28 - (liquidity.dataQuality === "unavailable" ? 0 : Math.max(0, -liquidity.liquidityScoreSigned) * 0.2) - (liquidity.dataQuality === "unavailable" ? 0 : Math.max(0, liquidity.leverageStress - 65) * 0.22) + flowScore * 0.18 - Math.max(0, assetSentiment) * 0.05),
       formula: "USDT risk: ریسک از ضعف رشد استیبل‌کوین، فشار نقدینگی، اهرم بالا و جریان عرضه ساخته می‌شود؛ برای USDT سوگیری قیمت تولید نمی‌شود.",
     };
   }
 
-  return { snapshot, liquidity, regime, sentiment, correlation, assetTrend, impact, components: { regimeScore, liquidityScore, correlationScore, assetSentiment, flowScore, volatilityScore, newsSeverityScore } };
+  return { snapshot, liquidity, regime, sentiment, correlation, assetTrend, impact, missingInputs, components: { regimeScore, liquidityScore, correlationScore, assetSentiment, flowScore, volatilityScore, newsSeverityScore } };
 }
 
 function channelsForAsset(asset: IntelligenceAssetSymbol, components: ReturnType<typeof assetSpecificInputs>["components"]): TransmissionChannel[] {
@@ -175,33 +201,53 @@ export function generateAssetImpactProfile(asset: IntelligenceAssetSymbol): Dire
     signals: data.snapshot.signals,
     signalAgreement: signalAgreementScore(values),
     historicalConsistency: data.regime.regimeLabel === data.regime.previousRegimeLabel ? 72 : 58,
-    marketConfirmation: Math.max(35, 100 - Math.abs(data.impact.score / 2 - data.assetTrend * 10)),
+    marketConfirmation: data.assetTrend === null ? 35 : Math.max(35, 100 - Math.abs(data.impact.score / 2 - data.assetTrend * 10)),
   });
-  const outputImpactScore = confidence.available ? data.impact.score : 0;
-  const bias = confidence.available ? biasFromImpact(data.impact.score) : "mixed";
+  const hasUsableImpact = confidence.available;
+  const outputImpactScore = hasUsableImpact ? data.impact.score : 0;
+  const bias = hasUsableImpact ? biasFromImpact(data.impact.score) : "mixed";
   const assetName = assetLabels[asset];
   const regimeLabel = data.regime.regimeLabel ?? "Neutral / Transition";
   const regimeName = regimeLabelsFa[regimeLabel] ?? regimeLabel;
-  const scoreFormula = `فرمول امتیاز اثر: ${data.impact.formula}`;
-  const mainDrivers = [
-    `رژیم بازار: ${regimeName}؛ اثر آن برای ${assetName} ${data.components.regimeScore > 0 ? "حمایتی" : data.components.regimeScore < 0 ? "فشارزا" : "خنثی"} است.`,
-    `نقدینگی: امتیاز کل ${data.liquidity.liquidityScoreSigned}/100؛ نقدینگی اسپات ${data.liquidity.realSpotLiquidityScore ?? 0}/100 و پایداری ${data.liquidity.liquiditySustainabilityScore ?? 0}/100 است.`,
-    `جریان سرمایه: امتیاز ${Math.round(data.components.flowScore)}/100؛ ETF، استیبل‌کوین یا جریان اختصاصی دارایی در این بخش وزن می‌گیرد.`,
-  ];
+  const missingInputText = data.missingInputs.length ? `ورودی‌های ناقص: ${data.missingInputs.join("، ")}.` : "";
+  const scoreFormula = hasUsableImpact ? `فرمول امتیاز اثر: ${data.impact.formula}` : "فرمول امتیاز اثر اجرا نشد؛ حداقل پوشش داده مستقل برای تولید نقشه جهت‌دار فراهم نیست.";
+  const liquidityDriver =
+    data.liquidity.dataQuality === "unavailable"
+      ? "نقدینگی: داده معتبر برای این لایه در دسترس نیست؛ سیستم آن را به‌عنوان نیروی خنثی واقعی نمایش نمی‌دهد."
+      : `نقدینگی: امتیاز کل ${data.liquidity.liquidityScoreSigned}/100؛ نقدینگی اسپات ${data.liquidity.realSpotLiquidityScore ?? "ناموجود"}/100 و پایداری ${data.liquidity.liquiditySustainabilityScore ?? "ناموجود"}/100 است.`;
+  const flowDriver =
+    data.missingInputs.some((input) => input.includes("ETF") || input.includes("trend"))
+      ? `جریان سرمایه: بخشی از داده‌های اختصاصی ${assetName} ناموجود است؛ ${missingInputText || "بنابراین جریان سرمایه با وزن محدود وارد محاسبه شده است."}`
+      : `جریان سرمایه: امتیاز ${Math.round(data.components.flowScore)}/100؛ ETF، استیبل‌کوین یا جریان اختصاصی دارایی در این بخش وزن می‌گیرد.`;
+  const mainDrivers = hasUsableImpact
+    ? [
+        `رژیم بازار: ${regimeName}؛ اثر آن برای ${assetName} ${data.components.regimeScore > 0 ? "حمایتی" : data.components.regimeScore < 0 ? "فشارزا" : "خنثی"} است.`,
+        liquidityDriver,
+        flowDriver,
+      ]
+    : [
+        `داده کافی برای نقشه اثر معتبر ${assetName} وجود ندارد.`,
+        confidence.explanation,
+        missingInputText || "حداقل چهار گروه سیگنال مستقل باید فعال باشد تا score و جهت اثر نمایش داده شود.",
+      ];
   const opposingDrivers = [
-    confidence.available && data.components.correlationScore * data.impact.score < 0 ? `همبستگی (Correlation) با سناریوی اصلی هم‌سو نیست؛ امتیاز اثر آن ${Math.round(data.components.correlationScore)} است.` : "",
-    confidence.available && data.components.assetSentiment * data.impact.score < 0 ? `سنتیمنت بازار برخلاف جهت اثر کمی حرکت می‌کند؛ امتیاز آن ${Math.round(data.components.assetSentiment)} است.` : "",
-    confidence.available && data.components.volatilityScore * data.impact.score < 0 ? `نوسان بازار بخشی از جهت اصلی را خنثی می‌کند؛ امتیاز نوسان ${Math.round(data.components.volatilityScore)} است.` : "",
+    hasUsableImpact && data.components.correlationScore * data.impact.score < 0 ? `همبستگی (Correlation) با سناریوی اصلی هم‌سو نیست؛ امتیاز اثر آن ${Math.round(data.components.correlationScore)} است.` : "",
+    hasUsableImpact && data.components.assetSentiment * data.impact.score < 0 ? `سنتیمنت بازار برخلاف جهت اثر کمی حرکت می‌کند؛ امتیاز آن ${Math.round(data.components.assetSentiment)} است.` : "",
+    hasUsableImpact && data.components.volatilityScore * data.impact.score < 0 ? `نوسان بازار بخشی از جهت اصلی را خنثی می‌کند؛ امتیاز نوسان ${Math.round(data.components.volatilityScore)} است.` : "",
   ].filter(Boolean);
   const invalidationCondition =
-    bias === "bearish"
+    !hasUsableImpact
+      ? `برای اعتبارسنجی نقشه اثر ${assetName}، ابتدا داده‌های ناقص باید وارد شوند و حداقل چهار گروه مستقل سیگنال با تازگی قابل قبول فعال باشد.`
+      : bias === "bearish"
       ? `سناریوی منفی ${assetName} زمانی ضعیف می‌شود که DXY و US10Y آرام شوند و در یک تا دو بروزرسانی بعدی جریان ETF یا استیبل‌کوین‌ها مثبت شود.`
       : bias === "bullish"
         ? `سناریوی مثبت ${assetName} زمانی زیر سؤال می‌رود که جریان ETF یا استیبل‌کوین معکوس شود، یا همبستگی‌ها دوباره به نفع رژیم ریسک‌گریز بچرخند.`
         : `سناریوی دوگانه ${assetName} فقط وقتی روشن‌تر می‌شود که دست‌کم دو محرک اصلی، مثل نقدینگی و همبستگی، هم‌جهت شوند.`;
 
   const traderInterpretation =
-    asset === "BTC"
+    !hasUsableImpact
+      ? `برای ${assetName} فعلاً خروجی جهت‌دار معتبر تولید نمی‌شود. این وضعیت به معنی خنثی بودن بازار نیست؛ یعنی داده کافی برای تفکیک سناریوی مثبت، منفی یا دوگانه وجود ندارد.`
+      : asset === "BTC"
       ? bias === "bearish"
         ? "بیت‌کوین فعلاً بیشتر مثل دارایی پرریسک رفتار می‌کند تا پناهگاه امن. اگر DXY و بازده اوراق بالا بمانند، حتی خبرهای خنثی یا مثبت کریپتو برای تغییر سناریو کافی نیستند؛ تأیید ETF و همبستگی با طلا باید جداگانه دیده شود."
         : "برای بیت‌کوین، مسیر اصلی از ترکیب ETF، شاخص دلار، بازده اوراق و همبستگی با Nasdaq/Gold ساخته می‌شود. این خروجی نقشه سناریو است، نه دستور ورود یا خروج."
@@ -226,18 +272,19 @@ export function generateAssetImpactProfile(asset: IntelligenceAssetSymbol): Dire
     confidence,
     timeframe: "7d",
     mainDrivers,
-    opposingDrivers: opposingDrivers.length ? opposingDrivers : ["محرک مخالف معناداری با وزن کافی دیده نمی‌شود؛ با این حال کیفیت داده و بروزرسانی بعدی باید رصد شود."],
+    opposingDrivers: opposingDrivers.length ? opposingDrivers : hasUsableImpact ? ["محرک مخالف معناداری با وزن کافی دیده نمی‌شود؛ با این حال کیفیت داده و بروزرسانی بعدی باید رصد شود."] : ["محرک مخالف قابل محاسبه نیست، چون نقشه اثر اصلی هنوز از آستانه اعتبار عبور نکرده است."],
     transmissionChannels: channelsForAsset(asset, data.components),
     regimeDependency: `وابسته به رژیم «${regimeName}»؛ احتمال گذار رژیم ${data.regime.transitionProbability}٪ محاسبه شده است.`,
     invalidationCondition,
     traderInterpretation,
     evidence: [
-      confidence.available ? `امتیاز اثر ${assetName}: ${outputImpactScore}` : `امتیاز اثر ${assetName}: ناموجود؛ داده مستقل کافی وجود ندارد.`,
+      hasUsableImpact ? `امتیاز اثر ${assetName}: ${outputImpactScore}` : `امتیاز اثر ${assetName}: ناموجود؛ داده مستقل کافی وجود ندارد.`,
       scoreFormula,
-      confidence.available ? `اطمینان محاسبه‌شده: ${confidence.score}٪` : confidence.explanation,
+      hasUsableImpact ? `اطمینان محاسبه‌شده: ${confidence.score}٪` : confidence.explanation,
+      missingInputText,
       `کانال‌های اثرگذار: ${channelsForAsset(asset, data.components).map((channel) => channelLabels[channel]).join("، ")}`,
       ...data.regime.keyDrivers.slice(0, 2),
-    ],
+    ].filter(Boolean),
     scoreFormula,
     scenarios: generateAssetScenarios(asset),
     lastUpdatedAt: getEngineLastUpdatedAt(),

@@ -38,7 +38,9 @@ export interface RegimeInputVector {
 }
 
 function value(signals: Record<string, NormalizedSignal>, key: string) {
-  return signals[key]?.value ?? null;
+  const signal = signals[key];
+  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  return signal.value;
 }
 
 export function buildRegimeInput(): RegimeInputVector {
@@ -129,54 +131,63 @@ function regimeDataQuality(signals: NormalizedSignal[]) {
 }
 
 function cryptoMomentum(input: RegimeInputVector) {
-  return weightedAverage([
-    { value: input.btcTrend ?? 0, weight: 0.45 },
-    { value: input.ethTrend ?? 0, weight: 0.3 },
-    { value: input.solTrend ?? 0, weight: 0.25 },
-  ]);
+  const available = [
+    { value: input.btcTrend, weight: 0.45 },
+    { value: input.ethTrend, weight: 0.3 },
+    { value: input.solTrend, weight: 0.25 },
+  ].filter((item): item is { value: number; weight: number } => item.value !== null && Number.isFinite(item.value));
+  return available.length ? weightedAverage(available) : null;
+}
+
+function positive(value: number | null, multiplier: number) {
+  return value === null ? 0 : Math.max(0, value) * multiplier;
+}
+
+function negative(value: number | null, multiplier: number) {
+  return value === null ? 0 : Math.max(0, -value) * multiplier;
 }
 
 function scoreRegimeCandidates(input: RegimeInputVector, liquidityScore: number) {
-  const dxyUp = Math.max(0, input.dxyTrend ?? 0) * 26;
-  const ratesUp = Math.max(0, input.us10yTrend ?? 0) * 210;
-  const nasdaqDown = Math.max(0, -(input.nasdaqTrend ?? 0)) * 18;
+  const dxyUp = positive(input.dxyTrend, 26);
+  const ratesUp = positive(input.us10yTrend, 210);
+  const nasdaqDown = negative(input.nasdaqTrend, 18);
   const momentum = cryptoMomentum(input);
-  const cryptoDown = Math.max(0, -momentum) * 15;
-  const stablecoinDown = Math.max(0, -(input.stablecoinTrend ?? 0)) * 24;
-  const etfPositive = Math.max(0, input.btcEtfFlow ?? 0) / 5_000_000;
-  const etfNegative = Math.max(0, -(input.btcEtfFlow ?? 0)) / 5_000_000;
-  const leverageHeat = Math.max(0, input.openInterest ?? 0) * 4 + Math.max(0, input.fundingRate ?? 0) * 1000;
-  const vixShock = Math.max(0, input.vixTrend ?? 0) * 3.3;
+  const cryptoDown = negative(momentum, 15);
+  const stablecoinDown = negative(input.stablecoinTrend, 24);
+  const etfPositive = positive(input.btcEtfFlow, 1 / 5_000_000);
+  const etfNegative = negative(input.btcEtfFlow, 1 / 5_000_000);
+  const leverageHeat = positive(input.openInterest, 4) + positive(input.fundingRate, 1000);
+  const vixShock = positive(input.vixTrend, 3.3);
   const geopolitics = input.geopoliticalScore ?? 0;
-  const goldUp = Math.max(0, input.goldTrend ?? 0) * 18;
-  const cryptoUp = Math.max(0, momentum) * 14;
-  const riskOnBase = clampPercent((100 - Math.max(dxyUp, ratesUp)) * 0.22 + Math.max(0, input.nasdaqTrend ?? 0) * 15 + Math.max(0, liquidityScore) * 0.34 + cryptoUp);
+  const goldUp = positive(input.goldTrend, 18);
+  const cryptoUp = positive(momentum, 14);
+  const riskOnBase = clampPercent((100 - Math.max(dxyUp, ratesUp)) * 0.22 + positive(input.nasdaqTrend, 15) + Math.max(0, liquidityScore) * 0.34 + cryptoUp);
 
   return {
     "Risk-On Expansion": riskOnBase,
-    "Weak Risk-On": clampPercent(riskOnBase * 0.72 + Math.max(0, input.nasdaqTrend ?? 0) * 10 + Math.max(0, momentum) * 6),
-    "Fragile Risk-On": clampPercent(riskOnBase * 0.56 + leverageHeat * 0.26 + Math.max(0, -liquidityScore) * 0.25 + Math.max(0, input.dxyTrend ?? 0) * 8),
+    "Weak Risk-On": clampPercent(riskOnBase * 0.72 + positive(input.nasdaqTrend, 10) + positive(momentum, 6)),
+    "Fragile Risk-On": clampPercent(riskOnBase * 0.56 + leverageHeat * 0.26 + Math.max(0, -liquidityScore) * 0.25 + positive(input.dxyTrend, 8)),
     "Liquidity-Constrained Risk-On": clampPercent(riskOnBase * 0.58 + Math.max(0, -liquidityScore) * 0.36 + dxyUp * 0.12 + ratesUp * 0.1),
     "Risk-Off Defensive": clampPercent(dxyUp * 0.22 + ratesUp * 0.22 + nasdaqDown * 0.22 + cryptoDown * 0.2 + vixShock * 0.14),
     "Liquidity Squeeze": clampPercent(dxyUp * 0.2 + ratesUp * 0.22 + stablecoinDown * 0.18 + etfNegative * 0.22 + Math.max(0, -liquidityScore) * 0.18),
     "Dollar Strength Pressure": clampPercent(dxyUp * 0.55 + cryptoDown * 0.25 + nasdaqDown * 0.2),
     "Rates Shock": clampPercent(ratesUp * 0.58 + nasdaqDown * 0.22 + cryptoDown * 0.2),
-    "Crypto-Specific Bullish": clampPercent(etfPositive * 0.42 + Math.max(0, input.stablecoinTrend ?? 0) * 16 + cryptoUp * 0.26 + Math.max(0, -(input.dxyTrend ?? 0)) * 10),
+    "Crypto-Specific Bullish": clampPercent(etfPositive * 0.42 + positive(input.stablecoinTrend, 16) + cryptoUp * 0.26 + negative(input.dxyTrend, 10)),
     "Crypto-Specific Stress": clampPercent(etfNegative * 0.3 + leverageHeat * 0.28 + cryptoDown * 0.28 + stablecoinDown * 0.14),
     "Geopolitical Shock": clampPercent(geopolitics * 0.48 + goldUp * 0.28 + vixShock * 0.16 + dxyUp * 0.08),
     "Neutral / Transition": 48,
-    "High Volatility Unclear Regime": clampPercent(vixShock * 0.42 + leverageHeat * 0.32 + Math.abs((input.newsSentiment ?? 0)) * 0.26),
+    "High Volatility Unclear Regime": clampPercent(vixShock * 0.42 + leverageHeat * 0.32 + Math.abs(input.newsSentiment ?? 0) * 0.26),
   } satisfies Record<MacroRegimeLabel, number>;
 }
 
 export function evaluateRiskOnConfirmation(input: RegimeInputVector, liquidity: LiquidityEngineOutput) {
   const momentum = cryptoMomentum(input);
   const flags = {
-    nasdaqPositive: (input.nasdaqTrend ?? 0) > 0.15,
-    cryptoLiquidityPositive: liquidity.cryptoLiquidityScore > 0 && (liquidity.realSpotLiquidityScore ?? 0) > 0,
+    nasdaqPositive: input.nasdaqTrend !== null && input.nasdaqTrend > 0.15,
+    cryptoLiquidityPositive: liquidity.dataQuality !== "unavailable" && liquidity.cryptoLiquidityScore > 0 && typeof liquidity.realSpotLiquidityScore === "number" && liquidity.realSpotLiquidityScore > 0,
     dxyNeutralOrWeakening: input.dxyTrend !== null && input.dxyTrend <= 0.15,
     leverageNotOverheated: liquidity.leverageStress < 70,
-    cryptoMomentumAligned: momentum > 0.12 && (input.btcTrend ?? 0) > -0.2 && (input.ethTrend ?? 0) > -0.25 && (input.solTrend ?? 0) > -0.45,
+    cryptoMomentumAligned: momentum !== null && momentum > 0.12 && input.btcTrend !== null && input.ethTrend !== null && input.solTrend !== null && input.btcTrend > -0.2 && input.ethTrend > -0.25 && input.solTrend > -0.45,
     etfOrStablecoinConfirmation: (input.btcEtfFlow !== null && input.btcEtfFlow > 0) || (input.stablecoinTrend !== null && input.stablecoinTrend >= 0.35),
   };
   const confirmationCount = Object.values(flags).filter(Boolean).length;
@@ -190,17 +201,18 @@ export function applyRegimePenalties(params: {
   liquidity: LiquidityEngineOutput;
   correlations: CorrelationSignal[];
 }) {
-  const dxyRising = (params.input.dxyTrend ?? 0) > 0.15;
-  const liquidityNegative = params.liquidity.liquidityScoreSigned < 0;
-  const correlationUnstable = params.correlations.filter((signal) => signal.state === "unstable" || Math.abs(signal.correlation7D ?? 0) < 0.1).length;
+  const dxyRising = params.input.dxyTrend !== null && params.input.dxyTrend > 0.15;
+  const liquidityNegative = params.liquidity.dataQuality !== "unavailable" && params.liquidity.liquidityScoreSigned < 0;
+  const correlationUnstable = params.correlations.filter((signal) => signal.state === "unstable" || (typeof signal.correlation7D === "number" && Math.abs(signal.correlation7D) < 0.1)).length;
   const riskOnLike =
     params.label === "Risk-On Expansion" ||
     params.label === "Weak Risk-On" ||
     params.label === "Fragile Risk-On" ||
     params.label === "Liquidity-Constrained Risk-On" ||
     params.label === "Crypto-Specific Bullish";
+  const liquidityAvailable = params.liquidity.dataQuality !== "unavailable";
   const contradictionPenalty = riskOnLike && dxyRising && liquidityNegative ? 18 : dxyRising && liquidityNegative ? 8 : 0;
-  const liquidityPenalty = riskOnLike ? (params.liquidity.liquidityScoreSigned <= -25 ? 24 : params.liquidity.liquidityScoreSigned <= 0 ? 14 : 0) : 0;
+  const liquidityPenalty = riskOnLike && liquidityAvailable ? (params.liquidity.liquidityScoreSigned <= -25 ? 24 : params.liquidity.liquidityScoreSigned <= 0 ? 14 : 0) : 0;
   const leveragePenalty = params.liquidity.leverageStress > 70 ? Math.min(24, 8 + (params.liquidity.leverageStress - 70) * 0.55) : 0;
   const dataQualityPenalty = (params.input.btcEtfFlow === null ? 10 : 0) + (params.liquidity.dataQuality === "unavailable" ? 14 : params.liquidity.dataQuality === "partial_live" ? 5 : 0);
   const correlationPenalty = Math.min(14, correlationUnstable * 3);
@@ -233,16 +245,16 @@ function transitionAnalysis(params: {
   input: RegimeInputVector;
   liquidity: LiquidityEngineOutput;
 }) {
-  const macroPressure = (params.input.dxyTrend ?? 0) > 0.15 || (params.input.us10yTrend ?? 0) > 0.03;
-  const leveragePressure = params.liquidity.leverageStress >= 70;
-  const liquidityWeak = params.liquidity.liquidityScoreSigned < 0 || (params.liquidity.liquiditySustainabilityScore ?? 50) < 45;
+  const macroPressure = (params.input.dxyTrend !== null && params.input.dxyTrend > 0.15) || (params.input.us10yTrend !== null && params.input.us10yTrend > 0.03);
+  const leveragePressure = params.liquidity.dataQuality !== "unavailable" && params.liquidity.leverageStress >= 70;
+  const liquidityWeak = params.liquidity.dataQuality !== "unavailable" && (params.liquidity.liquidityScoreSigned < 0 || (params.liquidity.liquiditySustainabilityScore !== undefined && params.liquidity.liquiditySustainabilityScore < 45));
   const probability = clampPercent(34 + params.penalties.contradictionPenalty * 1.2 + params.penalties.liquidityPenalty * 1.1 + params.penalties.leveragePenalty + (macroPressure ? 12 : 0));
   if ((params.label === "Fragile Risk-On" || params.label === "Liquidity-Constrained Risk-On") && (macroPressure || liquidityWeak || leveragePressure)) {
     return {
       state: leveragePressure ? "leverage_instability" : liquidityWeak ? "failed_risk_on" : "macro_deterioration",
       probability,
       targetRegime: "Neutral / Transition" as MacroRegimeLabel,
-      explanation: `احتمال گذار به خنثی/دفاعی بالا رفته چون ${macroPressure ? "DXY یا US10Y هنوز فشارزا است" : "فشار ماکرو آرام‌تر است"}، پایداری نقدینگی ${params.liquidity.liquiditySustainabilityScore ?? 0}/100 است و leverage stress روی ${params.liquidity.leverageStress}/100 قرار دارد.`,
+      explanation: `احتمال گذار به خنثی/دفاعی بالا رفته چون ${macroPressure ? "DXY یا US10Y هنوز فشارزا است" : "فشار ماکرو آرام‌تر است"}، پایداری نقدینگی ${params.liquidity.liquiditySustainabilityScore ?? "ناموجود"}/100 است و leverage stress روی ${params.liquidity.dataQuality === "unavailable" ? "ناموجود" : params.liquidity.leverageStress}/100 قرار دارد.`,
     };
   }
   if (params.liquidity.liquiditySustainabilityScore !== undefined && params.liquidity.liquiditySustainabilityScore >= 58 && params.finalScore >= 62) {
@@ -276,7 +288,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
 
   if (selected.label === "Risk-On Expansion" && !riskOnConfirmation.passed) {
     const constrainedLabel: MacroRegimeLabel =
-      liquidity.liquidityScoreSigned < 0 || (input.dxyTrend ?? 0) > 0.15
+      (liquidity.dataQuality !== "unavailable" && liquidity.liquidityScoreSigned < 0) || (input.dxyTrend !== null && input.dxyTrend > 0.15)
         ? "Liquidity-Constrained Risk-On"
         : liquidity.leverageStress >= 70
           ? "Fragile Risk-On"
@@ -307,7 +319,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
     criticalKeys: ["btc_trend_24h", "dxy_trend_24h", "us10y_trend_24h"],
     signalAgreement: clampPercent(topScore - selected.totalPenalty * 0.35),
     historicalConsistency: changedLast24h ? 58 : 72,
-    marketConfirmation: clampPercent(100 - Math.abs((input.btcTrend ?? 0) - (input.nasdaqTrend ?? 0)) * 8),
+    marketConfirmation: input.btcTrend === null || input.nasdaqTrend === null ? 35 : clampPercent(100 - Math.abs(input.btcTrend - input.nasdaqTrend) * 8),
   });
   const adaptiveConfidence = confidenceDetail.score === null ? 0 : Math.min(confidenceDetail.score, reliability.confidenceCaps.regime);
   const proxyConfidence =
@@ -332,7 +344,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
     input.dxyTrend !== null ? `شاخص دلار (DXY) طی ۲۴ ساعت ${input.dxyTrend.toFixed(2)}٪ تغییر کرده؛ کانال دلار ${input.dxyTrend > 0 ? "فشارزا" : "حمایتی"} است.` : "داده معتبر برای شاخص دلار در دسترس نیست.",
     input.us10yTrend !== null ? `بازده اوراق ۱۰ ساله آمریکا (US10Y) ${input.us10yTrend.toFixed(2)} واحد تغییر کرده؛ کانال نرخ بهره ${input.us10yTrend > 0 ? "فشارزا" : "آرام‌تر"} است.` : "داده معتبر برای بازده اوراق ۱۰ ساله در دسترس نیست.",
     input.nasdaqTrend !== null ? `Nasdaq طی ۲۴ ساعت ${input.nasdaqTrend.toFixed(2)}٪ تغییر کرده و مسیر ریسک‌پذیری را به‌خصوص برای ETH و SOL منتقل می‌کند.` : "داده معتبر برای Nasdaq در دسترس نیست.",
-    `امتیاز نقدینگی: ${liquidity.liquidityScoreSigned}/100؛ نقدینگی اسپات ${liquidity.realSpotLiquidityScore ?? 0}/100، اهرمی ${liquidity.leveragedLiquidityScore ?? 0}/100 و پایداری ${liquidity.liquiditySustainabilityScore ?? 0}/100 است.`,
+    `امتیاز نقدینگی: ${liquidity.dataQuality === "unavailable" ? "ناموجود" : `${liquidity.liquidityScoreSigned}/100`}؛ نقدینگی اسپات ${liquidity.realSpotLiquidityScore ?? "ناموجود"}/100، اهرمی ${liquidity.leveragedLiquidityScore ?? "ناموجود"}/100 و پایداری ${liquidity.liquiditySustainabilityScore ?? "ناموجود"}/100 است.`,
     `جریمه رژیم: contradiction ${selected.penalties.contradictionPenalty}، liquidity ${selected.penalties.liquidityPenalty}، leverage ${selected.penalties.leveragePenalty}، data ${selected.penalties.dataQualityPenalty}.`,
     `همبستگی ۷ روزه BTC/Nasdaq برابر ${formatNullableCorrelation(btcNasdaq?.correlation7D)} و BTC/DXY برابر ${formatNullableCorrelation(btcDxy?.correlation7D)} است.`,
   ];
@@ -372,7 +384,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
       regimeInputSnapshot.regime === "insufficient_core_data"
         ? "داده‌های رایگان اصلی برای تشخیص رژیم کافی نیستند؛ سیستم رژیم قطعی تولید نمی‌کند و تا refresh بعدی فقط وضعیت کیفیت داده را نشان می‌دهد."
         : regimeLabel === "Liquidity-Constrained Risk-On"
-        ? `ساختار فعلی «${regimeLabelFa[regimeLabel]}» است، نه expansion کامل. Nasdaq بخشی از اشتهای ریسک را حمایت می‌کند، اما امتیاز نقدینگی ${liquidity.liquidityScoreSigned}/100، پایداری نقدینگی ${liquidity.liquiditySustainabilityScore ?? 0}/100، وضعیت ETF ${input.btcEtfFlow === null ? "ناموجود" : "قابل محاسبه"} و leverage stress ${liquidity.leverageStress}/100 اجازه نمی‌دهد رژیم به‌عنوان Risk-On Expansion معتبر طبقه‌بندی شود.`
+        ? `ساختار فعلی «${regimeLabelFa[regimeLabel]}» است، نه expansion کامل. Nasdaq بخشی از اشتهای ریسک را حمایت می‌کند، اما امتیاز نقدینگی ${liquidity.dataQuality === "unavailable" ? "ناموجود" : `${liquidity.liquidityScoreSigned}/100`}، پایداری نقدینگی ${liquidity.liquiditySustainabilityScore ?? "ناموجود"}/100، وضعیت ETF ${input.btcEtfFlow === null ? "ناموجود" : "قابل محاسبه"} و leverage stress ${liquidity.dataQuality === "unavailable" ? "ناموجود" : `${liquidity.leverageStress}/100`} اجازه نمی‌دهد رژیم به‌عنوان Risk-On Expansion معتبر طبقه‌بندی شود.`
         : regimeLabel === "Fragile Risk-On"
           ? `ساختار فعلی «${regimeLabelFa[regimeLabel]}» است: حرکت ریسک‌پذیری دیده می‌شود، اما اهرم معاملاتی یا کیفیت نقدینگی پایداری آن را محدود می‌کند. اگر Funding Rate (نرخ فاندینگ) و Open Interest (موقعیت‌های باز) بالاتر بروند بدون اینکه ETF یا استیبل‌کوین تأیید کند، احتمال trap risk افزایش می‌یابد.`
           : regimeLabel === "Weak Risk-On"

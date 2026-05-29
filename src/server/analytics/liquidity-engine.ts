@@ -21,7 +21,9 @@ export interface LiquidityInputVector {
 }
 
 function signalValue(signals: Record<string, NormalizedSignal>, key: string) {
-  return signals[key]?.value ?? null;
+  const signal = signals[key];
+  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  return signal.value;
 }
 
 export function buildLiquidityInput(): LiquidityInputVector {
@@ -75,7 +77,7 @@ function scoreCryptoLiquidity(input: LiquidityInputVector) {
   const etf = scoreEtfFlow(input.btcEtfFlow);
   const reserves = scoreExchangeReserves(input.exchangeReserveTrend);
   const spot = input.spotVolumeTrend === null ? null : input.spotVolumeTrend * 2.2;
-  const futures = input.futuresVolumeTrend === null ? null : -Math.max(0, input.futuresVolumeTrend - Math.max(0, input.spotVolumeTrend ?? 0)) * 1.4;
+  const futures = input.futuresVolumeTrend === null || input.spotVolumeTrend === null ? null : -Math.max(0, input.futuresVolumeTrend - Math.max(0, input.spotVolumeTrend)) * 1.4;
   const funding = input.fundingRate === null ? null : normalizeSignalScore({ key: "funding_btc", value: input.fundingRate, quality: "live" });
   const openInterest = input.openInterestTrend === null ? null : normalizeSignalScore({ key: "open_interest_btc_24h", value: input.openInterestTrend, quality: "live" });
   const score = weightedAvailable([
@@ -110,9 +112,9 @@ export function scoreLeveragedLiquidity(input: LiquidityInputVector) {
   const fundingHeat = input.fundingRate === null ? null : input.fundingRate > 0.06 ? 95 : input.fundingRate > 0.025 ? 78 : input.fundingRate > 0 ? 42 : input.fundingRate < -0.02 ? 58 : 22;
   const openInterestHeat = input.openInterestTrend === null ? null : input.openInterestTrend >= 8 ? 92 : input.openInterestTrend >= 3 ? 72 : input.openInterestTrend <= -5 ? 18 : 36;
   const futuresVsSpot =
-    input.futuresVolumeTrend === null
+    input.futuresVolumeTrend === null || input.spotVolumeTrend === null
       ? null
-      : clampPercent(45 + Math.max(0, input.futuresVolumeTrend - Math.max(0, input.spotVolumeTrend ?? 0)) * 2.2 + Math.max(0, input.futuresVolumeTrend) * 0.55);
+      : clampPercent(45 + Math.max(0, input.futuresVolumeTrend - Math.max(0, input.spotVolumeTrend)) * 2.2 + Math.max(0, input.futuresVolumeTrend) * 0.55);
   const score = weightedAvailable([
     { value: fundingHeat, weight: 0.35 },
     { value: openInterestHeat, weight: 0.35 },
@@ -122,32 +124,36 @@ export function scoreLeveragedLiquidity(input: LiquidityInputVector) {
 }
 
 export function detectLiquidityV2State(params: {
-  liquidityScoreSigned: number;
-  macroLiquidityScore: number;
-  cryptoLiquidityScore: number;
-  realSpotLiquidityScore: number;
-  leveragedLiquidityScore: number;
-  leverageStress: number;
-  sustainabilityScore: number;
+  liquidityScoreSigned: number | null;
+  macroLiquidityScore: number | null;
+  cryptoLiquidityScore: number | null;
+  realSpotLiquidityScore: number | null;
+  leveragedLiquidityScore: number | null;
+  leverageStress: number | null;
+  sustainabilityScore: number | null;
   stablecoinScore: number | null;
   btcEtfFlow: number | null;
 }): LiquidityV2State {
   const etfWeakOrUnavailable = params.btcEtfFlow === null || params.btcEtfFlow <= 0;
-  const stablecoinWeak = (params.stablecoinScore ?? 0) <= 5;
-  if (params.liquidityScoreSigned <= -45 || (params.macroLiquidityScore <= -35 && params.cryptoLiquidityScore <= -20)) return "liquidity_squeeze";
-  if (params.leverageStress >= 72 && params.realSpotLiquidityScore <= 10) return "speculative_overheating";
-  if (params.liquidityScoreSigned > 25 && params.realSpotLiquidityScore > 25 && params.leverageStress < 65 && params.sustainabilityScore >= 58) return "healthy_expansion";
-  if (params.liquidityScoreSigned > 12 && params.leveragedLiquidityScore >= 66 && params.realSpotLiquidityScore <= 20) return "leverage_driven_expansion";
-  if (params.realSpotLiquidityScore <= 8 && params.leveragedLiquidityScore >= 55 && (etfWeakOrUnavailable || stablecoinWeak)) return "weak_participation_rally";
-  if (params.macroLiquidityScore < -20 && params.realSpotLiquidityScore <= 15) return "defensive_positioning";
+  const stablecoinWeak = params.stablecoinScore !== null && params.stablecoinScore <= 5;
+  if (params.liquidityScoreSigned !== null && params.liquidityScoreSigned <= -45) return "liquidity_squeeze";
+  if (params.macroLiquidityScore !== null && params.cryptoLiquidityScore !== null && params.macroLiquidityScore <= -35 && params.cryptoLiquidityScore <= -20) return "liquidity_squeeze";
+  if (params.leverageStress !== null && params.realSpotLiquidityScore !== null && params.leverageStress >= 72 && params.realSpotLiquidityScore <= 10) return "speculative_overheating";
+  if (params.liquidityScoreSigned !== null && params.realSpotLiquidityScore !== null && params.leverageStress !== null && params.sustainabilityScore !== null && params.liquidityScoreSigned > 25 && params.realSpotLiquidityScore > 25 && params.leverageStress < 65 && params.sustainabilityScore >= 58) return "healthy_expansion";
+  if (params.liquidityScoreSigned !== null && params.leveragedLiquidityScore !== null && params.realSpotLiquidityScore !== null && params.liquidityScoreSigned > 12 && params.leveragedLiquidityScore >= 66 && params.realSpotLiquidityScore <= 20) return "leverage_driven_expansion";
+  if (params.realSpotLiquidityScore !== null && params.leveragedLiquidityScore !== null && params.realSpotLiquidityScore <= 8 && params.leveragedLiquidityScore >= 55 && (etfWeakOrUnavailable || stablecoinWeak)) return "weak_participation_rally";
+  if (params.macroLiquidityScore !== null && params.realSpotLiquidityScore !== null && params.macroLiquidityScore < -20 && params.realSpotLiquidityScore <= 15) return "defensive_positioning";
   return "neutral_mixed";
 }
 
-export function detectLiquidityStateFromSigned(score: number, leverageStress: number): LiquidityState {
-  if (score <= -55 || (score < -25 && leverageStress >= 70)) return "contraction";
-  if (score >= 55 && leverageStress < 72) return "expansion";
-  if (leverageStress >= 76) return "overheating";
-  if (score < -15 || leverageStress >= 66) return "fragile";
+export function detectLiquidityStateFromSigned(score: number | null, leverageStress: number | null): LiquidityState {
+  if (score === null && leverageStress === null) return "neutral";
+  const effectiveScore = score ?? 0;
+  const effectiveLeverage = leverageStress ?? 0;
+  if (effectiveScore <= -55 || (effectiveScore < -25 && effectiveLeverage >= 70)) return "contraction";
+  if (effectiveScore >= 55 && leverageStress !== null && effectiveLeverage < 72) return "expansion";
+  if (effectiveLeverage >= 76) return "overheating";
+  if (effectiveScore < -15 || effectiveLeverage >= 66) return "fragile";
   return "neutral";
 }
 
@@ -210,30 +216,50 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
   const realSpotLiquidityScore = scoreRealSpotLiquidity(input);
   const leveragedLiquidityScore = scoreLeveragedLiquidity(input);
   const totalLiquidity = weightedAvailable([{ value: macroLiquidityScore, weight: 0.42 }, { value: cryptoLiquidityScore, weight: 0.58 }]);
-  const liquidityScoreSigned = totalLiquidity === null ? 0 : clampSigned(totalLiquidity);
-  const leverageStress = clampPercent(50 + (input.openInterestTrend ?? 0) * 4 + (input.fundingRate ?? 0) * 900 + Math.max(0, (input.futuresVolumeTrend ?? 0) - (input.spotVolumeTrend ?? 0)) * 1.1);
+  const liquidityScoreSignedRaw = totalLiquidity === null ? null : clampSigned(totalLiquidity);
+  const leverageStressInputs = weightedAvailable([
+    { value: input.openInterestTrend === null ? null : input.openInterestTrend * 4, weight: 0.34 },
+    { value: input.fundingRate === null ? null : input.fundingRate * 900, weight: 0.34 },
+    { value: input.futuresVolumeTrend === null || input.spotVolumeTrend === null ? null : Math.max(0, input.futuresVolumeTrend - input.spotVolumeTrend) * 1.1, weight: 0.32 },
+  ]);
+  const leverageStressRaw = leverageStressInputs === null ? null : clampPercent(50 + leverageStressInputs);
+  const liquidityScoreSigned = liquidityScoreSignedRaw ?? 0;
+  const leverageStress = leverageStressRaw ?? 0;
   const stablecoinScore = scoreStablecoins(input.stablecoinMarketCapTrend);
   const etfUnavailablePenalty = input.btcEtfFlow === null ? 8 : 0;
-  const liquiditySustainabilityScore = clampPercent(
-    50 +
-      (realSpotLiquidityScore ?? 0) * 0.35 +
-      (macroLiquidityScore ?? 0) * 0.25 +
-      (stablecoinScore ?? 0) * 0.15 -
-      leverageStress * 0.32 -
-      etfUnavailablePenalty,
-  );
-  const institutionalFlow = clampPercent(50 + (scoreEtfFlow(input.btcEtfFlow) ?? 0) * 0.5 + (scoreEtfFlow(input.ethEtfFlow) ?? 0) * 0.18);
-  const stablecoinExpansion = clampPercent(50 + (scoreStablecoins(input.stablecoinMarketCapTrend) ?? 0) * 0.6 + (scoreStablecoins(input.usdtSupplyTrend) ?? 0) * 0.25 + (scoreStablecoins(input.usdcSupplyTrend) ?? 0) * 0.15);
-  const speculativeHeat = clampPercent(50 + leverageStress * 0.42 + Math.max(0, input.futuresVolumeTrend ?? 0) * 1.7 - Math.max(0, input.spotVolumeTrend ?? 0) * 0.7);
-  const riskCompression = clampPercent(50 + liquidityScoreSigned * 0.28 - leverageStress * 0.18);
-  const liquidityState = detectLiquidityStateFromSigned(liquidityScoreSigned, leverageStress);
+  const liquiditySustainabilityRaw = weightedAvailable([
+    { value: realSpotLiquidityScore, weight: 0.35 },
+    { value: macroLiquidityScore, weight: 0.25 },
+    { value: stablecoinScore, weight: 0.15 },
+    { value: leverageStressRaw === null ? null : -leverageStressRaw, weight: 0.25 },
+  ]);
+  const liquiditySustainabilityScore = liquiditySustainabilityRaw === null ? null : clampPercent(50 + liquiditySustainabilityRaw - etfUnavailablePenalty);
+  const institutionalFlowRaw = weightedAvailable([
+    { value: scoreEtfFlow(input.btcEtfFlow), weight: 0.7 },
+    { value: scoreEtfFlow(input.ethEtfFlow), weight: 0.3 },
+  ]);
+  const institutionalFlow = institutionalFlowRaw === null ? 0 : clampPercent(50 + institutionalFlowRaw * 0.5);
+  const stablecoinExpansionRaw = weightedAvailable([
+    { value: scoreStablecoins(input.stablecoinMarketCapTrend), weight: 0.6 },
+    { value: scoreStablecoins(input.usdtSupplyTrend), weight: 0.25 },
+    { value: scoreStablecoins(input.usdcSupplyTrend), weight: 0.15 },
+  ]);
+  const stablecoinExpansion = stablecoinExpansionRaw === null ? 0 : clampPercent(50 + stablecoinExpansionRaw);
+  const speculativeHeatRaw = weightedAvailable([
+    { value: leverageStressRaw, weight: 0.55 },
+    { value: input.futuresVolumeTrend === null ? null : Math.max(0, input.futuresVolumeTrend) * 1.7, weight: 0.25 },
+    { value: input.spotVolumeTrend === null ? null : -Math.max(0, input.spotVolumeTrend) * 0.7, weight: 0.2 },
+  ]);
+  const speculativeHeat = speculativeHeatRaw === null ? 0 : clampPercent(50 + speculativeHeatRaw * 0.42);
+  const riskCompression = liquidityScoreSignedRaw === null || leverageStressRaw === null ? 0 : clampPercent(50 + liquidityScoreSignedRaw * 0.28 - leverageStressRaw * 0.18);
+  const liquidityState = detectLiquidityStateFromSigned(liquidityScoreSignedRaw, leverageStressRaw);
   const v2State = detectLiquidityV2State({
-    liquidityScoreSigned,
-    macroLiquidityScore: macroLiquidityScore ?? 0,
-    cryptoLiquidityScore: cryptoLiquidityScore ?? 0,
-    realSpotLiquidityScore: realSpotLiquidityScore ?? 0,
-    leveragedLiquidityScore: leveragedLiquidityScore ?? 0,
-    leverageStress,
+    liquidityScoreSigned: liquidityScoreSignedRaw,
+    macroLiquidityScore,
+    cryptoLiquidityScore,
+    realSpotLiquidityScore,
+    leveragedLiquidityScore,
+    leverageStress: leverageStressRaw,
     sustainabilityScore: liquiditySustainabilityScore,
     stablecoinScore,
     btcEtfFlow: input.btcEtfFlow,
@@ -244,9 +270,9 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     signals: liquiditySignals,
     requiredGroups: ["price", "macro", "liquidity", "stablecoins"],
     criticalKeys: ["dxy_trend_24h", "us10y_trend_24h", "stablecoin_market_cap_7d"],
-    signalAgreement: 72 - Math.min(40, Math.abs((macroLiquidityScore ?? 0) - (cryptoLiquidityScore ?? 0)) * 0.25),
+    signalAgreement: macroLiquidityScore === null || cryptoLiquidityScore === null ? 45 : 72 - Math.min(40, Math.abs(macroLiquidityScore - cryptoLiquidityScore) * 0.25),
     historicalConsistency: 67,
-    marketConfirmation: Math.max(35, 100 - Math.abs((input.btcEtfFlow ?? 0) / 6_000_000 - (input.spotVolumeTrend ?? 0))),
+    marketConfirmation: input.btcEtfFlow === null || input.spotVolumeTrend === null ? 35 : Math.max(35, 100 - Math.abs(input.btcEtfFlow / 6_000_000 - input.spotVolumeTrend)),
   });
   const scores = deriveBaseScores();
   const invalidReason = validationReason(snapshot.signals, ["dxy_trend_24h", "us10y_trend_24h", "stablecoin_market_cap_7d"]);
@@ -269,17 +295,19 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
             "اطمینان نقدینگی از داده‌های رایگان، proxyهای مشتق‌شده، تازگی منابع و جریمه نبود ETF/exchange-reserve مستقیم محاسبه شده است؛ بنابراین نبود داده پریمیوم خروجی را قطع نمی‌کند.",
         }
       : confidenceDetail;
-  const stablecoinTrend = biasFromScore(scoreStablecoins(input.stablecoinMarketCapTrend) ?? 0);
-  const etfFlowStatus = biasFromScore(scoreEtfFlow(input.btcEtfFlow) ?? 0);
+  const stablecoinBiasScore = scoreStablecoins(input.stablecoinMarketCapTrend);
+  const etfBiasScore = scoreEtfFlow(input.btcEtfFlow);
+  const stablecoinTrend = stablecoinBiasScore === null ? "mixed" : biasFromScore(stablecoinBiasScore);
+  const etfFlowStatus = etfBiasScore === null ? "mixed" : biasFromScore(etfBiasScore);
   const qualityScore = calculateDataQualityScore({ signals: snapshot.signals, requiredSignals: 12 });
 
   const warnings = [
-    leverageStress >= 72 && (realSpotLiquidityScore ?? 0) <= 10
+    leverageStressRaw !== null && realSpotLiquidityScore !== null && leverageStressRaw >= 72 && realSpotLiquidityScore <= 10
       ? "هشدار: اهرم معاملاتی بالاست اما نقدینگی اسپات تأیید کافی ندارد؛ احتمال رالی اهرمی یا دام لیکوییدیشن افزایش می‌یابد."
       : "",
     input.btcEtfFlow === null ? "جریان ETF بیت‌کوین ناموجود است؛ موتور اجازه نمی‌دهد این کانال به‌صورت ساختگی به نفع یا ضرر بازار وزن بگیرد." : "",
     stablecoinScore !== null && stablecoinScore <= 0 ? "رشد استیبل‌کوین‌ها زیر آستانه حمایتی ۰٫۳۵٪ هفتگی است؛ پشتوانه نقدینگی نقدی ضعیف‌تر از حالت expansion است." : "",
-    (macroLiquidityScore ?? 0) < -20 ? "DXY یا US10Y در حال فشار به نقدینگی کلان هستند؛ این کانال می‌تواند اثر خبرهای مثبت کریپتو را محدود کند." : "",
+    macroLiquidityScore !== null && macroLiquidityScore < -20 ? "DXY یا US10Y در حال فشار به نقدینگی کلان هستند؛ این کانال می‌تواند اثر خبرهای مثبت کریپتو را محدود کند." : "",
   ].filter(Boolean);
 
   const decomposition = [
@@ -287,7 +315,7 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     `نقدینگی واقعی اسپات: ${realSpotLiquidityScore ?? "ناموجود"}/100؛ آستانه حمایتی زمانی فعال است که استیبل‌کوین‌ها بالای ۰٫۳۵٪ رشد کنند و ETF/حجم اسپات هم‌زمان مثبت باشند.`,
     `نقدینگی اهرمی: ${leveragedLiquidityScore ?? "ناموجود"}/100؛ بالاتر از ۶۵ یعنی حرکت بیشتر به OI، Funding Rate (نرخ فاندینگ) و futures volume وابسته است.`,
     `نقدینگی کلان: ${macroLiquidityScore ?? "ناموجود"}/100؛ DXY مثبت و رشد US10Y این بخش را منفی می‌کند.`,
-    `پایداری نقدینگی: ${liquiditySustainabilityScore}/100؛ زیر ۴۵ یعنی ادامه حرکت بدون تأیید اسپات و استیبل‌کوین شکننده است.`,
+    `پایداری نقدینگی: ${liquiditySustainabilityScore ?? "ناموجود"}/100؛ زیر ۴۵ یعنی ادامه حرکت بدون تأیید اسپات و استیبل‌کوین شکننده است.`,
   ];
 
   const explanation =
@@ -312,9 +340,9 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     liquidityScore: clampPercent(50 + liquidityScoreSigned / 2),
     macroLiquidityScore: macroLiquidityScore ?? 0,
     cryptoLiquidityScore: cryptoLiquidityScore ?? 0,
-    realSpotLiquidityScore: realSpotLiquidityScore ?? 0,
-    leveragedLiquidityScore: leveragedLiquidityScore ?? 0,
-    liquiditySustainabilityScore,
+    realSpotLiquidityScore: realSpotLiquidityScore ?? undefined,
+    leveragedLiquidityScore: leveragedLiquidityScore ?? undefined,
+    liquiditySustainabilityScore: liquiditySustainabilityScore ?? undefined,
     stablecoinTrend,
     etfFlowStatus,
     leverageStress,

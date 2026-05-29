@@ -46,16 +46,18 @@ Routes updated to use the dynamic status service:
 
 ## Not Changed Intentionally
 
-The following areas still contain legacy `?? 0` compatibility behavior and should be migrated in the next Phase 2 slice or Phase 3 foundation work:
+The first active-engine migration slice has started. See `docs/phase_2_active_engine_null_handling_report.md`.
 
-- `src/server/analytics/asset-impact-engine.ts`
-- `src/server/analytics/liquidity-engine.ts`
-- `src/server/analytics/market-regime-engine.ts`
+The following areas still contain legacy `?? 0` compatibility behavior and should be migrated before Phase 2 closes:
+
 - `src/server/analytics/derived-signal-engine.ts`
 - `src/server/analytics/divergence-engine.ts`
+- `src/server/alerts/smart-alert-engine.ts`
+- `src/server/analytics/correlation-engine.ts`
 - `src/server/analytics/scoring-engine.ts`
+- required numeric output fields in active engine contracts that still need nullable/unavailable output support
 
-Reason: these files are active intelligence engines. Replacing all null-to-zero behavior at once would change broad runtime behavior and risk breaking existing UI/API contracts. This cleanup removed the safest hidden demo surfaces first.
+Reason: these files are active intelligence paths. Replacing all null-to-zero behavior at once would change broad runtime behavior and risk breaking existing UI/API contracts. Phase 2 is migrating them in small verified slices.
 
 ## Current Rule After Cleanup
 
@@ -67,4 +69,3 @@ No removed path now fabricates:
 - fake AI stage completion
 - fixed fake market constants
 - estimated adapter values in production
-

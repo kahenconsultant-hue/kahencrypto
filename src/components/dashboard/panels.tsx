@@ -272,6 +272,30 @@ function formatSignalPercent(value: number | null | undefined, digits = 2) {
   return `${value > 0 ? "+" : ""}${formatNumber(value, digits)}٪`;
 }
 
+function displaySignalValue(signal: { value: number | null; quality?: string } | undefined) {
+  if (!signal || typeof signal.value !== "number" || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  return signal.value;
+}
+
+function macroTone(value: number | null, positiveTone: "good" | "warn" | "bad" | "neutral", negativeTone: "good" | "warn" | "bad" | "neutral") {
+  if (typeof value !== "number") return "neutral";
+  if (value > 0) return positiveTone;
+  if (value < 0) return negativeTone;
+  return "neutral";
+}
+
+function formatOptionalSignedScore(value: number | null | undefined) {
+  return typeof value === "number" ? formatSignedScore(value) : "ناموجود";
+}
+
+function formatOptionalProgressScore(value: number | null | undefined) {
+  return typeof value === "number" ? `${formatNumber(value, 0)}/100` : "ناموجود";
+}
+
+function optionalProgress(value: number | null | undefined) {
+  return typeof value === "number" ? value : undefined;
+}
+
 function formatNullableCorrelation(value: number | null | undefined, compact = false) {
   return typeof value === "number" ? value.toFixed(2) : compact ? "—" : "نمونه ناکافی";
 }
@@ -603,6 +627,10 @@ export function TopAlertsPanel() {
 export function MacroSummaryPanel() {
   const snapshot = getSignalSnapshot();
   const byKey = snapshot.byKey;
+  const dxyValue = displaySignalValue(byKey.dxy_trend_24h);
+  const us10yValue = displaySignalValue(byKey.us10y_trend_24h);
+  const goldValue = displaySignalValue(byKey.gold_trend_24h);
+  const nasdaqValue = displaySignalValue(byKey.nasdaq_trend_24h);
 
   return (
     <Card>
@@ -620,10 +648,10 @@ export function MacroSummaryPanel() {
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="DXY (شاخص دلار)" value={formatSignalPercent(byKey.dxy_trend_24h?.value)} tone={(byKey.dxy_trend_24h?.value ?? 0) > 0 ? "warn" : "good"} detail={byKey.dxy_trend_24h?.source ?? "منبع در دسترس نیست."} />
-        <Metric label="US10Y (بازده اوراق)" value={formatSignalPercent(byKey.us10y_trend_24h?.value)} tone={(byKey.us10y_trend_24h?.value ?? 0) > 0 ? "warn" : "good"} detail={byKey.us10y_trend_24h?.source ?? "منبع در دسترس نیست."} />
-        <Metric label="Gold (طلا)" value={formatSignalPercent(byKey.gold_trend_24h?.value)} tone={(byKey.gold_trend_24h?.value ?? 0) > 0 ? "neutral" : "warn"} detail={byKey.gold_trend_24h?.source ?? "منبع در دسترس نیست."} />
-        <Metric label="Nasdaq (نزدک)" value={formatSignalPercent(byKey.nasdaq_trend_24h?.value)} tone={(byKey.nasdaq_trend_24h?.value ?? 0) > 0 ? "good" : "warn"} detail={byKey.nasdaq_trend_24h?.source ?? "منبع در دسترس نیست."} />
+        <Metric label="DXY (شاخص دلار)" value={formatSignalPercent(dxyValue)} tone={macroTone(dxyValue, "warn", "good")} detail={byKey.dxy_trend_24h?.source ?? "منبع در دسترس نیست."} />
+        <Metric label="US10Y (بازده اوراق)" value={formatSignalPercent(us10yValue)} tone={macroTone(us10yValue, "warn", "good")} detail={byKey.us10y_trend_24h?.source ?? "منبع در دسترس نیست."} />
+        <Metric label="Gold (طلا)" value={formatSignalPercent(goldValue)} tone={macroTone(goldValue, "neutral", "warn")} detail={byKey.gold_trend_24h?.source ?? "منبع در دسترس نیست."} />
+        <Metric label="Nasdaq (نزدک)" value={formatSignalPercent(nasdaqValue)} tone={macroTone(nasdaqValue, "good", "warn")} detail={byKey.nasdaq_trend_24h?.source ?? "منبع در دسترس نیست."} />
       </CardContent>
     </Card>
   );
@@ -685,6 +713,13 @@ export function AssetIntelligenceGrid() {
 
 export function LiquidityPanel() {
   const liquidityEngine = getLiquidityReport();
+  const liquidityAvailable = liquidityEngine.dataQuality !== "unavailable";
+  const macroLiquidityScore = liquidityAvailable ? liquidityEngine.macroLiquidityScore : undefined;
+  const cryptoLiquidityScore = liquidityAvailable ? liquidityEngine.cryptoLiquidityScore : undefined;
+  const realSpotLiquidityScore = liquidityEngine.realSpotLiquidityScore;
+  const leveragedLiquidityScore = liquidityEngine.leveragedLiquidityScore;
+  const liquiditySustainabilityScore = liquidityEngine.liquiditySustainabilityScore;
+  const leverageStress = liquidityAvailable ? liquidityEngine.leverageStress : undefined;
 
   return (
     <Card>
@@ -711,17 +746,17 @@ export function LiquidityPanel() {
           {liquidityEngine.formula}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Metric label="نقدینگی کلان" value={formatSignedScore(liquidityEngine.macroLiquidityScore)} tone={liquidityEngine.macroLiquidityScore >= 0 ? "good" : "bad"} />
-          <Metric label="نقدینگی کریپتو" value={formatSignedScore(liquidityEngine.cryptoLiquidityScore)} tone={liquidityEngine.cryptoLiquidityScore >= 0 ? "good" : "bad"} />
-          <Metric label="نقدینگی اسپات واقعی" value={formatSignedScore(liquidityEngine.realSpotLiquidityScore ?? 0)} tone={(liquidityEngine.realSpotLiquidityScore ?? 0) >= 0 ? "good" : "bad"} />
-          <Metric label="نقدینگی اهرمی" value={`${liquidityEngine.leveragedLiquidityScore ?? 0}/100`} tone={(liquidityEngine.leveragedLiquidityScore ?? 0) >= 70 ? "warn" : "neutral"} progress={liquidityEngine.leveragedLiquidityScore ?? 0} />
-          <Metric label="پایداری نقدینگی" value={`${liquidityEngine.liquiditySustainabilityScore ?? 0}/100`} tone={(liquidityEngine.liquiditySustainabilityScore ?? 0) >= 58 ? "good" : "warn"} progress={liquidityEngine.liquiditySustainabilityScore ?? 0} />
+          <Metric label="نقدینگی کلان" value={formatOptionalSignedScore(macroLiquidityScore)} tone={typeof macroLiquidityScore === "number" ? (macroLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
+          <Metric label="نقدینگی کریپتو" value={formatOptionalSignedScore(cryptoLiquidityScore)} tone={typeof cryptoLiquidityScore === "number" ? (cryptoLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
+          <Metric label="نقدینگی اسپات واقعی" value={formatOptionalSignedScore(realSpotLiquidityScore)} tone={typeof realSpotLiquidityScore === "number" ? (realSpotLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
+          <Metric label="نقدینگی اهرمی" value={formatOptionalProgressScore(leveragedLiquidityScore)} tone={typeof leveragedLiquidityScore === "number" && leveragedLiquidityScore >= 70 ? "warn" : "neutral"} progress={optionalProgress(leveragedLiquidityScore)} />
+          <Metric label="پایداری نقدینگی" value={formatOptionalProgressScore(liquiditySustainabilityScore)} tone={typeof liquiditySustainabilityScore === "number" ? (liquiditySustainabilityScore >= 58 ? "good" : "warn") : "neutral"} progress={optionalProgress(liquiditySustainabilityScore)} />
           <Metric label="جریان نهادی" value={`${liquidityEngine.institutionalFlow}/100`} tone={liquidityEngine.institutionalFlow >= 55 ? "good" : "warn"} progress={liquidityEngine.institutionalFlow} />
           <Metric label="رشد استیبل‌کوین" value={`${liquidityEngine.stablecoinExpansion}/100`} tone={liquidityEngine.stablecoinExpansion >= 55 ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
           <Metric label="حرارت سفته‌بازی" value={`${liquidityEngine.speculativeHeat}/100`} tone={liquidityEngine.speculativeHeat >= 70 ? "warn" : "neutral"} progress={liquidityEngine.speculativeHeat} />
           <Metric label="استیبل‌کوین (Stablecoin)" value={labelOrRaw(biasLabels, liquidityEngine.stablecoinTrend)} tone={liquidityEngine.stablecoinTrend === "bullish" ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
           <Metric label="جریان ETF" value={labelOrRaw(biasLabels, liquidityEngine.etfFlowStatus)} tone={liquidityEngine.etfFlowStatus === "bearish" ? "bad" : "good"} progress={liquidityEngine.institutionalFlow} />
-          <Metric label="فشار اهرم معاملاتی" value={`${liquidityEngine.leverageStress}/100`} tone="warn" progress={liquidityEngine.leverageStress} />
+          <Metric label="فشار اهرم معاملاتی" value={formatOptionalProgressScore(leverageStress)} tone={typeof leverageStress === "number" && leverageStress >= 70 ? "warn" : "neutral"} progress={optionalProgress(leverageStress)} />
         </div>
         {liquidityEngine.decomposition?.length ? (
           <div className="mt-4 grid gap-2 md:grid-cols-2">
@@ -882,20 +917,23 @@ export function EtfFlowsPanel() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.issuer} className="border-b last:border-0">
-                <td className="py-3 font-bold">{row.issuer}</td>
-                <td className={(row.signal?.value ?? 0) >= 0 ? "py-3 text-emerald-300" : "py-3 text-red-300"}>{typeof row.signal?.value === "number" ? formatCompactUsd(row.signal.value) : "ناموجود"}</td>
-                <td className="py-3">{typeof row.signal?.value === "number" ? (row.signal.value >= 0 ? "ورود سرمایه" : "خروج سرمایه") : "داده کافی وجود ندارد"}</td>
-                <td className="py-3">
-                  <div className="flex items-center gap-2">
-                    <Progress value={row.signal?.reliability ?? 0} className="w-24" />
-                    <span className="number-tabular">{row.signal?.reliability ?? 0}%</span>
-                  </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{row.signal?.source ?? "برای live شدن، env یا crawler ETF لازم است."}</div>
-                </td>
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const value = displaySignalValue(row.signal);
+              return (
+                <tr key={row.issuer} className="border-b last:border-0">
+                  <td className="py-3 font-bold">{row.issuer}</td>
+                  <td className={typeof value === "number" ? (value >= 0 ? "py-3 text-emerald-300" : "py-3 text-red-300") : "py-3 text-muted-foreground"}>{typeof value === "number" ? formatCompactUsd(value) : "ناموجود"}</td>
+                  <td className="py-3">{typeof value === "number" ? (value >= 0 ? "ورود سرمایه" : "خروج سرمایه") : "داده کافی وجود ندارد"}</td>
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      <Progress value={typeof value === "number" ? row.signal?.reliability ?? 0 : 0} className="w-24" />
+                      <span className="number-tabular">{typeof value === "number" ? row.signal?.reliability ?? 0 : 0}%</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">{row.signal?.source ?? "برای live شدن، env یا crawler ETF لازم است."}</div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </CardContent>

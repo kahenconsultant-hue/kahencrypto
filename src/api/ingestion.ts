@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { getAllSources, getEnabledSources } from "@/collectors/registry";
+import { exchangeMarketCollector } from "@/collectors/api/exchange-market-collector";
 import { marketSignalCollector } from "@/collectors/api/market-signal-collector";
 import { rssCollector } from "@/collectors/rss/rss-collector";
+import { htmlListingCollector } from "@/collectors/scraper/html-listing-collector";
 import { dedupeRawEvents } from "@/processors/deduplication";
 import { auditRawEventDedup, normalizeAndClusterRawEvents } from "@/processors/event-normalization";
 import { healthFromCollectorOutput, buildIngestionLog } from "@/health/source-health";
@@ -28,7 +30,9 @@ import type { Collector, FreshnessStatus, IngestionDeadLetterEntry, IngestionRun
 
 function collectorFor(source: SourceDefinition): Collector {
   if (source.parser === "market_signals") return marketSignalCollector;
+  if (source.parser === "exchange_market") return exchangeMarketCollector;
   if (source.parser === "rss") return rssCollector;
+  if (source.parser === "html_listing") return htmlListingCollector;
   return {
     sourceType: source.sourceType,
     async collect() {

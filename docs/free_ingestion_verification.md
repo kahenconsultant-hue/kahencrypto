@@ -1,46 +1,53 @@
 # Free Ingestion Verification
 
-## وضعیت آخرین اجرای واقعی
+Generated: 2026-05-30
 
-آخرین اجرای دستی ingestion با Supabase فعال انجام شد و داده‌ها در جدول‌های runtime ذخیره شدند.
+## Verification summary
 
-- `runId`: `e104edad-6d59-405b-8d19-5c33c58fd860`
-- `pulledEvents`: 185
-- `pulledMetrics`: 20
-- `rawEventsInserted`: 2
-- `rawEventsUpdated`: 183
-- `normalizedEventsCreated`: 204
-- `eventClustersCreated`: 201
-- `duplicatesDetected`: 3
-- `failedSources`: 2
-- `deadLetters`: 2
+فاز ۴ ingestion واقعی با منابع آزاد اجرا شد و خروجی‌ها در Supabase ذخیره شدند. این اجرا هیچ داده جعلی، alert ساختگی یا تحلیل AI تولید نکرد.
 
-## ذخیره‌سازی
+- `runId`: `0651efe6-8594-495e-8f9f-efb81053babb`
+- `storageMode`: `supabase`
+- `pulledEvents`: 259
+- `pulledMetrics`: 40
+- `rawEventsInserted`: 259
+- `rawEventsUpdated`: 0
+- `normalizedEventsCreated`: 500
+- `eventClustersCreated`: 467
+- `duplicatesDetected`: 33
+- `failedSources`: 0
+- `deadLetters`: 0
 
-خروجی collectors در Supabase ذخیره شد:
+## Supabase write status
 
-- `raw_events`
-- `raw_metrics`
-- `source_health`
-- `ingestion_logs`
-- `normalized_events`
-- `event_clusters`
-- `derived_signals`
-- `liquidity_scores`
-- `regime_inputs`
+| Table | Rows written | Status |
+| --- | ---: | --- |
+| `sources` | 21 | success |
+| `raw_events` | 259 | success |
+| `raw_metrics` | 40 | success |
+| `market_snapshots` | 10 | success |
+| `normalized_events` | 500 | success |
+| `event_clusters` | 467 | success |
+| `source_health` | 13 | success |
+| `ingestion_logs` | 13 | success |
+| `dead_letters` | 0 | skipped |
+| `ingestion_runs` | 1 | success |
+| `telemetry_logs` | 1 | success |
+| `reliability_snapshots` | 1 | success |
+| `derived_signals` | 6 | success |
+| `liquidity_scores` | 1 | success |
+| `regime_inputs` | 1 | success |
 
-## Supabase counts after verification
+## Real free sources verified
 
-- `raw_events`: 204
-- `raw_metrics`: 240
-- `source_health`: 15
-- `ingestion_logs`: 132
-- `dead_letters`: 54
-- `derived_signals`: 12
-- `liquidity_scores`: 2
-- `regime_inputs`: 2
+- Binance public REST: BTC/ETH/SOL spot trend, spot volume, futures volume, funding, open interest proxy.
+- Bybit public REST: BTC/ETH/SOL spot trend, spot volume, futures volume, funding, open interest value.
+- Fed RSS, ECB RSS, SEC RSS, CoinDesk RSS, The Block RSS, Cointelegraph RSS, CNBC RSS, Decrypt RSS, Blockworks RSS.
+- US Treasury public press releases: official HTML listing fallback because the previous RSS URL returned HTTP 404.
 
-## تفسیر
+## Degraded-mode result
 
-سیستم اکنون می‌تواند با منابع رایگان core داده کافی برای proxy analysis تولید کند. خطای منابع RSS یا API اختیاری در `source_health` و `dead_letters` ثبت می‌شود و باعث تولید داده جعلی نمی‌شود.
-
+- Reuters licensed feed remains disabled; C.M.I.P does not scrape paywalled Reuters content.
+- CryptoSlate RSS is registered but disabled after latest verification returned HTTP 403.
+- Optional premium/API-key sources remain disabled and do not block core ingestion.
+- Missing premium feeds did not create fake ETF flows, whale activity, exchange reserves, or confidence scores.

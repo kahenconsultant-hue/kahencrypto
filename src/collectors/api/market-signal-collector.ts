@@ -27,7 +27,7 @@ export const marketSignalCollector: Collector = {
   async collect(source: SourceDefinition): Promise<CollectorOutput> {
     const started = Date.now();
     try {
-      const points = await fetchCurrentDataPoints();
+      const points = await fetchCurrentDataPoints(source.signalKeys);
       const rawMetrics = points.map((point) => metricFromDataPoint(source, point));
       const failed = rawMetrics.filter((metric) => metric.quality === "unavailable" || metric.error).length;
       const status = failed === rawMetrics.length ? "failed" : failed > 0 ? "degraded" : "success";

@@ -66,7 +66,8 @@ function freshnessStatusFromTimestamp(timestamp: string | null | undefined) {
   return "stale_critical" as const;
 }
 
-function sourceTypeReliability(sourceType: string) {
+function sourceTypeReliability(sourceType: string, sourceId?: string) {
+  if (sourceId === "treasury-press-rss") return 82;
   if (sourceType === "websocket") return 86;
   if (sourceType === "api") return 82;
   if (sourceType === "filings") return 78;
@@ -150,6 +151,7 @@ function sourceDefinitionRow(source: SourceDefinition) {
       blocksCoreIntelligence: Boolean(source.blocksCoreIntelligence),
       disabledReason: source.disabledReason ?? null,
       premiumModule: source.premiumModule ?? null,
+      signalKeys: source.signalKeys ?? [],
     },
     updated_at: new Date().toISOString(),
   };
@@ -171,7 +173,7 @@ function rawEventRow(event: RawEventInput) {
     raw_payload: event.rawPayload ?? {},
     dedup_hash: event.dedupHash,
     quality: event.quality,
-    source_reliability: sourceTypeReliability(event.sourceType),
+    source_reliability: sourceTypeReliability(event.sourceType, event.sourceId),
     freshness_status: freshnessStatusFromTimestamp(event.timestamp),
     delay_minutes: delayMinutes,
     retry_count: 0,

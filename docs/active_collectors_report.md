@@ -1,50 +1,59 @@
 # Active Collectors Report
 
-Generated: 2026-05-25
+Generated: 2026-05-30
 
-## Enabled Collectors
+## Enabled collectors
 
-| Source ID | Source | Type | Parser | Tier | Polling interval | Required env |
-| --- | --- | --- | --- | ---: | ---: | --- |
-| `cmip-public-market-signal-adapters` | C.M.I.P public market signal adapters | api | market_signals | 1 | 1800s | none |
-| `fed-press-rss` | Federal Reserve RSS | rss | rss | 1 | 600s | none |
-| `treasury-press-rss` | US Treasury RSS | rss | rss | 1 | 600s | none |
-| `sec-press-rss` | SEC public press releases | filings | rss | 2 | 900s | none |
-| `coindesk-rss` | CoinDesk RSS | rss | rss | 2 | 600s | none |
-| `cointelegraph-rss` | Cointelegraph RSS | rss | rss | 3 | 600s | none |
-| `cnbc-markets-rss` | CNBC Markets RSS | rss | rss | 2 | 600s | none |
-| `fred-api` | FRED API | api | json | 1 | 1800s | `FRED_API_KEY` |
-| `trading-economics-api` | Trading Economics API | api | json | 2 | 1800s | `TRADINGECONOMICS_API_KEY` |
-| `whale-alert-api` | Whale Alert API | api | json | 2 | 900s | `WHALE_ALERT_API_KEY` |
-| `coinglass-api` | CoinGlass API | api | json | 1 | 900s | `COINGLASS_API_KEY` |
+| Source ID | Source | Type | Parser | Tier | Polling interval | Latest status | Latest rows |
+| --- | --- | --- | --- | ---: | ---: | --- | ---: |
+| `cmip-public-market-signal-adapters` | C.M.I.P public macro and liquidity adapters | api | market_signals | 1 | 1800s | success | 10 metrics |
+| `binance-public-rest` | Binance public REST | api | exchange_market | 1 | 300s | success | 15 metrics |
+| `bybit-public-rest` | Bybit public REST | api | exchange_market | 2 | 300s | success | 15 metrics |
+| `fed-press-rss` | Federal Reserve RSS | rss | rss | 1 | 600s | success | 20 events |
+| `ecb-press-rss` | ECB RSS | rss | rss | 2 | 600s | success | 15 events |
+| `treasury-press-rss` | US Treasury public press releases | scraper | html_listing | 1 | 600s | success | 16 events |
+| `sec-press-rss` | SEC public press releases | filings | rss | 2 | 900s | success | 25 events |
+| `coindesk-rss` | CoinDesk RSS | rss | rss | 2 | 600s | success | 25 events |
+| `theblock-rss` | The Block RSS | rss | rss | 2 | 600s | success | 19 events |
+| `cointelegraph-rss` | Cointelegraph RSS | rss | rss | 3 | 600s | success | 30 events |
+| `cnbc-markets-rss` | CNBC Markets RSS | rss | rss | 2 | 600s | success | 30 events |
+| `decrypt-rss` | Decrypt RSS | rss | rss | 3 | 600s | success | 39 events |
+| `blockworks-rss` | Blockworks RSS | rss | rss | 3 | 600s | success | 40 events |
 
-## Active Real Data Writes
+## Disabled / non-blocking collectors
 
-Latest run wrote/upserted:
+| Source ID | Reason |
+| --- | --- |
+| `reuters-licensed-feed` | Licensed Reuters feed is not scraped or required for core ingestion. |
+| `cryptoslate-rss` | Latest public feed verification returned HTTP 403; registered but disabled to avoid noisy dead letters. |
+| `fred-api` | Optional `FRED_API_KEY`; macro proxy data keeps core ingestion available. |
+| `trading-economics-api` | Optional enrichment; not required for free ingestion core. |
+| `whale-alert-api` | Optional enrichment; whale attribution remains unavailable without key. |
+| `coinglass-api` | Optional enrichment; Binance/Bybit public data cover basic leverage proxies. |
+| `glassnode-api` | Optional deep on-chain enrichment. |
+| `cryptoquant-api` | Optional exchange reserve enrichment. |
 
-| Output | Rows |
-| --- | ---: |
-| Source definitions | 11 |
-| Raw RSS/API events | 130 |
-| Raw metrics | 20 |
-| Source health snapshots | 11 |
-| Ingestion logs | 11 |
-| Dead letters | 5 |
-| Ingestion run summary | 1 |
-| Reliability snapshot | 1 |
+## Latest real ingestion run
 
-## Scheduler Status
+- `runId`: `0651efe6-8594-495e-8f9f-efb81053babb`
+- `storageMode`: `supabase`
+- `pulledEvents`: 259
+- `pulledMetrics`: 40
+- `successfulSources`: 13
+- `degradedSources`: 0
+- `failedSources`: 0
+- `deadLetters`: 0
 
-The local scheduler entrypoint is:
+## Scheduler entrypoints
+
+Run once:
 
 ```bash
 CMIP_BASE_URL=http://127.0.0.1:3004 npm run ingest:once
 ```
 
-For continuous local polling:
+Run continuously every 30 minutes by default:
 
 ```bash
 CMIP_BASE_URL=http://127.0.0.1:3004 npm run ingest:scheduler
 ```
-
-The default local scheduler interval is 30 minutes through `CMIP_INGEST_INTERVAL_MINUTES` when not overridden.

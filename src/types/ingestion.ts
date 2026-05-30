@@ -25,7 +25,8 @@ export interface SourceDefinition {
   pollingIntervalSeconds: number;
   timeoutMs: number;
   priorityScore: number;
-  parser: "rss" | "market_signals" | "json" | "none";
+  parser: "rss" | "html_listing" | "market_signals" | "exchange_market" | "json" | "none";
+  signalKeys?: string[];
   assetRelevance: Array<AssetSymbol | "VIX" | "Stablecoins">;
   requiredEnvKeys?: string[];
   retryPolicy: RetryPolicy;

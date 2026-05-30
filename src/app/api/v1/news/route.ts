@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { apiJson, apiOptions } from "@/lib/api-response";
 import { categoryLabels } from "@/lib/production-data";
+import { toPublicRawEvent } from "@/lib/persian-processing";
 import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
 import type { NewsCategory } from "@/lib/types";
 import { getLatestRawEventsSync } from "@/storage/ingestion-store";
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
       categories: (Object.entries(categoryLabels) as Array<[NewsCategory, string]>).map(([key, labelFa]) => ({
         category: key,
         labelFa,
-        items: events.filter((event) => event.category === key),
+        items: events.filter((event) => event.category === key).map(toPublicRawEvent),
       })),
     });
   }
@@ -40,6 +41,6 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     dataSourceStatus: dataSourceStatus.latestNews,
     count: items.length,
-    items,
+    items: items.map(toPublicRawEvent),
   });
 }

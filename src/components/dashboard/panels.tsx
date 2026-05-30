@@ -45,6 +45,7 @@ import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { Metric } from "@/components/ui/metric";
 import { Progress } from "@/components/ui/progress";
 import { dataSourceStatusLabels, type DataSourceStatus, type ModuleStatusKey } from "@/lib/data-source-status";
+import { publicAnalysisModeLabels, sanitizePublicIntelligenceText, toPublicRawEvent } from "@/lib/persian-processing";
 
 const moduleDataSourceStatus = new Proxy({} as Record<ModuleStatusKey, DataSourceStatus>, {
   get: (_target, property: string | symbol) => {
@@ -93,7 +94,7 @@ function LastUpdated({ minutes = minutesSinceEngineUpdate() }: { minutes?: numbe
   const effectiveMinutes = health.ageMinutes ?? minutes;
   return (
     <span className={health.failedRefresh ? "text-[11px] text-red-200" : "text-[11px] text-muted-foreground"}>
-      آخرین بروزرسانی: {effectiveMinutes} دقیقه پیش · refresh هر {DASHBOARD_REFRESH_INTERVAL_MINUTES} دقیقه
+      آخرین بروزرسانی: {effectiveMinutes} دقیقه پیش · بروزرسانی هر {DASHBOARD_REFRESH_INTERVAL_MINUTES} دقیقه
       {health.warning ? ` · هشدار: ${health.warning}` : ""}
     </span>
   );
@@ -260,7 +261,7 @@ const outputSourceTypeLabels: Record<string, string> = {
 
 function labelOrRaw(map: Record<string, string>, value?: string | null) {
   if (!value) return "ناموجود";
-  return map[value] ?? value;
+  return map[value] ?? sanitizePublicIntelligenceText(value);
 }
 
 function formatSignedScore(score: number) {
@@ -312,17 +313,17 @@ export function ReliabilityStatusPanel() {
             <RadioTower className="h-4 w-4 text-primary" aria-hidden />
             قابلیت اتکای هوش بازار
           </CardTitle>
-          <CardDescription>پوشش داده، سلامت منابع، تازگی سیگنال‌ها و سقف confidence برای هر لایه تحلیلی. اگر داده کافی نباشد، سیستم خروجی ساختگی تولید نمی‌کند.</CardDescription>
+          <CardDescription>پوشش داده، سلامت منابع، تازگی سیگنال‌ها و سقف سطح اطمینان برای هر لایه تحلیلی. اگر داده کافی نباشد، سیستم خروجی ساختگی تولید نمی‌کند.</CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={reliabilityVariant(reliability.overallStatus)}>
-            Core {Math.round(reliability.coreReliability * 100)}%
+            هسته داده {Math.round(reliability.coreReliability * 100)}%
           </Badge>
           <Badge variant="outline">
-            Tier 1: {reliability.criticalSourcesOnline}/{reliability.criticalSourcesTotal}
+            منابع حیاتی: {reliability.criticalSourcesOnline}/{reliability.criticalSourcesTotal}
           </Badge>
-          <Badge variant={reliability.premiumCoverage >= 0.35 ? "success" : "warning"}>Premium {Math.round(reliability.premiumCoverage * 100)}%</Badge>
-          <Badge variant="outline">{reliability.analysisMode}</Badge>
+          <Badge variant={reliability.premiumCoverage >= 0.35 ? "success" : "warning"}>پوشش تکمیلی {Math.round(reliability.premiumCoverage * 100)}%</Badge>
+          <Badge variant="outline">{publicAnalysisModeLabels[reliability.analysisMode] ?? sanitizePublicIntelligenceText(reliability.analysisMode)}</Badge>
           <Badge variant={reliability.failedSources ? "warning" : "success"}>{reliability.failedSources} منبع ناموفق</Badge>
         </div>
       </CardHeader>
@@ -336,7 +337,7 @@ export function ReliabilityStatusPanel() {
               </div>
               <Progress value={Math.round(row.score * 100)} className="mt-3" />
               <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                منابع {row.onlineSources}/{row.totalSources} · سیگنال {row.availableSignals}/{row.requiredSignals} · freshness {Math.round(row.freshness * 100)}%
+                منابع {row.onlineSources}/{row.totalSources} · سیگنال {row.availableSignals}/{row.requiredSignals} · تازگی {Math.round(row.freshness * 100)}%
               </p>
               {row.missingSignals.length ? (
                 <p className="mt-1 text-[11px] leading-5 text-amber-200">ناموجود: {row.missingSignals.slice(0, 3).join("، ")}</p>
@@ -349,32 +350,32 @@ export function ReliabilityStatusPanel() {
             <div className="metric-label">ماژول‌های core فعال</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {reliability.availableCoreModules.length ? reliability.availableCoreModules.map((module) => (
-                <Badge key={module} variant="success">{module}</Badge>
-              )) : <Badge variant="danger">core ناموجود</Badge>}
+                <Badge key={module} variant="success">{sanitizePublicIntelligenceText(module)}</Badge>
+              )) : <Badge variant="danger">هسته داده ناموجود</Badge>}
             </div>
           </div>
           <div className="rounded-md border bg-secondary/25 p-3">
             <div className="metric-label">پوشش پریمیوم</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {reliability.disabledPremiumModules.length ? reliability.disabledPremiumModules.slice(0, 8).map((module) => (
-                <Badge key={module} variant="warning">{module}</Badge>
-              )) : <Badge variant="success">پوشش enrichment فعال</Badge>}
+                <Badge key={module} variant="warning">{sanitizePublicIntelligenceText(module)}</Badge>
+              )) : <Badge variant="success">پوشش تکمیلی فعال</Badge>}
             </div>
           </div>
           <div className="rounded-md border bg-secondary/25 p-3">
             <div className="metric-label">ماژول‌های محدودشده</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {reliability.degradedModules.length ? reliability.degradedModules.slice(0, 10).map((module) => (
-                <Badge key={module} variant="warning">{module}</Badge>
+                <Badge key={module} variant="warning">{sanitizePublicIntelligenceText(module)}</Badge>
               )) : <Badge variant="success">ماژول محدودشده ندارد</Badge>}
             </div>
           </div>
           <div className="rounded-md border bg-secondary/25 p-3">
-            <div className="metric-label">سقف confidence</div>
+            <div className="metric-label">سقف سطح اطمینان</div>
             <div className="mt-2 grid gap-2 md:grid-cols-3">
               {Object.entries(reliability.confidenceCaps).map(([name, cap]) => (
                 <div key={name} className="rounded-sm border bg-card/45 p-2 text-xs">
-                  <div className="text-muted-foreground">{name}</div>
+                  <div className="text-muted-foreground">{sanitizePublicIntelligenceText(name)}</div>
                   <div className="mt-1 text-lg font-semibold number-tabular">{cap}%</div>
                 </div>
               ))}
@@ -502,12 +503,12 @@ export function MarketRegimePanel() {
             <div className="rounded-md border bg-secondary/25 p-3">
               <div className="metric-label">احتمال تغییر رژیم</div>
               <div className="mt-2 text-sm font-semibold number-tabular">{marketRegime.transitionProbability}%</div>
-              <p className="mt-2 text-xs leading-6 text-muted-foreground">{marketRegime.engine.transitionAnalysis?.explanation ?? "احتمال تغییر مسیر فقط وقتی بالا می‌رود که محرک‌های ماکرو و نقدینگی هم‌جهت شوند."}</p>
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(marketRegime.engine.transitionAnalysis?.explanation ?? "احتمال تغییر مسیر فقط وقتی بالا می‌رود که محرک‌های ماکرو و نقدینگی هم‌جهت شوند.")}</p>
             </div>
             <div className="rounded-md border bg-secondary/25 p-3">
               <div className="metric-label">امتیاز خام / پس از جریمه</div>
               <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                خام {marketRegime.engine.rawRegimeScore ?? 0}، نهایی {marketRegime.engine.finalRegimeScore ?? 0}، nuance: {marketRegime.engine.regimeNuance ?? "conflicting"}
+                امتیاز خام {marketRegime.engine.rawRegimeScore ?? 0}، امتیاز نهایی {marketRegime.engine.finalRegimeScore ?? 0}، جزئیات وضعیت: {sanitizePublicIntelligenceText(marketRegime.engine.regimeNuance ?? "conflicting")}
               </p>
             </div>
           </div>
@@ -530,7 +531,7 @@ export function MarketRegimePanel() {
             ) : null}
             {marketRegime.engine.keyDrivers.slice(0, 3).map((driver) => (
               <p key={driver} className="text-[11px] leading-5 text-muted-foreground">
-                {driver}
+                {sanitizePublicIntelligenceText(driver)}
               </p>
             ))}
             {(marketRegime.invalidationSignals ?? []).map((signal) => (
@@ -568,39 +569,39 @@ export function TopAlertsPanel() {
         {alerts.map((alert) => (
           <div key={alert.id} className={`rounded-md border p-3 ${severityColor(alert.level)}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-black">{alert.titleFa}</div>
+              <div className="text-sm font-black">{sanitizePublicIntelligenceText(alert.titleFa)}</div>
               <div className="flex flex-wrap items-center gap-2">
                 {alert.direction ? <Badge variant={biasVariant(alert.direction)}>{labelOrRaw(biasLabels, alert.direction)}</Badge> : null}
                 {alert.timeframe ? <Badge variant="outline">{labelOrRaw(timeframeLabels, alert.timeframe)}</Badge> : null}
                 <Badge variant="outline">اهمیت {alert.importance}</Badge>
                 <Badge variant={alertVariant(alert.level)}>{labelOrRaw(alertLevelLabels, alert.level)}</Badge>
-                {typeof alert.trapRisk === "number" ? <Badge variant="danger">Trap risk {alert.trapRisk}%</Badge> : null}
+                {typeof alert.trapRisk === "number" ? <Badge variant="danger">ریسک دام قیمتی {alert.trapRisk}%</Badge> : null}
               </div>
             </div>
-            <p className="mt-2 text-xs leading-6 opacity-90">{alert.reasoningFa}</p>
+            <p className="mt-2 text-xs leading-6 opacity-90">{sanitizePublicIntelligenceText(alert.reasoningFa)}</p>
             <div className="mt-3 grid gap-2 xl:grid-cols-2">
               <div className="rounded-sm border border-white/10 bg-black/10 p-2">
                 <div className="metric-label">چه چیزی تغییر کرده؟</div>
-                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{alert.triggerCondition ?? alert.whyItMattersFa}</p>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(alert.triggerCondition ?? alert.whyItMattersFa)}</p>
               </div>
               <div className="rounded-sm border border-white/10 bg-black/10 p-2">
                 <div className="metric-label">زنجیره علت و اثر</div>
-                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{alert.causalChain ?? alert.whyItMattersFa}</p>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(alert.causalChain ?? alert.whyItMattersFa)}</p>
               </div>
               <div className="rounded-sm border border-white/10 bg-black/10 p-2">
                 <div className="metric-label">شرط ابطال</div>
-                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{alert.invalidationCondition ?? alert.scenarioFa}</p>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(alert.invalidationCondition ?? alert.scenarioFa)}</p>
               </div>
               <div className="rounded-sm border border-white/10 bg-black/10 p-2">
                 <div className="metric-label">برداشت عملی معامله‌گر</div>
-                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{alert.suggestedTraderAction ?? alert.whyItMattersFa}</p>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(alert.suggestedTraderAction ?? alert.whyItMattersFa)}</p>
               </div>
             </div>
             {alert.evidence?.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {alert.evidence.slice(0, 3).map((item) => (
                   <Badge key={item} variant="outline" className="h-auto whitespace-normal py-1 leading-5">
-                    {item}
+                    {sanitizePublicIntelligenceText(item)}
                   </Badge>
                 ))}
               </div>
@@ -689,7 +690,7 @@ export function AssetIntelligenceGrid() {
                 </Badge>
               </div>
             </div>
-            <p className="mt-3 line-clamp-5 text-xs leading-6 text-muted-foreground">{profile.confidence.available ? profile.traderInterpretation : "داده کافی برای تحلیل معتبر وجود ندارد؛ نقشه اثر فقط پس از فعال بودن حداقل چهار گروه سیگنال مستقل نمایش داده می‌شود."}</p>
+            <p className="mt-3 line-clamp-5 text-xs leading-6 text-muted-foreground">{profile.confidence.available ? sanitizePublicIntelligenceText(profile.traderInterpretation) : "داده کافی برای تحلیل معتبر وجود ندارد؛ نقشه اثر فقط پس از فعال بودن حداقل چهار گروه سیگنال مستقل نمایش داده می‌شود."}</p>
             <div className="mt-3 space-y-2">
               <div className="flex flex-wrap gap-1.5">
                 {profile.transmissionChannels.slice(0, 3).map((channel) => (
@@ -699,9 +700,9 @@ export function AssetIntelligenceGrid() {
                 ))}
               </div>
               <div className="rounded-sm border bg-card/55 p-2 text-[11px] leading-5 text-muted-foreground">
-                {profile.confidence.available ? `اطمینان ${profile.confidence.score}% · ${profile.confidence.availableGroups.length} گروه سیگنال` : profile.confidence.explanation}
+                {profile.confidence.available ? `اطمینان ${profile.confidence.score}% · ${profile.confidence.availableGroups.length} گروه سیگنال` : sanitizePublicIntelligenceText(profile.confidence.explanation)}
               </div>
-              <div className="text-[11px] leading-5 text-muted-foreground">ابطال: {profile.invalidationCondition}</div>
+              <div className="text-[11px] leading-5 text-muted-foreground">ابطال: {sanitizePublicIntelligenceText(profile.invalidationCondition)}</div>
             </div>
           </Link>
           );
@@ -734,16 +735,16 @@ export function LiquidityPanel() {
         <div className="flex flex-wrap items-center gap-2">
           <DataSourceBadge status={moduleDataSourceStatus.liquidity} />
           <Badge variant="outline">{labelOrRaw(conditionLabels, liquidityEngine.condition)}</Badge>
-          {liquidityEngine.v2State ? <Badge variant="warning">{liquidityEngine.v2State.replaceAll("_", " ")}</Badge> : null}
+          {liquidityEngine.v2State ? <Badge variant="warning">{sanitizePublicIntelligenceText(liquidityEngine.v2State.replaceAll("_", " "))}</Badge> : null}
           <LastUpdated />
           <div className={`text-2xl font-semibold number-tabular ${signedScoreColor(liquidityEngine.liquidityScoreSigned)}`}>{formatSignedScore(liquidityEngine.liquidityScoreSigned)}</div>
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm leading-7 text-muted-foreground">{liquidityEngine.explanation}</p>
-        <p className="mt-2 text-xs leading-6 text-muted-foreground">{liquidityEngine.historicalComparison}</p>
+        <p className="text-sm leading-7 text-muted-foreground">{sanitizePublicIntelligenceText(liquidityEngine.explanation)}</p>
+        <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(liquidityEngine.historicalComparison)}</p>
         <div className="mt-3 rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground">
-          {liquidityEngine.formula}
+          {sanitizePublicIntelligenceText(liquidityEngine.formula)}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Metric label="نقدینگی کلان" value={formatOptionalSignedScore(macroLiquidityScore)} tone={typeof macroLiquidityScore === "number" ? (macroLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
@@ -762,7 +763,7 @@ export function LiquidityPanel() {
           <div className="mt-4 grid gap-2 md:grid-cols-2">
             {liquidityEngine.decomposition.map((item) => (
               <div key={item} className="rounded-sm border bg-secondary/25 p-2 text-[11px] leading-5 text-muted-foreground">
-                {item}
+                {sanitizePublicIntelligenceText(item)}
               </div>
             ))}
           </div>
@@ -771,13 +772,13 @@ export function LiquidityPanel() {
           <div className="mt-3 space-y-2">
             {liquidityEngine.warnings.map((warning) => (
               <p key={warning} className="rounded-sm border border-amber-400/25 bg-amber-400/10 p-2 text-[11px] leading-5 text-amber-100">
-                {warning}
+                {sanitizePublicIntelligenceText(warning)}
               </p>
             ))}
           </div>
         ) : null}
         <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
-          {liquidityEngine.confidenceDetail?.available ? `اطمینان ${liquidityEngine.confidenceDetail.score}% · ${liquidityEngine.confidenceDetail.formula}` : liquidityEngine.confidenceDetail?.explanation}
+          {liquidityEngine.confidenceDetail?.available ? `اطمینان ${liquidityEngine.confidenceDetail.score}% · ${sanitizePublicIntelligenceText(liquidityEngine.confidenceDetail.formula)}` : sanitizePublicIntelligenceText(liquidityEngine.confidenceDetail?.explanation)}
         </p>
       </CardContent>
     </Card>
@@ -853,8 +854,8 @@ export function CorrelationMapPanel() {
                 </span>
               </div>
               {pair.sampleWarning ? <p className="mt-2 text-[11px] leading-5 text-amber-200">نمونه ناکافی: {pair.sampleWarning}</p> : null}
-              <p className="mt-2 text-xs leading-6 text-muted-foreground">{pair.interpretationFa}</p>
-              {pair.regimeImpact ? <p className="mt-2 text-[11px] leading-5 text-muted-foreground">اثر رژیم بازار: {pair.regimeImpact}</p> : null}
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(pair.interpretationFa)}</p>
+              {pair.regimeImpact ? <p className="mt-2 text-[11px] leading-5 text-muted-foreground">اثر رژیم بازار: {sanitizePublicIntelligenceText(pair.regimeImpact)}</p> : null}
             </div>
           ))}
           <div className="grid gap-2 md:grid-cols-3">
@@ -877,7 +878,7 @@ export function CorrelationMapPanel() {
             <div className="rounded-md border bg-secondary/25 p-3">
               <div className="metric-label">هشدارهای شکست همبستگی</div>
               <div className="mt-2 space-y-1 text-[11px] leading-5 text-muted-foreground">
-                {report.breakdownAlerts.length ? report.breakdownAlerts.slice(0, 3).map((alert) => <p key={alert.pair}>{alert.pair}: {alert.traderInterpretation}</p>) : <p>داده کافی برای تحلیل معتبر وجود ندارد</p>}
+                {report.breakdownAlerts.length ? report.breakdownAlerts.slice(0, 3).map((alert) => <p key={alert.pair}>{alert.pair}: {sanitizePublicIntelligenceText(alert.traderInterpretation)}</p>) : <p>داده کافی برای تحلیل معتبر وجود ندارد</p>}
               </div>
             </div>
           </div>
@@ -890,8 +891,8 @@ export function CorrelationMapPanel() {
 export function EtfFlowsPanel() {
   const snapshot = getSignalSnapshot();
   const rows = [
-    { issuer: "BTC ETF basket", signal: snapshot.byKey.btc_etf_flow_24h },
-    { issuer: "ETH ETF basket", signal: snapshot.byKey.eth_etf_flow_24h },
+    { issuer: "سبد صندوق قابل معامله بیت‌کوین", signal: snapshot.byKey.btc_etf_flow_24h },
+    { issuer: "سبد صندوق قابل معامله اتریوم", signal: snapshot.byKey.eth_etf_flow_24h },
   ];
 
   return (
@@ -911,7 +912,7 @@ export function EtfFlowsPanel() {
           <thead className="text-xs text-muted-foreground">
             <tr className="border-b">
               <th className="py-2 text-right">صادرکننده</th>
-              <th className="py-2 text-right">Net Flow (جریان خالص)</th>
+              <th className="py-2 text-right">جریان خالص</th>
               <th className="py-2 text-right">روند</th>
               <th className="py-2 text-right">اطمینان</th>
             </tr>
@@ -929,7 +930,7 @@ export function EtfFlowsPanel() {
                       <Progress value={typeof value === "number" ? row.signal?.reliability ?? 0 : 0} className="w-24" />
                       <span className="number-tabular">{typeof value === "number" ? row.signal?.reliability ?? 0 : 0}%</span>
                     </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">{row.signal?.source ?? "برای live شدن، env یا crawler ETF لازم است."}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">{sanitizePublicIntelligenceText(row.signal?.source ?? "برای نمایش داده زنده، خوراک ETF یا خزنده معتبر لازم است.")}</div>
                   </td>
                 </tr>
               );
@@ -960,8 +961,8 @@ export function SentimentPanel() {
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm leading-7 text-muted-foreground">{sentiment.whatChanged}</p>
-        <p className="mt-2 text-xs leading-6 text-muted-foreground">{sentiment.divergence}</p>
+        <p className="text-sm leading-7 text-muted-foreground">{sanitizePublicIntelligenceText(sentiment.whatChanged)}</p>
+        <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(sentiment.divergence)}</p>
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           <Metric label="مثبت" value={`${sentiment.split.positive}`} tone="good" />
           <Metric label="منفی" value={`${sentiment.split.negative}`} tone="bad" />
@@ -1008,7 +1009,7 @@ export function SentimentPanel() {
                       {labelOrRaw(biasLabels, headline.expectedImpactDirection)} · {labelOrRaw(timeframeLabels, headline.expectedImpactHorizon)}
                     </Badge>
                   </div>
-                  <p className="mt-2 text-xs leading-6 text-muted-foreground">{headline.title}</p>
+                  <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(headline.title)}</p>
                   <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
                     کانال انتقال: {labelOrRaw(channelLabels, headline.transmissionChannel)} · شدت {headline.severity} · تازگی {headline.novelty}
                   </p>
@@ -1078,7 +1079,7 @@ export function UsdtRiskPanel() {
 }
 
 export function GeopoliticalRiskPanel() {
-  const items = getLatestRawEventsSync(40).filter((item) => item.category === "geopolitics").slice(0, 4);
+  const items = getLatestRawEventsSync(40).filter((item) => item.category === "geopolitics").slice(0, 4).map(toPublicRawEvent);
 
   return (
     <Card>
@@ -1097,7 +1098,7 @@ export function GeopoliticalRiskPanel() {
               <span className="text-[11px] text-muted-foreground">{new Date(item.timestamp).toLocaleString("fa-IR")}</span>
             </div>
             <h3 className="mt-3 text-sm font-black leading-6">{item.title}</h3>
-            <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "برای این رویداد هنوز خلاصه فارسی قابل اتکا آماده نشده است؛ تا تکمیل پردازش، فقط تیتر، زمان و منبع معتبر نمایش داده می‌شود."}</p>
+            <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "داده کافی برای توضیح معتبر وجود ندارد؛ فقط منبع و زمان رویداد نمایش داده می‌شود."}</p>
           </div>
         )) : <p className="rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground md:col-span-2">داده کافی برای تحلیل معتبر وجود ندارد. هنوز رویداد ژئوپلیتیک واقعی از ingestion foundation ثبت نشده است.</p>}
       </CardContent>
@@ -1106,7 +1107,7 @@ export function GeopoliticalRiskPanel() {
 }
 
 export function LatestNewsFeedPanel() {
-  const events = getLatestRawEventsSync(120);
+  const events = getLatestRawEventsSync(120).map(toPublicRawEvent);
   const groups = (Object.entries(categoryLabels) as Array<[keyof typeof categoryLabels, string]>).map(([category, labelFa]) => ({
     category,
     labelFa,
@@ -1155,10 +1156,10 @@ export function LatestNewsFeedPanel() {
                       </span>
                     </div>
                     <h3 className="mt-3 text-sm font-black leading-7">{item.title}</h3>
-                    <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "خلاصه فارسی قابل اتکا هنوز آماده نیست؛ سیستم به‌جای متن ساختگی، فقط عنوان و منبع را نمایش می‌دهد."}</p>
+                    <p className="mt-2 text-xs leading-6 text-muted-foreground">{item.content || "داده کافی برای توضیح معتبر وجود ندارد؛ فقط عنوان، زمان و منبع رویداد نمایش داده می‌شود."}</p>
                     <div className="mt-3 rounded-sm border bg-secondary/35 p-2 text-xs leading-6">
                       <span className="font-bold text-primary">وضعیت تحلیل: </span>
-                      ترجمه و تفسیر فارسی معتبر هنوز آماده نیست؛ تا تکمیل داده، خروجی ساختگی نمایش داده نمی‌شود.
+                      توضیح فارسی محلی بر اساس منبع، دسته‌بندی و دارایی‌های مرتبط ساخته شده و تا تأیید قیمت/نقدینگی، نتیجه جهت‌دار قطعی نمایش داده نمی‌شود.
                     </div>
                   </div>
                 );
@@ -1183,15 +1184,15 @@ export async function AiSummariesPanel() {
             <Sparkles className="h-4 w-4 text-primary" aria-hidden />
             ترجمه و توضیح رویدادها
           </CardTitle>
-          <CardDescription>توضیح فارسی فقط برای رویدادهای واقعی ذخیره‌شده ساخته می‌شود. اگر کلید OpenAI یا داده معتبر آماده نباشد، سیستم متن ساختگی تولید نمی‌کند.</CardDescription>
+          <CardDescription>توضیح فارسی از رویدادهای واقعی ذخیره‌شده ساخته می‌شود؛ پردازش محلی فعال است و خروجی جهت‌دار فقط با داده معتبر نمایش داده می‌شود.</CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={aiStatus.enabled ? "success" : "warning"}>{aiStatus.status}</Badge>
+          <Badge variant={aiStatus.enabled ? "success" : "warning"}>{aiStatus.status === "local_ready" ? "پردازش فارسی محلی" : "آماده"}</Badge>
           <Badge variant="outline">{explanations.length} رویداد اخیر</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs leading-6 text-muted-foreground">{aiStatus.messageFa}</p>
+        <p className="text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(aiStatus.messageFa)}</p>
         {explanations.length ? (
           <div className="grid gap-3 xl:grid-cols-2">
             {explanations.map((event) => (
@@ -1203,16 +1204,16 @@ export async function AiSummariesPanel() {
                   </div>
                   <Badge variant={biasVariant(event.expectedDirection)}>{labelOrRaw(biasLabels, event.expectedDirection)}</Badge>
                 </div>
-                <h3 className="mt-3 text-sm font-black leading-7">{event.translationFa ?? event.title}</h3>
-                <p className="mt-2 text-xs leading-6 text-muted-foreground">{event.summaryFa ?? event.actionableExplanationFa}</p>
+                <h3 className="mt-3 text-sm font-black leading-7">{sanitizePublicIntelligenceText(event.translationFa ?? event.title)}</h3>
+                <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(event.summaryFa ?? event.actionableExplanationFa)}</p>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   <div className="rounded-sm border bg-card/45 p-2 text-[11px] leading-5 text-muted-foreground">
                     <span className="font-bold text-primary">اثر ماکرو: </span>
-                    {event.macroInterpretationFa}
+                    {sanitizePublicIntelligenceText(event.macroInterpretationFa)}
                   </div>
                   <div className="rounded-sm border bg-card/45 p-2 text-[11px] leading-5 text-muted-foreground">
                     <span className="font-bold text-primary">اثر کریپتو: </span>
-                    {event.cryptoInterpretationFa}
+                    {sanitizePublicIntelligenceText(event.cryptoInterpretationFa)}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1222,7 +1223,7 @@ export async function AiSummariesPanel() {
                   ))}
                 </div>
                 {event.uncertaintyNotesFa.length ? (
-                  <p className="mt-2 text-[11px] leading-5 text-amber-100">{event.uncertaintyNotesFa[0]}</p>
+                  <p className="mt-2 text-[11px] leading-5 text-amber-100">{sanitizePublicIntelligenceText(event.uncertaintyNotesFa[0])}</p>
                 ) : null}
               </div>
             ))}
@@ -1319,8 +1320,8 @@ export function DataQualityPanel() {
               </div>
               <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
                 {String(status) === "estimated"
-                  ? "این ماژول فقط در صورت فعال بودن fallback توسعه از مقدار برآوردی استفاده می‌کند؛ در تولید، بدون provider معتبر مقدار «ناموجود» نمایش داده می‌شود."
-                  : "وضعیت این ماژول از registry و adapterهای داده خوانده می‌شود."}
+                  ? "این ماژول فقط در حالت توسعه از مقدار برآوردی با محدودیت استفاده می‌کند؛ در تولید، بدون منبع معتبر مقدار «ناموجود» نمایش داده می‌شود."
+                  : "وضعیت این ماژول از ثبت منابع و اتصال‌های داده خوانده می‌شود."}
               </p>
             </div>
           ))}
@@ -1349,7 +1350,7 @@ export function DataQualityPanel() {
                   </td>
                   <td className="px-3 py-2 number-tabular">{signal.reliability}/100</td>
                   <td className="px-3 py-2">{signal.timestamp ? new Date(signal.timestamp).toLocaleString("fa-IR") : "ناموجود"}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{signal.error ?? signal.estimatedReason ?? "داده مستقیم از adapter دریافت شده است."}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{sanitizePublicIntelligenceText(signal.error ?? signal.estimatedReason ?? "داده مستقیم از اتصال داده دریافت شده است.")}</td>
                 </tr>
               ))}
             </tbody>

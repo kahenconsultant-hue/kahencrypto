@@ -1,8 +1,9 @@
 import type { AssetSymbol, DataQuality, DirectionalBias, TransmissionChannel } from "@/lib/types";
+import { buildPersianEventSummary, buildPersianEventTitle, eventTypeLabelsFa, sanitizePublicIntelligenceText } from "@/lib/persian-processing";
 import { getLatestNormalizedEvents } from "@/storage/ingestion-store";
 import type { NormalizedEventInput } from "@/types/ingestion";
 
-export type AiExplanationStatus = "ready" | "ai_unavailable" | "failed";
+export type AiExplanationStatus = "ready" | "local_ready" | "failed";
 
 export interface EventExplanationOutput {
   eventId: string;
@@ -22,25 +23,6 @@ export interface EventExplanationOutput {
   expectedDirection: DirectionalBias;
   lastUpdatedAt: string;
 }
-
-const eventTypeLabelsFa: Record<string, string> = {
-  central_bank_policy: "سیاست پولی بانک مرکزی",
-  treasury_yield_move: "تغییر بازده اوراق خزانه",
-  dxy_move: "حرکت شاخص دلار",
-  inflation_data: "داده تورمی",
-  employment_data: "داده بازار کار",
-  etf_flow: "جریان ETF",
-  stablecoin_liquidity: "نقدینگی استیبل‌کوین",
-  exchange_risk: "ریسک صرافی",
-  regulation: "رگولاتوری",
-  security_risk: "ریسک امنیتی",
-  liquidation_leverage: "اهرم و لیکوییدیشن",
-  geopolitical_risk: "ریسک ژئوپلیتیک",
-  institutional_adoption: "پذیرش نهادی",
-  crypto_market_structure: "ساختار بازار کریپتو",
-  macro_news: "خبر کلان",
-  financial_market_news: "خبر بازار مالی",
-};
 
 const channelByEventType: Record<string, TransmissionChannel> = {
   central_bank_policy: "rates",
@@ -74,8 +56,26 @@ function deterministicExplanation(event: NormalizedEventInput): EventExplanation
   const channel = channelByEventType[event.eventType] ?? "risk_on_risk_off";
   const affectedAssets = event.affectedAssets.length ? event.affectedAssets : ["BTC", "ETH", "SOL"];
   const expectedDirection = directionForEvent(event);
-  const translationAvailable = event.language === "fa";
-  const titleFa = translationAvailable ? event.title : null;
+  const titleFa = buildPersianEventTitle({
+    title: event.title,
+    content: event.summary,
+    sourceName: event.sourceName,
+    timestamp: event.eventTimestamp,
+    quality: event.quality,
+    eventType: event.eventType,
+    affectedAssets,
+    entities: event.entities,
+  });
+  const summaryFa = buildPersianEventSummary({
+    title: event.title,
+    content: event.summary,
+    sourceName: event.sourceName,
+    timestamp: event.eventTimestamp,
+    quality: event.quality,
+    eventType: event.eventType,
+    affectedAssets,
+    entities: event.entities,
+  });
   const sourceNote = `${event.sourceName} با اعتبار منبع ${event.sourceReliability}/100 و وضعیت تازگی ${event.freshnessStatus}`;
 
   return {
@@ -84,32 +84,32 @@ function deterministicExplanation(event: NormalizedEventInput): EventExplanation
     title: event.title,
     eventType: event.eventType,
     affectedAssets,
-    status: process.env.OPENAI_API_KEY ? "ready" : "ai_unavailable",
-    quality: process.env.OPENAI_API_KEY ? event.quality : "unavailable",
+    status: process.env.OPENAI_API_KEY ? "ready" : "local_ready",
+    quality: event.quality,
     translationFa: titleFa,
-    summaryFa: translationAvailable ? event.summary : null,
-    macroInterpretationFa:
+    summaryFa,
+    macroInterpretationFa: sanitizePublicIntelligenceText(
       channel === "rates"
         ? `${label} معمولاً از مسیر انتظارات نرخ بهره و بازده اوراق به دارایی‌های پرریسک منتقل می‌شود. تا وقتی داده DXY، US10Y و Nasdaq تأیید ندهند، سیستم از نتیجه‌گیری جهت‌دار قطعی خودداری می‌کند.`
         : channel === "dollar"
           ? `${label} از مسیر هزینه نقدینگی دلاری اثر می‌گذارد. تقویت دلار معمولاً برای BTC، ETH و SOL فشارزا است، اما فقط با داده قیمت و همبستگی معتبر می‌توان شدت اثر را سنجید.`
           : channel === "stablecoin_flows"
-            ? `${label} برای تشخیص ورود یا خروج نقدینگی نقدی مهم است. رشد واقعی استیبل‌کوین‌ها زمانی حمایتی است که با حجم اسپات یا ETF تأیید شود.`
+          ? `${label} برای تشخیص ورود یا خروج نقدینگی نقدی مهم است. رشد واقعی استیبل‌کوین‌ها زمانی حمایتی است که با حجم اسپات یا ETF تأیید شود.`
             : `${label} به‌تنهایی برای تولید تحلیل جهت‌دار کافی نیست؛ اثر آن باید کنار قیمت، نقدینگی، همبستگی و کیفیت منبع خوانده شود.`,
-    cryptoInterpretationFa:
+    ),
+    cryptoInterpretationFa: sanitizePublicIntelligenceText(
       expectedDirection === "bearish"
         ? `اثر اولیه این رویداد برای ${affectedAssets.join("، ")} می‌تواند فشارزا باشد، اما سیستم بدون تأیید داده‌های بازار، امتیاز یا هشدار قطعی تولید نمی‌کند.`
         : expectedDirection === "bullish"
           ? `اثر اولیه این رویداد برای ${affectedAssets.join("، ")} می‌تواند حمایتی باشد، اما پایداری آن باید با جریان نقدینگی و واکنش قیمت راستی‌آزمایی شود.`
           : `اثر این رویداد برای ${affectedAssets.join("، ")} فعلاً خنثی یا دوگانه است و برای تحلیل معتبر به سیگنال‌های تکمیلی نیاز دارد.`,
+    ),
     actionableExplanationFa:
-      process.env.OPENAI_API_KEY
-        ? "این رویداد برای تولید توضیح فارسی در صف پردازش هوشمند قرار دارد؛ تا زمان تکمیل پردازش، تحلیل قطعی نمایش داده نمی‌شود."
-        : "لایه ترجمه و خلاصه‌سازی هوشمند فعال نیست، چون کلید سرویس تنظیم نشده است. رویداد ذخیره شده، اما متن فارسی کامل ساخته نمی‌شود.",
+      "این توضیح با پردازش فارسی محلی و فرهنگ‌واژه مالی ساخته شده است. برداشت جهت‌دار فقط وقتی معتبرتر می‌شود که واکنش قیمت، نقدینگی و همبستگی نیز هم‌جهت باشند.",
     uncertaintyNotesFa: [
       sourceNote,
       "این توضیح بر پایه قواعد شفاف و داده موجود ساخته شده و جایگزین امتیازدهی کامل اثر بازار نیست.",
-      !process.env.OPENAI_API_KEY ? "کلید سرویس ترجمه هوشمند موجود نیست؛ بنابراین برای تیتر انگلیسی ترجمه کامل ساخته نمی‌شود." : "",
+      "ترجمه محلی برای خوانایی فارسی استفاده شده است؛ اگر متن منبع مبهم باشد، عدم قطعیت در تحلیل حفظ می‌شود.",
     ].filter(Boolean),
     transmissionChannel: channel,
     expectedDirection,
@@ -125,12 +125,12 @@ export async function getLatestEventExplanations(limit = 8): Promise<EventExplan
 export function getAiLayerStatus() {
   return {
     generatedAt: new Date().toISOString(),
-    provider: "OpenAI",
-    enabled: Boolean(process.env.OPENAI_API_KEY),
-    status: process.env.OPENAI_API_KEY ? "ready" : "api_key_missing",
+    provider: process.env.OPENAI_API_KEY ? "OpenAI + local Persian processor" : "local Persian processor",
+    enabled: true,
+    status: process.env.OPENAI_API_KEY ? "ready" : "local_ready",
     messageFa: process.env.OPENAI_API_KEY
-      ? "لایه ترجمه و توضیح هوشمند آماده پردازش رویدادهای معتبر است."
-      : "کلید سرویس ترجمه هوشمند تنظیم نشده است؛ سیستم متن ساختگی جایگزین نمی‌سازد.",
+      ? "پردازش فارسی محلی فعال است و در صورت نیاز از OpenAI برای تکمیل توضیح رویدادهای معتبر استفاده می‌شود."
+      : "پردازش فارسی محلی فعال است؛ نبود سرویس تکمیلی باعث تولید متن ساختگی یا مخفی شدن رویدادهای معتبر نمی‌شود.",
   };
 }
 

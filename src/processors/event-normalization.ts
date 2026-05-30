@@ -1,4 +1,5 @@
 import { productionSources } from "@/collectors/registry";
+import { buildPersianEventSummary, buildPersianEventTitle } from "@/lib/persian-processing";
 import type { AssetSymbol, NewsCategory } from "@/lib/types";
 import type { EventClusterInput, FreshnessStatus, NormalizedEventInput, RawEventInput } from "@/types/ingestion";
 import { stableHash } from "@/processors/deduplication";
@@ -179,6 +180,9 @@ export function normalizeRawEvent(event: RawEventInput): NormalizedEventInput {
   const freshness = freshnessStatus(event.timestamp);
   const sourceReliability = reliabilityFor(event);
   const confidence = confidenceFor({ reliability: sourceReliability, eventType, entities, affectedAssets, freshness });
+  const localizedEvent = { ...event, eventType, entities, affectedAssets };
+  const titleFa = buildPersianEventTitle(localizedEvent);
+  const summaryFa = buildPersianEventSummary(localizedEvent);
 
   return {
     rawEventId: event.id,
@@ -186,10 +190,10 @@ export function normalizeRawEvent(event: RawEventInput): NormalizedEventInput {
     sourceName: event.sourceName,
     sourceType: event.sourceType,
     category: event.category,
-    title: event.title,
-    summary: compactSummary(event),
+    title: titleFa,
+    summary: summaryFa,
     url: event.url,
-    language: event.language ?? "en",
+    language: "fa",
     publishedAt: event.timestamp,
     eventTimestamp: event.timestamp,
     eventType,
@@ -206,7 +210,10 @@ export function normalizeRawEvent(event: RawEventInput): NormalizedEventInput {
       sourceType: event.sourceType,
       url: event.url ?? null,
       published_at: event.timestamp,
-      language: event.language ?? "en",
+      language: "fa",
+      original_language: event.language ?? "en",
+      original_title: event.title,
+      original_summary: compactSummary(event),
       dedup_hash: event.dedupHash,
       freshness_status: freshness,
       source_reliability: sourceReliability,

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { productionSources, summarizeSources } from "@/collectors/registry";
+import { dataQualityFromFreshness, getFreshnessReportSync } from "@/health/freshness-engine";
 import { moduleDataSourceStatus, type DataSourceStatus, type ModuleStatusKey } from "@/lib/data-source-status";
 import { categoryLabels, pricingPlans, usdtRiskCenter } from "@/lib/production-data";
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
@@ -55,7 +56,7 @@ function signalStatus(keys: string[]): DataSourceStatus {
     keys.map((key) => {
       const signal = snapshot.byKey[key];
       if (!signal || signal.value === null || signal.quality === "unavailable") return "unavailable";
-      return signal.quality;
+      return dataQualityFromFreshness(signal.quality, signal.timestamp);
     }),
   );
 }
@@ -78,7 +79,7 @@ export function getDashboardModuleDataSourceStatus(): Record<ModuleStatusKey, Da
     statuses[module] = signalStatus(keys);
   }
 
-  statuses.latestNews = rawEvents.length ? combineStatuses(rawEvents.map((event) => event.quality)) : "unavailable";
+  statuses.latestNews = rawEvents.length ? combineStatuses(rawEvents.map((event) => dataQualityFromFreshness(event.quality, event.timestamp))) : "unavailable";
   statuses.ingestionHealth = foundation.sourceHealth.length ? (foundation.failedSources > 0 ? "partial_live" : "live") : "unavailable";
   statuses.marketRegime = reliability.coreReliability >= 0.45 ? statuses.marketRegime : "unavailable";
   statuses.topAlerts = reliability.coreReliability >= 0.35 ? combineStatuses([statuses.liquidity, statuses.macroSummary, statuses.sentiment]) : "unavailable";
@@ -92,6 +93,10 @@ export function getDashboardModuleDataSourceStatus(): Record<ModuleStatusKey, Da
 
 export function getDashboardReliabilityReport() {
   return getIntelligenceReliabilityReportSync();
+}
+
+export function getDashboardFreshnessReport() {
+  return getFreshnessReportSync();
 }
 
 export function getDashboardDerivedSignals() {

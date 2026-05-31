@@ -25,6 +25,7 @@ import {
   getDashboardCorrelationReport as getDynamicCorrelationReport,
   getDashboardDerivedSignals as getDerivedSignalReport,
   getDashboardEventExplanations as getLatestEventExplanations,
+  getDashboardFreshnessReport as getFreshnessReport,
   getDashboardIngestionFoundationStatus as getIngestionFoundationStatusSync,
   getDashboardLatestRawEvents as getLatestRawEventsSync,
   getDashboardLiquidityReport as getLiquidityReport,
@@ -46,6 +47,7 @@ import { Metric } from "@/components/ui/metric";
 import { Progress } from "@/components/ui/progress";
 import { dataSourceStatusLabels, type DataSourceStatus, type ModuleStatusKey } from "@/lib/data-source-status";
 import { publicAnalysisModeLabels, sanitizePublicIntelligenceText, toPublicRawEvent } from "@/lib/persian-processing";
+import { freshnessStateLabelsFa, operationalHealthLabelsFa, type FreshnessState, type OperationalHealthState } from "@/health/freshness-engine";
 
 const moduleDataSourceStatus = new Proxy({} as Record<ModuleStatusKey, DataSourceStatus>, {
   get: (_target, property: string | symbol) => {
@@ -104,6 +106,20 @@ function reliabilityVariant(status: string): "success" | "warning" | "danger" {
   if (status === "healthy") return "success";
   if (status === "degraded") return "warning";
   return "danger";
+}
+
+function healthStateVariant(status: OperationalHealthState): "success" | "warning" | "danger" | "muted" {
+  if (status === "healthy") return "success";
+  if (status === "degraded" || status === "sparse") return "warning";
+  if (status === "unavailable") return "muted";
+  return "danger";
+}
+
+function freshnessVariant(status: FreshnessState): "success" | "warning" | "danger" | "muted" {
+  if (status === "fresh" || status === "recent") return "success";
+  if (status === "delayed") return "warning";
+  if (status === "stale") return "danger";
+  return "muted";
 }
 
 const coverageLabels: Record<string, string> = {
@@ -303,6 +319,7 @@ function formatNullableCorrelation(value: number | null | undefined, compact = f
 
 export function ReliabilityStatusPanel() {
   const reliability = getIntelligenceReliabilityReportSync();
+  const freshness = getFreshnessReport();
   const coverageRows = Object.entries(reliability.coverage);
 
   return (
@@ -319,6 +336,12 @@ export function ReliabilityStatusPanel() {
           <Badge variant={reliabilityVariant(reliability.overallStatus)}>
             هسته داده {Math.round(reliability.coreReliability * 100)}%
           </Badge>
+          <Badge variant={healthStateVariant(reliability.reliabilityState)}>
+            سلامت: {operationalHealthLabelsFa[reliability.reliabilityState]}
+          </Badge>
+          <Badge variant={freshnessVariant(freshness.overallFreshnessState)}>
+            تازگی: {freshnessStateLabelsFa[freshness.overallFreshnessState]}
+          </Badge>
           <Badge variant="outline">
             منابع حیاتی: {reliability.criticalSourcesOnline}/{reliability.criticalSourcesTotal}
           </Badge>
@@ -328,6 +351,13 @@ export function ReliabilityStatusPanel() {
         </div>
       </CardHeader>
       <CardContent className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="grid gap-2 md:grid-cols-2 xl:col-span-2 xl:grid-cols-5">
+          <Metric label="امتیاز تازگی" value={`${freshness.summary.overallFreshnessScore}/100`} tone={freshness.summary.overallFreshnessScore >= 70 ? "good" : freshness.summary.overallFreshnessScore >= 45 ? "warn" : "bad"} progress={freshness.summary.overallFreshnessScore} />
+          <Metric label="منابع سالم" value={`${freshness.summary.healthySources}/${freshness.summary.enabledSources}`} tone={freshness.summary.healthySources ? "good" : "warn"} />
+          <Metric label="منابع کهنه" value={`${freshness.summary.staleSources + freshness.summary.obsoleteSources}`} tone={freshness.summary.staleSources + freshness.summary.obsoleteSources ? "warn" : "good"} />
+          <Metric label="سیگنال‌های کهنه" value={`${freshness.summary.staleSignals + freshness.summary.obsoleteSignals}`} tone={freshness.summary.staleSignals + freshness.summary.obsoleteSignals ? "warn" : "good"} />
+          <Metric label="سن آخرین بروزرسانی" value={freshness.refreshAgeMinutes === null ? "ناموجود" : `${freshness.refreshAgeMinutes} دقیقه`} tone={freshness.refreshAgeMinutes !== null && freshness.refreshAgeMinutes <= 35 ? "good" : "warn"} />
+        </div>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {coverageRows.map(([dimension, row]) => (
             <div key={dimension} className="rounded-md border bg-secondary/25 p-3">
@@ -1291,6 +1321,8 @@ export function OperationsPanel() {
 
 export function DataQualityPanel() {
   const snapshot = getSignalSnapshot();
+  const freshness = getFreshnessReport();
+  const freshnessBySignal = new Map(freshness.signalFreshness.map((signal) => [signal.key, signal]));
   const failedSources = snapshot.signals.filter((signal) => signal.quality === "unavailable" || signal.error);
   const nextUpdate = Math.max(0, DASHBOARD_REFRESH_INTERVAL_MINUTES - minutesSinceEngineUpdate());
 
@@ -1307,6 +1339,8 @@ export function DataQualityPanel() {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="success">آخرین اجرای موفق: {new Date(snapshot.lastUpdatedAt).toLocaleString("fa-IR")}</Badge>
           <Badge variant="outline">آپدیت بعدی: {nextUpdate} دقیقه دیگر</Badge>
+          <Badge variant={freshnessVariant(freshness.overallFreshnessState)}>تازگی کلی: {freshnessStateLabelsFa[freshness.overallFreshnessState]}</Badge>
+          {freshness.summary.staleSources + freshness.summary.obsoleteSources ? <Badge variant="danger">{freshness.summary.staleSources + freshness.summary.obsoleteSources} منبع stale/obsolete</Badge> : null}
           {failedSources.length ? <Badge variant="danger">{failedSources.length} منبع ناموفق</Badge> : <Badge variant="success">منبع ناموفق ندارد</Badge>}
         </div>
       </CardHeader>
@@ -1327,32 +1361,40 @@ export function DataQualityPanel() {
           ))}
         </div>
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[900px] text-xs">
+          <table className="w-full min-w-[980px] text-xs">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-right">سیگنال</th>
                 <th className="px-3 py-2 text-right">مقدار</th>
                 <th className="px-3 py-2 text-right">منبع</th>
                 <th className="px-3 py-2 text-right">کیفیت</th>
+                <th className="px-3 py-2 text-right">تازگی</th>
                 <th className="px-3 py-2 text-right">اعتبار</th>
                 <th className="px-3 py-2 text-right">آخرین بروزرسانی</th>
                 <th className="px-3 py-2 text-right">علت / خطا</th>
               </tr>
             </thead>
             <tbody>
-              {snapshot.signals.map((signal) => (
-                <tr key={signal.key} className="border-t">
-                  <td className="px-3 py-2 font-bold">{signal.label}</td>
-                  <td className="px-3 py-2 number-tabular">{signal.value === null ? "ناموجود" : formatNumber(signal.value, 2)}</td>
-                  <td className="px-3 py-2">{signal.source}</td>
-                  <td className="px-3 py-2">
-                    <Badge variant={qualityVariant(signal.quality)}>{dataSourceStatusLabels[signal.quality]}</Badge>
-                  </td>
-                  <td className="px-3 py-2 number-tabular">{signal.reliability}/100</td>
-                  <td className="px-3 py-2">{signal.timestamp ? new Date(signal.timestamp).toLocaleString("fa-IR") : "ناموجود"}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{sanitizePublicIntelligenceText(signal.error ?? signal.estimatedReason ?? "داده مستقیم از اتصال داده دریافت شده است.")}</td>
-                </tr>
-              ))}
+              {snapshot.signals.map((signal) => {
+                const signalFreshness = freshnessBySignal.get(signal.key);
+                const adjustedQuality = signalFreshness?.adjustedQuality ?? signal.quality;
+                return (
+                  <tr key={signal.key} className="border-t">
+                    <td className="px-3 py-2 font-bold">{signal.label}</td>
+                    <td className="px-3 py-2 number-tabular">{signal.value === null ? "ناموجود" : formatNumber(signal.value, 2)}</td>
+                    <td className="px-3 py-2">{signal.source}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant={qualityVariant(adjustedQuality)}>{dataSourceStatusLabels[adjustedQuality]}</Badge>
+                    </td>
+                    <td className="px-3 py-2">
+                      {signalFreshness ? <Badge variant={freshnessVariant(signalFreshness.freshnessState)}>{freshnessStateLabelsFa[signalFreshness.freshnessState]}</Badge> : "ناموجود"}
+                    </td>
+                    <td className="px-3 py-2 number-tabular">{signal.reliability}/100</td>
+                    <td className="px-3 py-2">{signal.timestamp ? new Date(signal.timestamp).toLocaleString("fa-IR") : "ناموجود"}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{sanitizePublicIntelligenceText(signal.error ?? signal.estimatedReason ?? signalFreshness?.warningFa ?? "داده مستقیم از اتصال داده دریافت شده است.")}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -21,6 +21,7 @@ export function healthFromCollectorOutput(output: CollectorOutput, previous?: So
   const success = output.status === "success" || output.status === "degraded";
   const failed = output.status === "failed" || output.status === "api_key_missing";
   const consecutiveFailures = failed ? (previous?.consecutiveFailures ?? 0) + 1 : 0;
+  const lastSuccessAt = success ? output.fetchedAt : previous?.lastSuccessAt ?? null;
   const nextRetryAt =
     failed && output.source.enabled
       ? new Date(Date.now() + output.source.retryPolicy.backoffMs * Math.max(1, consecutiveFailures)).toISOString()
@@ -32,10 +33,10 @@ export function healthFromCollectorOutput(output: CollectorOutput, previous?: So
     status: output.status,
     tier: output.source.tier,
     latencyMs: output.latencyMs,
-    freshnessMinutes: minutesSince(output.fetchedAt),
+    freshnessMinutes: success ? minutesSince(output.fetchedAt) : minutesSince(lastSuccessAt),
     errorRate: failed ? 1 : output.status === "degraded" ? 0.35 : 0,
     consecutiveFailures,
-    lastSuccessAt: success ? output.fetchedAt : previous?.lastSuccessAt ?? null,
+    lastSuccessAt,
     lastFailureAt: failed ? output.fetchedAt : previous?.lastFailureAt ?? null,
     lastError: output.error,
     nextRetryAt,

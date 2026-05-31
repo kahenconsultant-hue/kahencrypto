@@ -1,4 +1,5 @@
 import { productionSources } from "@/collectors/registry";
+import { buildFreshnessReportFromInputs, type FreshnessReport, type OperationalHealthState } from "@/health/freshness-engine";
 import type { DataPoint, DataQuality, NormalizedSignal, SignalGroup } from "@/lib/types";
 import { getSignalSnapshot } from "@/server/analytics/market-signals";
 import { freshnessScore, minutesSince } from "@/server/analytics/quality-engine";
@@ -39,6 +40,7 @@ export interface IntelligenceReliabilityReport {
   generatedAt: string;
   overallReliability: number;
   overallStatus: IntelligenceReliabilityStatus;
+  reliabilityState: OperationalHealthState;
   coreReliability: number;
   premiumCoverage: number;
   analysisMode: "free_data_plus_proxies" | "direct_core_data" | "degraded_core_data" | "insufficient_core_data";
@@ -60,6 +62,7 @@ export interface IntelligenceReliabilityReport {
   activeSources: number;
   failedSources: number;
   staleSources: number;
+  obsoleteSources: number;
   eventsObserved: number;
   metricsObserved: number;
   lastIngestionRun: {
@@ -70,6 +73,13 @@ export interface IntelligenceReliabilityReport {
     storageMode: string;
   } | null;
   coverage: Record<CoverageDimension, CoverageBreakdown>;
+  freshness: FreshnessReport["summary"] & {
+    overallFreshnessState: FreshnessReport["overallFreshnessState"];
+    overallHealthState: FreshnessReport["overallHealthState"];
+    latestDataAt: string | null;
+    latestRefreshAt: string | null;
+    refreshAgeMinutes: number | null;
+  };
   confidenceCaps: {
     global: number;
     alerts: number;
@@ -283,6 +293,13 @@ function buildReliabilityReport(params: {
 }): IntelligenceReliabilityReport {
   const snapshot = getSignalSnapshot();
   const dimensions: CoverageDimension[] = ["macro", "crypto", "liquidity", "derivatives", "sentiment", "geopolitical"];
+  const freshnessReport = buildFreshnessReportFromInputs({
+    sourceHealth: params.sourceHealth,
+    rawMetrics: params.rawMetrics,
+    rawEvents: params.rawEvents,
+    signals: snapshot.signals,
+    lastRun: params.lastRun,
+  });
   const coverageEntries = dimensions.map((dimension) =>
     buildDimensionCoverage({
       dimension,
@@ -339,7 +356,8 @@ function buildReliabilityReport(params: {
     coverage.sentiment.score >= 0.35 ? "rss_sentiment_context" : "",
     coverage.geopolitical.score >= 0.35 ? "geopolitical_context" : "",
   ].filter(Boolean);
-  const staleSources = params.sourceHealth.filter((source) => minutesSince(source.updatedAt) > 90).length;
+  const staleSources = freshnessReport.summary.staleSources;
+  const obsoleteSources = freshnessReport.summary.obsoleteSources;
   const degradedModules = unique(
     coverageEntries
       .filter((entry) => entry.status !== "healthy")
@@ -368,7 +386,8 @@ function buildReliabilityReport(params: {
     missingCriticalSources.length
       ? `برخی منابع رایگان اصلی ناموجود یا ناموفق هستند: ${missingCriticalSources.slice(0, 4).join("، ")}${missingCriticalSources.length > 4 ? "…" : ""}`
       : "",
-    staleSources ? `${staleSources} منبع بیش از ۹۰ دقیقه است بروزرسانی health معتبر ندارد.` : "",
+    staleSources || obsoleteSources ? `${staleSources + obsoleteSources} منبع فعال stale/obsolete هستند و نباید به شکل تازه یا زنده نمایش داده شوند.` : "",
+    ...freshnessReport.summary.warningsFa,
     !process.env.OPENAI_API_KEY ? "OPENAI_API_KEY تنظیم نشده است؛ ترجمه و توضیح AI به‌صورت production فعال نیست." : "",
     disabledPremiumModules.length ? `پوشش premium محدود است: ${disabledPremiumModules.slice(0, 4).join("، ")}. تحلیل core با پروکسی‌های رایگان ادامه دارد.` : "",
     degradedModules.length ? "برخی ماژول‌ها در حالت degraded هستند و نباید confidence بالا نشان دهند." : "",
@@ -378,6 +397,7 @@ function buildReliabilityReport(params: {
     generatedAt: new Date().toISOString(),
     overallReliability,
     overallStatus,
+    reliabilityState: freshnessReport.overallHealthState,
     coreReliability,
     premiumCoverage,
     analysisMode,
@@ -399,6 +419,7 @@ function buildReliabilityReport(params: {
     activeSources,
     failedSources,
     staleSources,
+    obsoleteSources,
     eventsObserved: params.rawEvents.length,
     metricsObserved: params.rawMetrics.length,
     lastIngestionRun: params.lastRun
@@ -411,6 +432,14 @@ function buildReliabilityReport(params: {
         }
       : null,
     coverage,
+    freshness: {
+      ...freshnessReport.summary,
+      overallFreshnessState: freshnessReport.overallFreshnessState,
+      overallHealthState: freshnessReport.overallHealthState,
+      latestDataAt: freshnessReport.latestDataAt,
+      latestRefreshAt: freshnessReport.latestRefreshAt,
+      refreshAgeMinutes: freshnessReport.refreshAgeMinutes,
+    },
     confidenceCaps: {
       global: globalCap,
       alerts: clampPercent(Math.min(globalCap, coverage.macro.score * 30 + coverage.crypto.score * 25 + coverage.liquidity.score * 25 + coverage.derivatives.score * 20)),

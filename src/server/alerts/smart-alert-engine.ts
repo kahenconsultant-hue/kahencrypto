@@ -27,6 +27,128 @@ function value(key: string) {
   return signal.value;
 }
 
+const alertIndicatorLabels: Record<string, string> = {
+  dxy_trend_24h: "DXY",
+  us10y_trend_24h: "US10Y",
+  nasdaq_trend_24h: "Nasdaq",
+  btc_trend_24h: "BTC 24h",
+  eth_trend_24h: "ETH 24h",
+  sol_trend_24h: "SOL 24h",
+  stablecoin_market_cap_7d: "ارزش بازار استیبل‌کوین ۷ روزه",
+  stablecoin_market_cap_30d: "ارزش بازار استیبل‌کوین ۳۰ روزه",
+  total_stablecoin_market_cap_usd: "ارزش کل بازار استیبل‌کوین",
+  stablecoin_dominance: "دامیننس استیبل‌کوین",
+  usdt_supply_7d: "عرضه USDT ۷ روزه",
+  usdc_supply_7d: "عرضه USDC ۷ روزه",
+  btc_etf_flow_24h: "جریان ETF بیت‌کوین",
+  eth_etf_flow_24h: "جریان ETF اتریوم",
+  exchange_inflows: "ورودی صرافی‌ها",
+  exchange_outflows: "خروجی صرافی‌ها",
+  funding_btc: "Funding Rate BTC",
+  open_interest_btc_24h: "Open Interest BTC",
+  spot_volume_btc_24h: "حجم اسپات BTC",
+  futures_volume_btc_24h: "حجم فیوچرز BTC",
+  vix_trend_24h: "VIX",
+  cpi_latest: "CPI",
+  fed_funds_rate: "Fed Funds Rate",
+  unemployment_rate: "Employment Data",
+};
+
+function alertDataFromKeys(keys: string[]): NonNullable<SmartAlert["dataUsed"]> {
+  const snapshot = getSignalSnapshot();
+  const uniqueKeys = Array.from(new Set(keys.filter((key) => snapshot.byKey[key])));
+  return uniqueKeys.map((key) => {
+    const signal = snapshot.byKey[key];
+    const ageMinutes = signal.timestamp ? Math.max(0, Math.round((Date.now() - Date.parse(signal.timestamp)) / 60_000)) : null;
+    const status =
+      signal.quality === "estimated"
+        ? "estimated"
+        : signal.value === null || signal.quality === "unavailable"
+          ? "missing"
+          : ageMinutes !== null && ageMinutes > 90
+            ? "stale"
+            : "available";
+    return {
+      label: alertIndicatorLabels[key] ?? key,
+      key,
+      source: signal.source,
+      status,
+      value: signal.value,
+    };
+  });
+}
+
+function capPriority(priority: TraderAlertPriority, maxPriority: TraderAlertPriority) {
+  const order: TraderAlertPriority[] = ["low", "medium", "high", "critical"];
+  return order.indexOf(priority) > order.indexOf(maxPriority) ? maxPriority : priority;
+}
+
+function humanCapReason(reason: string | null, cap: number | null) {
+  return reason && cap !== null ? `${reason} سقف اطمینان: ${cap}٪.` : reason;
+}
+
+function applyAlertQualityRules(params: {
+  type: SmartAlert["type"];
+  priority: TraderAlertPriority;
+  confidence: number;
+  dataUsed: NonNullable<SmartAlert["dataUsed"]>;
+}) {
+  let confidence = params.confidence;
+  let priority = params.priority;
+  let cap: number | null = null;
+  const reasons: string[] = [];
+  const availableCount = params.dataUsed.filter((item) => item.status === "available" || item.status === "stale").length;
+  const missing = new Set(params.dataUsed.filter((item) => item.status === "missing").map((item) => item.key));
+  const isProxyAlert = params.type.toString().includes("_proxy_") || params.type === "premium_data_missing_notice";
+  const isLiquidityAlert = params.type === "Liquidity Alert" || params.type === "liquidity_proxy_alert" || params.type === "stablecoin_pressure_alert";
+  const isMacroAlert = params.type === "Macro Alert" || params.type === "Dollar Pressure Alert" || params.type === "Rates Shock Alert" || params.type === "Fed Alert" || params.type === "macro_pressure_proxy_alert";
+
+  if (availableCount < 3) {
+    cap = Math.min(cap ?? 100, 50);
+    priority = capPriority(priority, "medium");
+    reasons.push("این هشدار کمتر از سه شاخص واقعی در اختیار دارد؛ بنابراین شدت High یا Critical مجاز نیست.");
+  }
+
+  if (isProxyAlert) {
+    priority = capPriority(priority, "medium");
+    reasons.push("این هشدار بر پایه پروکسی/Derived Signal است و نباید به‌عنوان داده مستقیم نهادی نمایش داده شود.");
+  }
+
+  if (isLiquidityAlert) {
+    const etfMissing = missing.has("btc_etf_flow_24h") || missing.has("eth_etf_flow_24h");
+    const exchangeMissing = missing.has("exchange_inflows") || missing.has("exchange_outflows");
+    if (etfMissing && exchangeMissing) {
+      cap = Math.min(cap ?? 100, 55);
+      priority = capPriority(priority, "medium");
+      reasons.push("ETF Flow و Exchange Flow در دسترس نیستند؛ سیگنال نقدینگی با سقف اطمینان محدود می‌شود.");
+    } else if (exchangeMissing) {
+      cap = Math.min(cap ?? 100, 65);
+      reasons.push("Exchange Inflows/Outflows ناموجود است و کیفیت سیگنال نقدینگی کاهش یافته است.");
+    } else if (etfMissing) {
+      cap = Math.min(cap ?? 100, 70);
+      reasons.push("ETF Flow ناموجود است و بخشی از تأیید نهادی نقدینگی دیده نمی‌شود.");
+    }
+  }
+
+  if (isMacroAlert) {
+    const fredMissing = missing.has("cpi_latest") || missing.has("fed_funds_rate") || missing.has("unemployment_rate");
+    if (fredMissing) {
+      cap = Math.min(cap ?? 100, 45);
+      priority = capPriority(priority, "medium");
+      reasons.push("داده‌های اصلی FRED برای CPI، نرخ فدرال فاندز یا اشتغال کامل نیست؛ هشدار کلان نباید confidence بالا بگیرد.");
+    }
+  }
+
+  if (cap !== null) confidence = Math.min(confidence, cap);
+  if (confidence < 68) priority = capPriority(priority, "medium");
+
+  return {
+    priority,
+    confidence: clampPercent(confidence),
+    confidenceCapReason: humanCapReason(reasons.join(" "), cap),
+  };
+}
+
 function sourceReliability(keys: string[]) {
   const signals = keys.map((key) => getSignalSnapshot().byKey[key]).filter(Boolean);
   if (!signals.length) return 0;
@@ -63,14 +185,25 @@ function alertBase(params: {
   whyItMattersFa: string;
   monitoringFa: string[];
   dataQuality: SmartAlert["dataQuality"];
+  dataUsed?: SmartAlert["dataUsed"];
+  missingCriticalInputs?: string[];
+  confidenceCapReason?: string | null;
   createdAt?: string;
 }): SmartAlert {
+  const dataUsed = params.dataUsed ?? alertDataFromKeys(params.monitoringFa);
+  const missingCriticalInputs = params.missingCriticalInputs ?? dataUsed.filter((item) => item.status === "missing").map((item) => item.label);
+  const quality = applyAlertQualityRules({
+    type: params.type,
+    priority: params.priority,
+    confidence: params.confidence,
+    dataUsed,
+  });
   return {
     id: params.id,
     type: params.type,
-    level: levelFromPriority(params.priority),
-    priority: params.priority,
-    urgency: params.priority,
+    level: levelFromPriority(quality.priority),
+    priority: quality.priority,
+    urgency: quality.priority,
     direction: params.direction,
     timeframe: params.timeframe,
     triggerCondition: params.triggerCondition,
@@ -81,10 +214,13 @@ function alertBase(params: {
     titleFa: params.titleFa,
     reasoningFa: params.reasoningFa,
     affectedAssets: params.affectedAssets,
-    confidence: params.confidence,
+    confidence: quality.confidence,
     importance: params.importance,
     whyItMattersFa: params.whyItMattersFa,
     monitoringFa: params.monitoringFa,
+    dataUsed,
+    missingCriticalInputs,
+    confidenceCapReason: params.confidenceCapReason ?? quality.confidenceCapReason,
     dataQuality: params.dataQuality,
     createdAt: params.createdAt ?? new Date().toISOString(),
     scenarioFa: params.reasoningFa,
@@ -178,7 +314,7 @@ function macroPressureProxyAlert(): SmartAlert | null {
     invalidationCondition: "اگر DXY زیر ۰٫۱۵٪ برگردد، US10Y آرام شود و BTC با حجم اسپات مثبت بماند، این پروکسی ضعیف می‌شود.",
     suggestedTraderAction: "تیترهای مثبت کریپتو را تا وقتی دلار و نرخ فشار می‌آورند با احتیاط بخوانید؛ این هشدار سیگنال معامله نیست.",
     whyItMattersFa: "کانال دلار و نرخ می‌تواند اثر خبرهای مثبت کریپتو را خنثی کند.",
-    monitoringFa: signal.usedInputs,
+    monitoringFa: [...signal.usedInputs, "cpi_latest", "fed_funds_rate", "unemployment_rate"],
     dataQuality: signal.quality,
   });
 }
@@ -205,7 +341,7 @@ function liquidityProxyAlert(): SmartAlert | null {
     invalidationCondition: "اگر رشد استیبل‌کوین به زیر آستانه ۰٫۳۵٪ هفتگی برگردد یا حجم اسپات افت کند، هشدار تضعیف می‌شود.",
     suggestedTraderAction: "این خروجی فقط نشان می‌دهد زمینه نقدینگی بهتر شده؛ برای تصمیم معامله باید با قیمت و ریسک کلان هم‌سنجی شود.",
     whyItMattersFa: "نقدینگی واقعی شرط دوام رالی است.",
-    monitoringFa: [...liquidity.usedInputs, ...stablecoin.usedInputs],
+    monitoringFa: [...liquidity.usedInputs, ...stablecoin.usedInputs, "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows"],
     dataQuality: liquidity.quality,
   });
 }
@@ -232,7 +368,7 @@ function stablecoinPressureAlert(): SmartAlert | null {
     invalidationCondition: "اگر DefiLlama رشد مثبت پایدار در عرضه استیبل‌کوین‌ها نشان دهد و حجم اسپات بالا برود، هشدار ضعیف می‌شود.",
     suggestedTraderAction: "رشد قیمت را بدون تأیید استیبل‌کوین به‌عنوان expansion قطعی نخوانید.",
     whyItMattersFa: "استیبل‌کوین‌ها یکی از سوخت‌های اصلی نقدینگی در بازار کریپتو هستند.",
-    monitoringFa: stablecoin.usedInputs,
+    monitoringFa: [...stablecoin.usedInputs, "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows"],
     dataQuality: stablecoin.quality,
   });
 }
@@ -344,7 +480,7 @@ function macroPressureAlert(): SmartAlert | null {
     invalidationCondition: "این سناریو ضعیف می‌شود اگر DXY زیر تغییر ۷ روزه خود برگردد، US10Y در بروزرسانی بعدی آرام شود و BTC با حجم اسپات بالاتر از میانگین ۷ روزه مثبت بماند.",
     suggestedTraderAction: "خبر خنثی کریپتو را به‌تنهایی bullish تفسیر نکنید؛ در این وضعیت کانال دلار و نرخ، محرک غالب‌تر است.",
     whyItMattersFa: "هم‌زمانی دلار قوی، نرخ بالاتر و ضعف Nasdaq معمولاً هزینه نگهداری دارایی‌های پرریسک را بالا می‌برد.",
-    monitoringFa: ["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "spot_volume_btc_24h"],
+    monitoringFa: ["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "spot_volume_btc_24h", "cpi_latest", "fed_funds_rate", "unemployment_rate"],
     dataQuality: "partial_live",
   });
 }
@@ -376,7 +512,7 @@ function liquidityPressureAlert(): SmartAlert | null {
     invalidationCondition: "اگر stablecoin market cap بالای ۰٫۳۵٪ هفتگی رشد کند و DXY/US10Y هم‌زمان آرام شوند، سناریوی فشار نقدینگی ضعیف می‌شود.",
     suggestedTraderAction: "حرکت‌های مثبت کوتاه‌مدت را با پشتوانه نقدینگی بررسی کنید؛ بدون رشد استیبل‌کوین یا حجم اسپات، رالی می‌تواند کم‌عمق باشد.",
     whyItMattersFa: "کریپتو برای تداوم حرکت به نقدینگی واقعی نیاز دارد؛ اهرم به‌تنهایی پایداری نمی‌سازد.",
-    monitoringFa: ["stablecoin_market_cap_7d", "spot_volume_btc_24h", "btc_etf_flow_24h", "dxy_trend_24h"],
+    monitoringFa: ["stablecoin_market_cap_7d", "spot_volume_btc_24h", "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows", "dxy_trend_24h"],
     dataQuality: liquidity.dataQuality,
   });
 }
@@ -471,7 +607,7 @@ function weakRallyAlert(): SmartAlert | null {
     invalidationCondition: "این هشدار با مثبت شدن ETF inflow، رشد استیبل‌کوین بالای ۰٫۳۵٪ و بهبود حجم اسپات تضعیف می‌شود.",
     suggestedTraderAction: "رشد قیمت را با کیفیت جریان سرمایه مقایسه کنید؛ صرفاً سبز بودن قیمت، تأیید expansion نیست.",
     whyItMattersFa: "رالی بدون مشارکت نقدینگی واقعی معمولاً دوام کمتری دارد و نسبت به فشار ماکرو آسیب‌پذیرتر است.",
-    monitoringFa: ["btc_etf_flow_24h", "stablecoin_market_cap_7d", "spot_volume_btc_24h", "funding_btc"],
+    monitoringFa: ["btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows", "stablecoin_market_cap_7d", "spot_volume_btc_24h", "funding_btc"],
     dataQuality: liquidity.dataQuality,
   });
 }

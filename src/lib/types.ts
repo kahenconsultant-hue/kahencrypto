@@ -276,6 +276,15 @@ export interface SmartAlert {
   trapRisk?: number;
   whyItMattersFa: string;
   monitoringFa: string[];
+  dataUsed?: Array<{
+    label: string;
+    key: string;
+    source: string;
+    status: "available" | "missing" | "estimated" | "stale";
+    value?: number | null;
+  }>;
+  missingCriticalInputs?: string[];
+  confidenceCapReason?: string | null;
   dataQuality: DataSourceStatus;
   createdAt: string;
   scenarioFa: string;

@@ -119,10 +119,32 @@ const dimensionSignalGroups: Record<CoverageDimension, SignalGroup[]> = {
 };
 
 const requiredSignalKeys: Record<CoverageDimension, string[]> = {
-  macro: ["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "gold_trend_24h", "vix_trend_24h"],
-  crypto: ["btc_trend_24h", "eth_trend_24h", "sol_trend_24h"],
-  liquidity: ["stablecoin_market_cap_7d", "usdt_supply_7d", "spot_volume_btc_24h"],
-  derivatives: ["funding_btc", "open_interest_btc_24h", "futures_volume_btc_24h"],
+  macro: ["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "gold_trend_24h", "vix_trend_24h", "cpi_latest", "fed_funds_rate", "unemployment_rate"],
+  crypto: ["btc_trend_24h", "eth_trend_24h", "sol_trend_24h", "btc_market_cap", "eth_market_cap", "sol_market_cap"],
+  liquidity: [
+    "stablecoin_market_cap_7d",
+    "stablecoin_market_cap_30d",
+    "total_stablecoin_market_cap_usd",
+    "stablecoin_dominance",
+    "usdt_supply_7d",
+    "usdc_supply_7d",
+    "spot_volume_btc_24h",
+    "btc_etf_flow_24h",
+    "eth_etf_flow_24h",
+    "exchange_inflows",
+    "exchange_outflows",
+  ],
+  derivatives: [
+    "funding_btc",
+    "funding_eth",
+    "funding_sol",
+    "open_interest_btc_24h",
+    "open_interest_eth_24h",
+    "open_interest_sol_24h",
+    "futures_volume_btc_24h",
+    "futures_volume_eth_24h",
+    "futures_volume_sol_24h",
+  ],
   sentiment: ["news_sentiment_macro"],
   geopolitical: ["geopolitical_event_score"],
 };
@@ -365,6 +387,8 @@ function buildReliabilityReport(params: {
   );
   const etfSignals = snapshot.signals.filter((signal) => signal.key.includes("etf_flow"));
   if (etfSignals.some((signal) => !pointIsAvailable(signal))) degradedModules.push("ETF flow enrichment");
+  const missingCoreMacroInputs = ["cpi_latest", "fed_funds_rate", "unemployment_rate"].filter((key) => !pointIsAvailable(snapshot.byKey[key]));
+  if (missingCoreMacroInputs.length) degradedModules.push("macro engine");
   if (!process.env.OPENAI_API_KEY) degradedModules.push("AI summaries");
   const activeSources = productionSources.filter((source) => source.enabled).length;
   const failedSources = params.sourceHealth.filter((source) => source.status === "failed" || source.status === "api_key_missing").length;
@@ -389,6 +413,9 @@ function buildReliabilityReport(params: {
     staleSources || obsoleteSources ? `${staleSources + obsoleteSources} منبع فعال stale/obsolete هستند و نباید به شکل تازه یا زنده نمایش داده شوند.` : "",
     ...freshnessReport.summary.warningsFa,
     !process.env.OPENAI_API_KEY ? "OPENAI_API_KEY تنظیم نشده است؛ ترجمه و توضیح AI به‌صورت production فعال نیست." : "",
+    missingCoreMacroInputs.length
+      ? `Macro Engine به داده‌های اصلی FRED کامل وصل نیست؛ ورودی‌های ناموجود: ${missingCoreMacroInputs.join("، ")}. هشدارهای کلان قوی نباید تولید شوند.`
+      : "",
     disabledPremiumModules.length ? `پوشش premium محدود است: ${disabledPremiumModules.slice(0, 4).join("، ")}. تحلیل core با پروکسی‌های رایگان ادامه دارد.` : "",
     degradedModules.length ? "برخی ماژول‌ها در حالت degraded هستند و نباید confidence بالا نشان دهند." : "",
   ].filter(Boolean);
@@ -442,8 +469,8 @@ function buildReliabilityReport(params: {
     },
     confidenceCaps: {
       global: globalCap,
-      alerts: clampPercent(Math.min(globalCap, coverage.macro.score * 30 + coverage.crypto.score * 25 + coverage.liquidity.score * 25 + coverage.derivatives.score * 20)),
-      regime: clampPercent(Math.min(globalCap, coverage.macro.score * 35 + coverage.crypto.score * 25 + coverage.liquidity.score * 25 + coverage.derivatives.score * 15)),
+      alerts: clampPercent(Math.min(globalCap, missingCoreMacroInputs.length === 3 ? 45 : 100, coverage.macro.score * 30 + coverage.crypto.score * 25 + coverage.liquidity.score * 25 + coverage.derivatives.score * 20)),
+      regime: clampPercent(Math.min(globalCap, missingCoreMacroInputs.length === 3 ? 55 : 100, coverage.macro.score * 35 + coverage.crypto.score * 25 + coverage.liquidity.score * 25 + coverage.derivatives.score * 15)),
       liquidity: clampPercent(Math.min(globalCap, coverage.liquidity.score * 50 + coverage.macro.score * 30 + coverage.derivatives.score * 20)),
       correlations: clampPercent(Math.min(globalCap, coverage.crypto.score * 55 + coverage.macro.score * 45)),
       sentiment: clampPercent(Math.min(globalCap, coverage.sentiment.score * 70 + coverage.crypto.score * 30)),

@@ -14,6 +14,8 @@ export interface LiquidityInputVector {
   btcEtfFlow: number | null;
   ethEtfFlow: number | null;
   exchangeReserveTrend: number | null;
+  exchangeInflows: number | null;
+  exchangeOutflows: number | null;
   openInterestTrend: number | null;
   fundingRate: number | null;
   spotVolumeTrend: number | null;
@@ -37,6 +39,8 @@ export function buildLiquidityInput(): LiquidityInputVector {
     btcEtfFlow: signalValue(byKey, "btc_etf_flow_24h"),
     ethEtfFlow: signalValue(byKey, "eth_etf_flow_24h"),
     exchangeReserveTrend: signalValue(byKey, "exchange_reserves_btc_7d"),
+    exchangeInflows: signalValue(byKey, "exchange_inflows"),
+    exchangeOutflows: signalValue(byKey, "exchange_outflows"),
     openInterestTrend: signalValue(byKey, "open_interest_btc_24h"),
     fundingRate: signalValue(byKey, "funding_btc"),
     spotVolumeTrend: signalValue(byKey, "spot_volume_btc_24h"),
@@ -59,6 +63,12 @@ function scoreExchangeReserves(value: number | null) {
   return clampSigned(-value * 28);
 }
 
+function scoreExchangeFlows(input: Pick<LiquidityInputVector, "exchangeInflows" | "exchangeOutflows">) {
+  if (input.exchangeInflows === null || input.exchangeOutflows === null) return null;
+  const netOutflow = input.exchangeOutflows - input.exchangeInflows;
+  return clampSigned(netOutflow / 15_000_000);
+}
+
 function weightedAvailable(values: Array<{ value: number | null; weight: number }>) {
   const available = values.filter((item): item is { value: number; weight: number } => item.value !== null && Number.isFinite(item.value));
   if (!available.length) return null;
@@ -76,6 +86,7 @@ function scoreCryptoLiquidity(input: LiquidityInputVector) {
   const stablecoin = scoreStablecoins(input.stablecoinMarketCapTrend);
   const etf = scoreEtfFlow(input.btcEtfFlow);
   const reserves = scoreExchangeReserves(input.exchangeReserveTrend);
+  const exchangeFlows = scoreExchangeFlows(input);
   const spot = input.spotVolumeTrend === null ? null : input.spotVolumeTrend * 2.2;
   const futures = input.futuresVolumeTrend === null || input.spotVolumeTrend === null ? null : -Math.max(0, input.futuresVolumeTrend - Math.max(0, input.spotVolumeTrend)) * 1.4;
   const funding = input.fundingRate === null ? null : normalizeSignalScore({ key: "funding_btc", value: input.fundingRate, quality: "live" });
@@ -84,6 +95,7 @@ function scoreCryptoLiquidity(input: LiquidityInputVector) {
     { value: stablecoin, weight: 0.25 },
     { value: etf, weight: 0.2 },
     { value: reserves, weight: 0.1 },
+    { value: exchangeFlows, weight: 0.1 },
     { value: spot, weight: 0.15 },
     { value: futures, weight: 0.1 },
     { value: funding, weight: 0.05 },
@@ -97,12 +109,14 @@ export function scoreRealSpotLiquidity(input: LiquidityInputVector) {
   const btcEtf = scoreEtfFlow(input.btcEtfFlow);
   const ethEtf = scoreEtfFlow(input.ethEtfFlow);
   const reserves = scoreExchangeReserves(input.exchangeReserveTrend);
+  const exchangeFlows = scoreExchangeFlows(input);
   const spot = input.spotVolumeTrend === null ? null : clampSigned(input.spotVolumeTrend * 2.2);
   const score = weightedAvailable([
     { value: stablecoin, weight: 0.3 },
     { value: btcEtf, weight: 0.24 },
     { value: ethEtf, weight: 0.08 },
     { value: reserves, weight: 0.18 },
+    { value: exchangeFlows, weight: 0.12 },
     { value: spot, weight: 0.2 },
   ]);
   return score === null ? null : clampSigned(score);
@@ -175,6 +189,8 @@ function liquidityDataQuality(signals: NormalizedSignal[]) {
     "btc_etf_flow_24h",
     "eth_etf_flow_24h",
     "exchange_reserves_btc_7d",
+    "exchange_inflows",
+    "exchange_outflows",
     "open_interest_btc_24h",
     "funding_btc",
     "spot_volume_btc_24h",
@@ -279,10 +295,14 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
   const proxyUsable = proxySnapshot.sourceType !== "unavailable" && proxySnapshot.cryptoLiquidityProxyScore !== null;
   const effectiveInvalidReason = proxyUsable ? null : invalidReason;
   const proxyConfidence = proxyUsable && proxySnapshot.confidence !== null ? proxySnapshot.confidence : null;
-  const confidenceScore =
+  const rawConfidenceScore =
     proxyConfidence !== null
       ? clampPercent((confidenceDetail.score ?? proxyConfidence) * 0.38 + proxyConfidence * 0.62 - proxySnapshot.unavailablePremiumInputs.length * 2)
       : confidenceDetail.score ?? 0;
+  const etfMissing = input.btcEtfFlow === null && input.ethEtfFlow === null;
+  const exchangeFlowsMissing = input.exchangeInflows === null || input.exchangeOutflows === null;
+  const confidenceCap = etfMissing && exchangeFlowsMissing ? 55 : exchangeFlowsMissing ? 65 : etfMissing ? 70 : 100;
+  const confidenceScore = clampPercent(Math.min(rawConfidenceScore, confidenceCap));
   const outputConfidenceDetail =
     proxyConfidence !== null
       ? {
@@ -306,6 +326,7 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
       ? "هشدار: اهرم معاملاتی بالاست اما نقدینگی اسپات تأیید کافی ندارد؛ احتمال رالی اهرمی یا دام لیکوییدیشن افزایش می‌یابد."
       : "",
     input.btcEtfFlow === null ? "جریان ETF بیت‌کوین ناموجود است؛ موتور اجازه نمی‌دهد این کانال به‌صورت ساختگی به نفع یا ضرر بازار وزن بگیرد." : "",
+    exchangeFlowsMissing ? "ورودی/خروجی صرافی‌ها از منبع معتبر در دسترس نیست؛ confidence نقدینگی سقف‌گذاری شده و هشدارهای نقدینگی نباید High شوند." : "",
     stablecoinScore !== null && stablecoinScore <= 0 ? "رشد استیبل‌کوین‌ها زیر آستانه حمایتی ۰٫۳۵٪ هفتگی است؛ پشتوانه نقدینگی نقدی ضعیف‌تر از حالت expansion است." : "",
     macroLiquidityScore !== null && macroLiquidityScore < -20 ? "DXY یا US10Y در حال فشار به نقدینگی کلان هستند؛ این کانال می‌تواند اثر خبرهای مثبت کریپتو را محدود کند." : "",
   ].filter(Boolean);
@@ -316,6 +337,7 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     `نقدینگی اهرمی: ${leveragedLiquidityScore ?? "ناموجود"}/100؛ بالاتر از ۶۵ یعنی حرکت بیشتر به OI، Funding Rate (نرخ فاندینگ) و futures volume وابسته است.`,
     `نقدینگی کلان: ${macroLiquidityScore ?? "ناموجود"}/100؛ DXY مثبت و رشد US10Y این بخش را منفی می‌کند.`,
     `پایداری نقدینگی: ${liquiditySustainabilityScore ?? "ناموجود"}/100؛ زیر ۴۵ یعنی ادامه حرکت بدون تأیید اسپات و استیبل‌کوین شکننده است.`,
+    `سقف confidence نقدینگی: ${confidenceCap}/100؛ ETF یا exchange flow ناموجود، سقف را پایین می‌آورد.`,
   ];
 
   const explanation =

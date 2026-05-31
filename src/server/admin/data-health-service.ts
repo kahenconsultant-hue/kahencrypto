@@ -7,7 +7,6 @@ import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
 import { getSignalSnapshot } from "@/server/analytics/market-signals";
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
-import { getIntelligenceReliabilityReportSync } from "@/server/intelligence/reliability-engine";
 import {
   getLatestDeadLetters,
   getLatestIngestionLogs,
@@ -223,17 +222,25 @@ const stablecoinMetricMap = [
   { metric: "USDT Supply", signalKeys: ["usdt_supply_7d"] },
   { metric: "USDC Supply", signalKeys: ["usdc_supply_7d"] },
   { metric: "Stablecoin Dominance", signalKeys: ["stablecoin_dominance"] },
-  { metric: "Exchange Inflows", signalKeys: ["stablecoin_exchange_inflows"] },
-  { metric: "Exchange Outflows", signalKeys: ["stablecoin_exchange_outflows"] },
+  { metric: "Total Stablecoin Market Cap", signalKeys: ["total_stablecoin_market_cap_usd"] },
+  { metric: "Stablecoin Market Cap 7d", signalKeys: ["stablecoin_market_cap_7d"] },
+  { metric: "Stablecoin Market Cap 30d", signalKeys: ["stablecoin_market_cap_30d"] },
+  { metric: "Exchange Inflows", signalKeys: ["exchange_inflows"] },
+  { metric: "Exchange Outflows", signalKeys: ["exchange_outflows"] },
 ];
 
 const liquidityInputs = [
   "dxy_trend_24h",
   "us10y_trend_24h",
   "stablecoin_market_cap_7d",
+  "stablecoin_market_cap_30d",
+  "stablecoin_dominance",
   "usdt_supply_7d",
   "usdc_supply_7d",
   "btc_etf_flow_24h",
+  "eth_etf_flow_24h",
+  "exchange_inflows",
+  "exchange_outflows",
   "spot_volume_btc_24h",
   "funding_btc",
   "open_interest_btc_24h",
@@ -347,9 +354,12 @@ function buildDataSources(params: {
     const coveragePercent = sourceCoverage({ source, health, rawEvents: params.rawEvents, rawMetrics: params.rawMetrics, signals: params.signals });
     const freshnessMinutes = health?.freshnessMinutes ?? minutesSince(health?.lastSuccessAt);
     const expected = Math.max(45, Math.round(source.pollingIntervalSeconds / 60) * 2);
+    const missingEnvKeys = (source.requiredEnvKeys ?? []).filter((key) => !process.env[key]);
     const warningFa =
       !source.enabled
-        ? source.disabledReason ?? "این منبع در تنظیمات فعلی غیرفعال است."
+        ? missingEnvKeys.length
+          ? `کلید API تنظیم نشده است: ${missingEnvKeys.join(", ")}`
+          : source.disabledReason ?? "این منبع در تنظیمات فعلی غیرفعال است."
         : !health
           ? "برای این منبع هنوز اجرای موفق یا health snapshot ثبت نشده است."
           : health.status === "api_key_missing"
@@ -519,33 +529,50 @@ function buildEngineHealth(signals: ReturnType<typeof getSignalSnapshot>["byKey"
 
 function buildAlertAudit(): AlertAuditRow[] {
   return generateSmartAlerts().map((alert) => {
-    const dataSourcesUsed = [...new Set([...(alert.evidence ?? []), ...alert.monitoringFa].filter(Boolean))];
-    const indicatorCount = (alert.evidence ?? []).length;
-    const missingInputs = dataSourcesUsed.filter((item) => /unavailable|missing|ناموجود|API|premium/i.test(item));
+    const dataSourcesUsed = [...new Set((alert.dataUsed ?? []).map((item) => `${item.label}: ${item.source}`))];
+    const indicatorCount = (alert.dataUsed ?? []).filter((item) => item.status === "available" || item.status === "stale").length;
+    const missingInputs = alert.missingCriticalInputs ?? (alert.dataUsed ?? []).filter((item) => item.status === "missing").map((item) => item.label);
     return {
       alertId: alert.id,
       alertName: alert.titleFa,
-      dataSourcesUsed,
+      dataSourcesUsed: dataSourcesUsed.length ? dataSourcesUsed : [...new Set([...(alert.evidence ?? []), ...alert.monitoringFa].filter(Boolean))],
       indicatorCount,
       confidence: Number.isFinite(alert.confidence) ? alert.confidence : null,
       missingInputs,
       riskLevel: alert.priority ?? alert.level,
       flagged: indicatorCount < 3,
-      explanationFa: alert.causalChain ?? alert.reasoningFa,
+      explanationFa: alert.confidenceCapReason ? `${alert.causalChain ?? alert.reasoningFa} ${alert.confidenceCapReason}` : alert.causalChain ?? alert.reasoningFa,
     };
   });
 }
 
 function buildApiLogs(logs: IngestionLogEntry[]): ApiLogRow[] {
-  const endpointBySource = new Map(productionSources.map((source) => [source.id, source.endpoint ?? null]));
-  return logs.slice(0, 100).map((log) => ({
-    sourceName: log.sourceName,
-    endpoint: endpointBySource.get(log.sourceId) ?? null,
-    success: log.status === "success" || log.status === "degraded",
-    latencyMs: log.latencyMs,
-    timestamp: log.createdAt,
-    errorMessage: log.error ?? (log.status === "failed" || log.status === "api_key_missing" ? log.message : null),
-  }));
+  const sourceById = new Map(productionSources.map((source) => [source.id, source]));
+  return logs.slice(0, 100).map((log) => {
+    const source = sourceById.get(log.sourceId);
+    const endpoint =
+      source?.endpoint ??
+      (source?.parser === "market_signals" ? "C.M.I.P internal adapter bundle" : source?.requiredEnvKeys?.length ? "API endpoint disabled until key is configured" : null);
+    const primaryUnavailable = !source?.endpoint && source?.parser !== "market_signals";
+    const success = log.status === "success" && !primaryUnavailable;
+    const errorMessage =
+      log.error ??
+      (log.status === "api_key_missing"
+        ? `Missing required env keys: ${(source?.requiredEnvKeys ?? []).filter((key) => !process.env[key]).join(", ")}`
+        : log.status === "failed" || primaryUnavailable
+          ? log.message
+          : log.status === "degraded"
+            ? log.message || "Primary source degraded; fallback or partial adapter output was used."
+            : null);
+    return {
+      sourceName: log.sourceName,
+      endpoint,
+      success,
+      latencyMs: log.latencyMs,
+      timestamp: log.createdAt,
+      errorMessage,
+    };
+  });
 }
 
 function buildScores(params: {
@@ -571,9 +598,14 @@ function buildScores(params: {
   ]));
   const enginesHealthy = params.engineHealth.filter((engine) => engine.status === "connected").length;
   const engineReliabilityScore = params.engineHealth.length ? clampScore((enginesHealthy / params.engineHealth.length) * 100) : 0;
-  const overallPlatformHealthScore = clampScore(
-    sourceReliabilityScore * 0.28 + freshnessScore * 0.22 + coverageScore * 0.26 + engineReliabilityScore * 0.24,
-  );
+  const coreEngineBelowHalf = params.engineHealth.some((engine) => engine.inputCoveragePercent < 50);
+  const overallPlatformHealthScore = calculateOverallPlatformHealthScore({
+    sourceReliabilityScore,
+    freshnessScore,
+    coverageScore,
+    engineReliabilityScore,
+    hasCoreEngineCoverageBelowHalf: coreEngineBelowHalf,
+  });
 
   return {
     sourceReliabilityScore,
@@ -587,6 +619,19 @@ function buildScores(params: {
     enginesHealthy,
     totalEngines: params.engineHealth.length,
   };
+}
+
+export function calculateOverallPlatformHealthScore(params: {
+  sourceReliabilityScore: number;
+  freshnessScore: number;
+  coverageScore: number;
+  engineReliabilityScore: number;
+  hasCoreEngineCoverageBelowHalf?: boolean;
+}) {
+  const rawOverall = clampScore(
+    params.sourceReliabilityScore * 0.25 + params.freshnessScore * 0.2 + params.coverageScore * 0.25 + params.engineReliabilityScore * 0.3,
+  );
+  return clampScore(Math.min(rawOverall, params.engineReliabilityScore < 40 ? 65 : 100, params.hasCoreEngineCoverageBelowHalf ? 60 : 100));
 }
 
 function buildDebugPayload(params: {
@@ -662,7 +707,6 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
   const alertAudit = buildAlertAudit();
   const apiLogs = buildApiLogs(logs);
   const scores = buildScores({ dataSources, marketCoverage, engineHealth });
-  const reliability = getIntelligenceReliabilityReportSync();
   const storageWriteFailures = getLatestStorageWriteReportsSync(50).filter((report) => report.status === "failed");
 
   return {
@@ -676,11 +720,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     engineHealth,
     alertAudit,
     apiLogs,
-    scores: {
-      ...scores,
-      coverageScore: clampScore((scores.coverageScore + reliability.overallReliability * 100) / 2),
-      overallPlatformHealthScore: clampScore((scores.overallPlatformHealthScore * 0.7) + (reliability.overallReliability * 100 * 0.3)),
-    },
+    scores,
     failures: {
       failedSources: dataSources.filter((source) => source.status === "disconnected" && source.enabled),
       staleSources: dataSources.filter((source) => (source.freshnessMinutes ?? 0) > 90),

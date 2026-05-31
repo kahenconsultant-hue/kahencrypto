@@ -729,7 +729,7 @@ export function TopAlertsPanel() {
             <div className="mt-3 grid gap-2 xl:grid-cols-2">
               <div className="rounded-sm border border-white/10 bg-black/10 p-2">
                 <div className="metric-label">چه چیزی تغییر کرده؟</div>
-                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(alert.triggerCondition ?? alert.whyItMattersFa)}</p>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(alert.whyItMattersFa)}</p>
               </div>
               <div className="rounded-sm border border-white/10 bg-black/10 p-2">
                 <div className="metric-label">زنجیره علت و اثر</div>
@@ -751,6 +751,28 @@ export function TopAlertsPanel() {
                     {sanitizePublicIntelligenceText(item)}
                   </Badge>
                 ))}
+              </div>
+            ) : null}
+            {alert.dataUsed?.length ? (
+              <div className="mt-3 rounded-sm border border-white/10 bg-black/10 p-2">
+                <div className="metric-label">داده‌های استفاده‌شده در این هشدار</div>
+                <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {alert.dataUsed.map((item) => (
+                    <div key={`${alert.id}-${item.key}`} className="rounded-sm border border-white/10 bg-white/[0.03] p-2 text-[11px] leading-5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-100">{sanitizePublicIntelligenceText(item.label)}</span>
+                        <Badge variant={item.status === "available" ? "success" : item.status === "missing" ? "danger" : item.status === "stale" ? "warning" : "muted"}>
+                          {item.status === "available" ? "در دسترس" : item.status === "missing" ? "ناموجود" : item.status === "stale" ? "کهنه" : "برآوردی"}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 text-muted-foreground">{sanitizePublicIntelligenceText(item.source)}</div>
+                    </div>
+                  ))}
+                </div>
+                {alert.missingCriticalInputs?.length ? (
+                  <p className="mt-2 text-[11px] leading-5 text-amber-200">ورودی‌های مهم ناموجود: {alert.missingCriticalInputs.map(sanitizePublicIntelligenceText).join("، ")}</p>
+                ) : null}
+                {alert.confidenceCapReason ? <p className="mt-2 text-[11px] leading-5 text-cyan-100">{sanitizePublicIntelligenceText(alert.confidenceCapReason)}</p> : null}
               </div>
             ) : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">

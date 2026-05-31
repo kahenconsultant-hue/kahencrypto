@@ -35,6 +35,42 @@ export function weightedSum(values: Record<string, number>, weights: Record<stri
   return Object.entries(weights).reduce((sum, [key, weight]) => sum + (values[key] ?? 0) * weight, 0);
 }
 
+function confidenceFreshnessAdjustment(signals: NormalizedSignal[]) {
+  const availableSignals = signals.filter((signal) => signal.value !== null && signal.quality !== "unavailable" && signal.quality !== "estimated");
+  if (!availableSignals.length) {
+    return {
+      penalty: 100,
+      cap: 0,
+      staleRatio: 1,
+      oldestAge: 10_000,
+    };
+  }
+
+  const ages = availableSignals.map((signal) => minutesSince(signal.timestamp));
+  const staleCount = ages.filter((age) => age > 180).length;
+  const delayedCount = ages.filter((age) => age > 45).length;
+  const staleRatio = staleCount / availableSignals.length;
+  const delayedRatio = delayedCount / availableSignals.length;
+  const oldestAge = Math.max(...ages, 0);
+  const averageAge = ages.reduce((sum, age) => sum + age, 0) / ages.length;
+  const agePenalty = Math.min(28, Math.max(0, averageAge - 45) * 0.025);
+  const stalePenalty = staleRatio * 24 + delayedRatio * 8;
+
+  let cap = 100;
+  if (staleRatio >= 0.75) cap = 28;
+  else if (staleRatio >= 0.5) cap = 42;
+  else if (staleRatio >= 0.25) cap = 58;
+  else if (oldestAge > 180) cap = 72;
+  else if (oldestAge > 90) cap = 82;
+
+  return {
+    penalty: agePenalty + stalePenalty,
+    cap,
+    staleRatio,
+    oldestAge,
+  };
+}
+
 export function availableSignalGroups(signals: Pick<NormalizedSignal, "group" | "value" | "quality">[]) {
   return [...new Set(signals.filter((signal) => signal.value !== null && signal.quality !== "unavailable" && signal.quality !== "estimated").map((signal) => signal.group))] as SignalGroup[];
 }
@@ -100,9 +136,9 @@ export function calculateConfidenceScore(params: {
   );
   const estimatedSignals = availableSignals.filter((signal) => signal.quality === "estimated").length;
   const unavailablePenalty = params.signals.filter((signal) => signal.quality === "unavailable").length * 6;
-  const maxAge = Math.max(...availableSignals.map((signal) => minutesSince(signal.timestamp)), 0);
   const sampleInsufficient = availableSignals.some((signal) => typeof signal.sampleSize === "number" && signal.sampleSize > 0 && signal.sampleSize < 10);
   const alignmentConflict = params.signalAgreement < 48;
+  const freshness = confidenceFreshnessAdjustment(params.signals);
 
   if (estimatedSignals > 0) {
     return {
@@ -117,21 +153,20 @@ export function calculateConfidenceScore(params: {
     };
   }
 
-  let score = clampPercent(raw - unavailablePenalty);
+  let score = clampPercent(raw - unavailablePenalty - freshness.penalty);
   if (sampleInsufficient) score = Math.min(score, 45);
   if (alignmentConflict) score = Math.min(score, 60);
-  if (maxAge > 90) score = Math.min(score, 55);
-  if (maxAge > 180) score = Math.min(score, 35);
+  score = Math.min(score, freshness.cap);
 
   return {
     available: true,
     score,
     label: confidenceLabel(score),
     formula:
-      "امتیاز اطمینان = ۰٫۲۶×دسترسی داده + ۰٫۲۲×اعتبار منبع + ۰٫۲۰×هم‌راستایی سیگنال + ۰٫۱۲×سازگاری تاریخی + ۰٫۱۲×تازگی + ۰٫۰۸×تأیید بازار - جریمه کیفیت داده",
+      "امتیاز اطمینان = ۰٫۲۶×دسترسی داده + ۰٫۲۲×اعتبار منبع + ۰٫۲۰×هم‌راستایی سیگنال + ۰٫۱۲×سازگاری تاریخی + ۰٫۱۲×تازگی + ۰٫۰۸×تأیید بازار - جریمه کیفیت داده و کهنگی تدریجی",
     availableGroups,
     missingGroups,
-    explanation: `اطمینان از ${availableGroups.length}/${allSignalGroups.length} گروه سیگنال مستقل ساخته شده؛ داده ناموجود، کهنگی، تضاد سیگنال و نمونه ناکافی امتیاز را سقف‌گذاری می‌کند.`,
+    explanation: `اطمینان از ${availableGroups.length}/${allSignalGroups.length} گروه سیگنال مستقل ساخته شده؛ نسبت سیگنال‌های کهنه ${Math.round(freshness.staleRatio * 100)}٪ است و قدیمی‌ترین ورودی ${freshness.oldestAge} دقیقه سن دارد.`,
   };
 }
 

@@ -5,7 +5,9 @@ import { biasForRegimeAsset, getMarketRegimeReport } from "@/server/analytics/ma
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
 import { generateAssetScenarios } from "@/server/analytics/scenario-engine";
 import { getEngineLastUpdatedAt, getSignalSnapshot } from "@/server/analytics/market-signals";
-import { calculateConfidenceScore, calculateImpactScore, clampSigned, signalAgreementScore } from "@/server/analytics/scoring-engine";
+import { calculateAdaptiveModuleConfidence } from "@/server/analytics/adaptive-confidence-engine";
+import { calculateImpactScore, clampSigned, signalAgreementScore } from "@/server/analytics/scoring-engine";
+import type { NormalizedSignal, SignalGroup } from "@/lib/types";
 
 const assets: IntelligenceAssetSymbol[] = ["BTC", "ETH", "SOL", "USDT", "DXY", "Gold", "Nasdaq", "US10Y"];
 
@@ -73,6 +75,118 @@ function usableSignalValue(snapshot: ReturnType<typeof getSignalSnapshot>, key: 
 
 function scoreValue(value: number | null) {
   return value ?? 0;
+}
+
+const assetConfidenceSignalKeys: Record<IntelligenceAssetSymbol, string[]> = {
+  BTC: [
+    "btc_trend_24h",
+    "nasdaq_trend_24h",
+    "dxy_trend_24h",
+    "us10y_trend_24h",
+    "gold_trend_24h",
+    "vix_trend_24h",
+    "stablecoin_market_cap_7d",
+    "usdt_supply_7d",
+    "btc_etf_flow_24h",
+    "funding_btc",
+    "open_interest_btc_24h",
+    "spot_volume_btc_24h",
+    "futures_volume_btc_24h",
+    "exchange_reserves_btc_7d",
+    "news_sentiment_macro",
+    "geopolitical_event_score",
+  ],
+  ETH: [
+    "eth_trend_24h",
+    "btc_trend_24h",
+    "nasdaq_trend_24h",
+    "dxy_trend_24h",
+    "us10y_trend_24h",
+    "vix_trend_24h",
+    "stablecoin_market_cap_7d",
+    "usdt_supply_7d",
+    "eth_etf_flow_24h",
+    "funding_btc",
+    "open_interest_btc_24h",
+    "spot_volume_btc_24h",
+    "news_sentiment_macro",
+  ],
+  SOL: [
+    "sol_trend_24h",
+    "btc_trend_24h",
+    "nasdaq_trend_24h",
+    "dxy_trend_24h",
+    "vix_trend_24h",
+    "stablecoin_market_cap_7d",
+    "usdt_supply_7d",
+    "funding_btc",
+    "open_interest_btc_24h",
+    "spot_volume_btc_24h",
+    "futures_volume_btc_24h",
+    "news_sentiment_macro",
+    "geopolitical_event_score",
+  ],
+  USDT: [
+    "usdt_supply_7d",
+    "usdc_supply_7d",
+    "stablecoin_market_cap_7d",
+    "dxy_trend_24h",
+    "spot_volume_btc_24h",
+    "news_sentiment_macro",
+    "geopolitical_event_score",
+  ],
+  DXY: ["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "gold_trend_24h", "vix_trend_24h", "btc_trend_24h", "news_sentiment_macro", "geopolitical_event_score"],
+  Gold: ["gold_trend_24h", "dxy_trend_24h", "us10y_trend_24h", "vix_trend_24h", "btc_trend_24h", "news_sentiment_macro", "geopolitical_event_score"],
+  Nasdaq: ["nasdaq_trend_24h", "btc_trend_24h", "eth_trend_24h", "sol_trend_24h", "dxy_trend_24h", "us10y_trend_24h", "vix_trend_24h", "news_sentiment_macro"],
+  US10Y: ["us10y_trend_24h", "dxy_trend_24h", "nasdaq_trend_24h", "gold_trend_24h", "vix_trend_24h", "btc_trend_24h", "news_sentiment_macro", "geopolitical_event_score"],
+};
+
+const assetRequiredSignalGroups: Record<IntelligenceAssetSymbol, SignalGroup[]> = {
+  BTC: ["price", "macro", "liquidity", "stablecoins", "leverage", "sentiment", "volatility"],
+  ETH: ["price", "macro", "liquidity", "stablecoins", "leverage", "sentiment", "volatility"],
+  SOL: ["price", "macro", "liquidity", "stablecoins", "leverage", "sentiment", "volatility"],
+  USDT: ["stablecoins", "liquidity", "macro", "sentiment", "geopolitical"],
+  DXY: ["macro", "price", "volatility", "sentiment", "geopolitical"],
+  Gold: ["macro", "price", "volatility", "sentiment", "geopolitical"],
+  Nasdaq: ["macro", "price", "volatility", "sentiment"],
+  US10Y: ["macro", "price", "volatility", "sentiment", "geopolitical"],
+};
+
+function confidenceSignalsForAsset(asset: IntelligenceAssetSymbol, snapshot: ReturnType<typeof getSignalSnapshot>): NormalizedSignal[] {
+  return assetConfidenceSignalKeys[asset]
+    .map((key) => snapshot.byKey[key])
+    .filter((signal): signal is NormalizedSignal => Boolean(signal));
+}
+
+function sampleQualityForAsset(signals: NormalizedSignal[]) {
+  const usable = signals.filter((signal) => signal.value !== null && signal.quality !== "unavailable" && signal.quality !== "estimated");
+  if (!usable.length) return 0;
+  const raw = usable.reduce((sum, signal) => {
+    const size = signal.sampleSize ?? 0;
+    if (size >= 90) return sum + 100;
+    if (size >= 30) return sum + 80;
+    if (size >= 10) return sum + 55;
+    if (size > 0) return sum + 32;
+    return sum + 18;
+  }, 0);
+  return Math.round(raw / usable.length);
+}
+
+function marketConfirmationForAsset(asset: IntelligenceAssetSymbol, assetTrend: number | null, impactScore: number, components: ReturnType<typeof assetSpecificInputs>["components"]) {
+  if (assetTrend === null) {
+    return asset === "USDT" ? 45 : 38;
+  }
+
+  if (asset === "DXY" || asset === "US10Y") {
+    return Math.max(35, 100 - Math.min(70, Math.abs(impactScore / 2 + assetTrend * 12)));
+  }
+
+  if (asset === "Gold") {
+    const defensiveConfirmation = components.newsSeverityScore >= 0 || components.volatilityScore <= 0 ? 62 : 48;
+    return Math.max(35, Math.min(88, defensiveConfirmation + Math.abs(assetTrend) * 2));
+  }
+
+  return Math.max(35, 100 - Math.min(70, Math.abs(impactScore / 2 - assetTrend * 12)));
 }
 
 function assetTrendKey(asset: IntelligenceAssetSymbol) {
@@ -197,11 +311,18 @@ function channelsForAsset(asset: IntelligenceAssetSymbol, components: ReturnType
 export function generateAssetImpactProfile(asset: IntelligenceAssetSymbol): DirectionalImpactProfile {
   const data = assetSpecificInputs(asset);
   const values = Object.values(data.components);
-  const confidence = calculateConfidenceScore({
-    signals: data.snapshot.signals,
+  const assetSignals = confidenceSignalsForAsset(asset, data.snapshot);
+  const regimeStability = data.regime.regimeLabel === data.regime.previousRegimeLabel ? 78 : 60;
+  const transitionPenalty = Math.min(18, Math.max(0, data.regime.transitionProbability - 45) * 0.4);
+  const confidence = calculateAdaptiveModuleConfidence({
+    moduleName: `asset_impact_${asset}`,
+    signals: assetSignals,
+    requiredGroups: assetRequiredSignalGroups[asset],
     signalAgreement: signalAgreementScore(values),
-    historicalConsistency: data.regime.regimeLabel === data.regime.previousRegimeLabel ? 72 : 58,
-    marketConfirmation: data.assetTrend === null ? 35 : Math.max(35, 100 - Math.abs(data.impact.score / 2 - data.assetTrend * 10)),
+    historicalConsistency: Math.max(35, regimeStability - transitionPenalty),
+    marketConfirmation: marketConfirmationForAsset(asset, data.assetTrend, data.impact.score, data.components),
+    sampleQuality: sampleQualityForAsset(assetSignals),
+    minimumGroups: 4,
   });
   const hasUsableImpact = confidence.available;
   const outputImpactScore = hasUsableImpact ? data.impact.score : 0;

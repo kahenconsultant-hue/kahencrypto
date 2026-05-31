@@ -10,6 +10,38 @@ function uniqueGroups(signals: NormalizedSignal[]) {
   return [...new Set(signals.map((signal) => signal.group))] as SignalGroup[];
 }
 
+function freshnessAdjustment(signals: NormalizedSignal[]) {
+  const available = availableSignals(signals);
+  if (!available.length) {
+    return {
+      penalty: 100,
+      cap: 0,
+      staleRatio: 1,
+      oldestAge: 10_000,
+    };
+  }
+
+  const ages = available.map((signal) => minutesSince(signal.timestamp));
+  const delayedRatio = ages.filter((age) => age > 45).length / available.length;
+  const staleRatio = ages.filter((age) => age > 180).length / available.length;
+  const oldestAge = Math.max(...ages, 0);
+  const averageAge = ages.reduce((sum, age) => sum + age, 0) / ages.length;
+  const penalty = Math.min(28, Math.max(0, averageAge - 45) * 0.025) + staleRatio * 24 + delayedRatio * 8;
+  let cap = 100;
+  if (staleRatio >= 0.75) cap = 28;
+  else if (staleRatio >= 0.5) cap = 42;
+  else if (staleRatio >= 0.25) cap = 58;
+  else if (oldestAge > 180) cap = 72;
+  else if (oldestAge > 90) cap = 82;
+
+  return {
+    penalty,
+    cap,
+    staleRatio,
+    oldestAge,
+  };
+}
+
 export function calculateAdaptiveModuleConfidence(params: {
   moduleName: string;
   signals: NormalizedSignal[];
@@ -48,8 +80,8 @@ export function calculateAdaptiveModuleConfidence(params: {
   const sampleQuality = params.sampleQuality ?? available.reduce((sum, signal) => sum + (signal.sampleSize && signal.sampleSize >= 30 ? 85 : signal.sampleSize && signal.sampleSize >= 10 ? 55 : 72), 0) / Math.max(1, available.length);
   const estimatedPenalty = params.signals.some((signal) => signal.quality === "estimated") ? 100 : 0;
   const unavailablePenalty = params.signals.filter((signal) => signal.quality === "unavailable").length * 2.5;
-  const stalePenalty = Math.min(20, Math.max(0, Math.max(...available.map((signal) => minutesSince(signal.timestamp)), 0) - 90) * 0.02);
   const criticalPenalty = criticalMissing.length * 14;
+  const freshness = freshnessAdjustment(params.signals);
 
   let score = clampPercent(
     availabilityScore * 0.24 +
@@ -60,16 +92,14 @@ export function calculateAdaptiveModuleConfidence(params: {
       params.marketConfirmation * 0.07 +
       sampleQuality * 0.05 -
       unavailablePenalty -
-      stalePenalty -
+      freshness.penalty -
       criticalPenalty -
       estimatedPenalty,
   );
 
-  const maxAge = Math.max(...available.map((signal) => minutesSince(signal.timestamp)), 0);
   if (criticalMissing.length) score = Math.min(score, 50);
-  if (maxAge > 90) score = Math.min(score, 55);
-  if (maxAge > 180) score = Math.min(score, 35);
   if (params.signalAgreement < 45) score = Math.min(score, 60);
+  score = Math.min(score, freshness.cap);
   if (estimatedPenalty) {
     return {
       available: false,
@@ -86,10 +116,10 @@ export function calculateAdaptiveModuleConfidence(params: {
     available: true,
     score,
     label: confidenceLabel(score),
-    formula: `${params.moduleName}: confidence = ۰٫۲۴×دسترسی داده + ۰٫۲۰×اعتبار منبع + ۰٫۲۰×هم‌راستایی + ۰٫۱۲×سازگاری تاریخی + ۰٫۱۲×تازگی + ۰٫۰۷×تأیید بازار + ۰٫۰۵×کیفیت نمونه - جریمه‌ها.`,
+    formula: `${params.moduleName}: confidence = ۰٫۲۴×دسترسی داده + ۰٫۲۰×اعتبار منبع + ۰٫۲۰×هم‌راستایی + ۰٫۱۲×سازگاری تاریخی + ۰٫۱۲×تازگی + ۰٫۰۷×تأیید بازار + ۰٫۰۵×کیفیت نمونه - جریمه‌های missing/stale.`,
     availableGroups,
     missingGroups,
-    explanation: `اطمینان ${params.moduleName} مستقل از سایر ماژول‌ها محاسبه شد؛ داده ناموجود، stale بودن و نبود وابستگی حیاتی امتیاز را سقف‌گذاری می‌کند.`,
+    explanation: `اطمینان ${params.moduleName} مستقل محاسبه شد؛ ${Math.round(freshness.staleRatio * 100)}٪ از ورودی‌های معتبر stale هستند و قدیمی‌ترین ورودی ${freshness.oldestAge} دقیقه سن دارد.`,
   };
 }
 

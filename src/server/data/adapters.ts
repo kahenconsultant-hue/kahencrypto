@@ -369,6 +369,25 @@ const fredMeta: Record<FredSeriesId, { label: string; reliability: number; frequ
 };
 
 const fredCache = new Map<string, Promise<AdapterResult | null>>();
+let fredRequestQueue = Promise.resolve();
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function queuedFredFetch(url: string) {
+  const run = fredRequestQueue.then(async () => {
+    const response = await fetchJsonWithStatus<FredObservationResponse>(url);
+    if (response.status === 429) {
+      await sleep(1_800);
+      return fetchJsonWithStatus<FredObservationResponse>(url);
+    }
+    await sleep(350);
+    return response;
+  });
+  fredRequestQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
 
 function fredError(status: number, error: string | undefined) {
   if (status === 400 || status === 401 || status === 403) return `FRED API key is invalid or rejected: ${error ?? "authorization failed"}`;
@@ -403,7 +422,7 @@ async function fetchFredSeries(seriesId: FredSeriesId, mode: "latest" | "percent
     url.searchParams.set("sort_order", "desc");
     url.searchParams.set("limit", "120");
 
-    const response = await fetchJsonWithStatus<FredObservationResponse>(url.toString());
+    const response = await queuedFredFetch(url.toString());
     if (!response.data?.observations?.length) {
       return unavailable(`FRED ${seriesId}`, fredError(response.status, response.error ?? response.data?.error_message), 0);
     }

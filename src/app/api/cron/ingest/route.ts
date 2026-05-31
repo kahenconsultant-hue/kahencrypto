@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
     return apiJson({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [ingestion, refresh] = await Promise.all([runProductionIngestion(), refreshSignalCache()]);
+  const ingestion = await runProductionIngestion();
+  const refresh = await refreshSignalCache();
   const derived = await runDerivedSignalProcessing(ingestion.runId);
 
   return apiJson({

@@ -28,6 +28,9 @@ export function AdminConsole() {
             <Link className="rounded-sm border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground" href="/admin/ingestion">
               debug ingestion
             </Link>
+            <Link className="rounded-sm border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground" href="/admin/data-health">
+              data health
+            </Link>
           </div>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

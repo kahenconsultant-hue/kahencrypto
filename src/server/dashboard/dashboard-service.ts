@@ -7,11 +7,13 @@ import { categoryLabels, pricingPlans, usdtRiskCenter } from "@/lib/production-d
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
 import { getAiLayerStatus, getLatestEventExplanations } from "@/server/ai/event-explanation-layer";
 import { getAssetImpactProfiles } from "@/server/analytics/asset-impact-engine";
+import { getBasicIntelligenceReport } from "@/server/analytics/basic-intelligence-engine";
 import { getDynamicCorrelationReport } from "@/server/analytics/correlation-engine";
 import { getDerivedSignalReport } from "@/server/analytics/derived-signal-engine";
 import { getLiquidityReport } from "@/server/analytics/liquidity-engine";
 import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
 import { getRefreshHealth, getSignalSnapshot, minutesSinceEngineUpdate, REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
+import { getRiskReport } from "@/server/analytics/risk-engine";
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
 import { getIntelligenceReliabilityReportSync } from "@/server/intelligence/reliability-engine";
 import { getIngestionFoundationStatusSync } from "@/health/source-health";
@@ -101,6 +103,14 @@ export function getDashboardFreshnessReport() {
 
 export function getDashboardDerivedSignals() {
   return getDerivedSignalReport();
+}
+
+export function getDashboardBasicIntelligence() {
+  return getBasicIntelligenceReport();
+}
+
+export function getDashboardRiskReport() {
+  return getRiskReport();
 }
 
 export function getDashboardMarketRegime() {

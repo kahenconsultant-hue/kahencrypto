@@ -1,6 +1,7 @@
 import {
   AiSummariesPanel,
   AssetIntelligenceGrid,
+  BasicIntelligencePanel,
   CorrelationMapPanel,
   DataQualityPanel,
   DerivedSignalsPanel,
@@ -26,6 +27,9 @@ export default async function DashboardPage() {
     <div className="space-y-4">
       <Reveal>
         <ReliabilityStatusPanel />
+      </Reveal>
+      <Reveal delay={0.01}>
+        <BasicIntelligencePanel />
       </Reveal>
       <Reveal>
         <MarketRegimePanel />

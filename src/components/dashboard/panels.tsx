@@ -22,6 +22,7 @@ import {
   getDashboardAiStatus as getAiLayerStatus,
   getDashboardAlerts as generateSmartAlerts,
   getDashboardAssetImpactProfiles as getAssetImpactProfiles,
+  getDashboardBasicIntelligence as getBasicIntelligenceReport,
   getDashboardCorrelationReport as getDynamicCorrelationReport,
   getDashboardDerivedSignals as getDerivedSignalReport,
   getDashboardEventExplanations as getLatestEventExplanations,
@@ -145,6 +146,14 @@ function biasVariant(bias?: string): "success" | "warning" | "danger" | "muted" 
   return "default";
 }
 
+function riskVariant(level?: string): "success" | "warning" | "danger" | "muted" | "default" {
+  if (level === "low") return "success";
+  if (level === "moderate" || level === "elevated") return "warning";
+  if (level === "high" || level === "critical") return "danger";
+  if (level === "unavailable") return "muted";
+  return "default";
+}
+
 function qualityVariant(status: string): "success" | "warning" | "danger" | "muted" {
   if (status === "live") return "success";
   if (status === "partial_live" || status === "delayed" || status === "estimated") return "warning";
@@ -171,6 +180,33 @@ const alertLevelLabels: Record<string, string> = {
   Important: "مهم",
   Watch: "رصد",
   Info: "اطلاعی",
+};
+
+const riskLevelLabels: Record<string, string> = {
+  low: "پایین",
+  moderate: "متوسط",
+  elevated: "بالارفته",
+  high: "بالا",
+  critical: "بحرانی",
+  unavailable: "ناموجود",
+};
+
+const uncertaintyLevelLabels: Record<string, string> = {
+  low: "پایین",
+  moderate: "متوسط",
+  high: "بالا",
+  unavailable: "ناموجود",
+};
+
+const pressureLabels: Record<string, string> = {
+  macro: "فشار کلان",
+  liquidity: "فشار نقدینگی",
+  leverage: "فشار اهرمی",
+  volatility: "فشار نوسان",
+  sentiment: "فشار خبری/سنتیمنت",
+  data_quality: "کیفیت داده",
+  mixed: "ترکیبی",
+  unavailable: "ناموجود",
 };
 
 const conditionLabels: Record<string, string> = {
@@ -416,6 +452,87 @@ export function ReliabilityStatusPanel() {
               {reliability.warningsFa.slice(0, 4).map((warning) => (
                 <p key={warning} className="rounded-sm border border-amber-400/25 bg-amber-400/10 p-2 text-[11px] leading-5 text-amber-100">
                   {warning}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function BasicIntelligencePanel() {
+  const intelligence = getBasicIntelligenceReport();
+  const riskScore = intelligence.riskScore ?? undefined;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" aria-hidden />
+            نمای پایه هوش بازار
+          </CardTitle>
+          <CardDescription>خروجی deterministic فاز ۸: رژیم، نقدینگی، ریسک، فشار غالب و عدم‌قطعیت؛ بدون سیگنال خرید/فروش و بدون داده ساختگی.</CardDescription>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <DataSourceBadge status={intelligence.status} />
+          <Badge variant={riskVariant(intelligence.riskLevel)}>ریسک: {labelOrRaw(riskLevelLabels, intelligence.riskLevel)}</Badge>
+          <Badge variant={intelligence.uncertaintyLevel === "high" ? "warning" : intelligence.uncertaintyLevel === "unavailable" ? "muted" : "success"}>
+            عدم‌قطعیت: {labelOrRaw(uncertaintyLevelLabels, intelligence.uncertaintyLevel)}
+          </Badge>
+          <LastUpdated />
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="space-y-4">
+          <p className="text-sm leading-7 text-muted-foreground">{sanitizePublicIntelligenceText(intelligence.summaryFa)}</p>
+          <div className="grid gap-3 md:grid-cols-4">
+            <Metric label="ریسک پایه" value={riskScore === undefined ? "ناموجود" : `${riskScore}/100`} tone={riskScore === undefined ? "warn" : riskScore >= 65 ? "bad" : riskScore >= 45 ? "warn" : "good"} progress={riskScore} />
+            <Metric label="فشار غالب" value={labelOrRaw(pressureLabels, intelligence.dominantPressure)} tone="neutral" />
+            <Metric label="رژیم" value={labelOrRaw(regimeLabels, intelligence.regime)} tone="neutral" />
+            <Metric label="اطمینان کل" value={intelligence.confidence.score === null ? "ناموجود" : `${intelligence.confidence.score}%`} tone={intelligence.confidence.score !== null && intelligence.confidence.score >= 58 ? "good" : "warn"} progress={intelligence.confidence.score ?? undefined} />
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {intelligence.dominantDriversFa.slice(0, 4).map((driver) => (
+              <p key={driver} className="rounded-sm border bg-secondary/25 p-2 text-[11px] leading-5 text-muted-foreground">
+                {sanitizePublicIntelligenceText(driver)}
+              </p>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="metric-label">ابطال و رصد بعدی</div>
+            <div className="mt-2 space-y-2">
+              {intelligence.invalidationFa.slice(0, 3).map((item) => (
+                <p key={item} className="text-[11px] leading-5 text-amber-100">ابطال: {sanitizePublicIntelligenceText(item)}</p>
+              ))}
+              {intelligence.monitoringFa.slice(0, 4).map((item) => (
+                <p key={item} className="text-[11px] leading-5 text-muted-foreground">رصد: {sanitizePublicIntelligenceText(item)}</p>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="metric-label">نقشه سریع دارایی‌ها</div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {intelligence.assetMap.slice(0, 8).map((asset) => (
+                <div key={asset.asset} className="rounded-sm border bg-card/50 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black">{asset.asset}</span>
+                    <Badge variant={riskVariant(asset.riskLevel)}>{labelOrRaw(riskLevelLabels, asset.riskLevel)}</Badge>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{sanitizePublicIntelligenceText(asset.summaryFa)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          {intelligence.dataWarningsFa.length ? (
+            <div className="space-y-2">
+              {intelligence.dataWarningsFa.slice(0, 3).map((warning) => (
+                <p key={warning} className="rounded-sm border border-amber-400/25 bg-amber-400/10 p-2 text-[11px] leading-5 text-amber-100">
+                  {sanitizePublicIntelligenceText(warning)}
                 </p>
               ))}
             </div>

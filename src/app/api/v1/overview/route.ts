@@ -7,10 +7,12 @@ import {
   usdtRiskCenter,
 } from "@/lib/production-data";
 import { getAssetImpactProfiles } from "@/server/analytics/asset-impact-engine";
+import { getBasicIntelligenceReport } from "@/server/analytics/basic-intelligence-engine";
 import { getDynamicCorrelationReport } from "@/server/analytics/correlation-engine";
 import { getDerivedSignalReport } from "@/server/analytics/derived-signal-engine";
 import { getLiquidityReport } from "@/server/analytics/liquidity-engine";
 import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
+import { getRiskReport } from "@/server/analytics/risk-engine";
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
 import { getSignalSnapshot, REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
@@ -54,7 +56,9 @@ export async function GET() {
     ingestionFoundation,
     intelligenceReliability: reliability,
     aiLayer: getAiLayerStatus(),
+    basicIntelligence: getBasicIntelligenceReport(),
     marketRegime: getMarketRegimeReport(),
+    risk: getRiskReport(),
     derivedSignals: getDerivedSignalReport(),
     alerts: generateSmartAlerts(),
     liquidity: getLiquidityReport(),

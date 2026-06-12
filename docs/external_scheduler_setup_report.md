@@ -81,10 +81,10 @@ Production deploy completed successfully.
 Production deployment:
 
 ```text
-id: dpl_DjgxbAP7627fduqj1aE5GuW3S1Dt
+id: dpl_32K6BPTzpapJ5Y4HuywFkXgEH6SF
 target: production
 status: READY
-deploymentUrl: https://kahencrypto-dni68l88j-kahenconsultant-hues-projects.vercel.app
+deploymentUrl: https://kahencrypto-ce37nyplc-kahenconsultant-hues-projects.vercel.app
 productionAlias: https://kahencrypto.vercel.app
 ```
 
@@ -175,19 +175,82 @@ Corrective action:
 - cron-job.org now uses Basic Auth username `cmip-cron` and the real `INGESTION_CRON_SECRET`.
 - `/api/cron/ingest` still completes ingestion inside the request lifecycle.
 - For `schedulerSource=external_cron_job_org`, ingestion stages 1-4 now run in parallel and fusion runs afterward. This keeps the endpoint synchronous while reducing wall-clock runtime for cron-job.org.
+- For `schedulerSource=external_cron_job_org`, collector retry budget is capped to one attempt per scheduled run. This avoids spending cron-job.org's 30-second practical response window on repeated retries; unavailable sources are persisted as failed/degraded and retried on the next scheduled cycle.
 
-Required checks after first external execution:
+Production-style manual verification after retry-budget hardening:
 
-- HTTP status: pending after parallel-stage deploy
-- duration: pending after parallel-stage deploy
-- runId: pending after parallel-stage deploy
-- trigger = `cron_http`: pending after parallel-stage deploy
-- schedulerSource = `external_cron_job_org`: pending after parallel-stage deploy
-- executionEnvironment = `production`: pending after parallel-stage deploy
-- storage = `supabase`: pending after parallel-stage deploy
-- failedStage = `null`, or documented reason: pending after parallel-stage deploy
-- stale sources: pending after parallel-stage deploy
-- stale signals: pending after parallel-stage deploy
+```text
+HTTP status: 200
+duration observed by client: ~15.5 seconds
+runId: ffa990a0-976c-4675-b1cb-59949ce827df
+trigger: cron_http
+schedulerSource: external_cron_job_org
+executionEnvironment: production
+storage: supabase
+failedStage: market_data
+retryCount: 0
+route durationMs: 12557
+```
+
+Stage result:
+
+```text
+market_data: failed, 10.1s, no retries, 66 metrics persisted
+macro_data: success, 9.8s
+news: success, 7.6s
+etf: success_with_limited_confidence, 8.1s, The Block fallback, Farside Cloudflare blocked
+fusion: degraded, 1.4s
+```
+
+The production endpoint now completes inside cron-job.org's practical 30-second window when invoked with the same Basic Auth and `X-CMIP-Scheduler-Source: cron-job.org` header. A real scheduled cron-job.org execution after this deployment is still required for production scheduler trust.
+
+cron-job.org execution history before the latest retry-budget deployment:
+
+| jobLogId | Result |
+| ---: | --- |
+| 1 | 401 Unauthorized |
+| 2 | 401 Unauthorized |
+| 3 | Timeout after ~30s |
+| 4 | Timeout after ~30s |
+
+Required checks after first successful real external execution:
+
+- HTTP status: `200`
+- cron-job.org duration: `19630ms`
+- app runId: `2ea09374-7b2a-4090-98ce-8c1e2a2f120b`
+- app durationMs: `15215`
+- trigger = `cron_http`
+- schedulerSource = `external_cron_job_org`
+- executionEnvironment = `production`
+- storage = `supabase`
+- failedStage = `market_data`
+- stale signals: `14`
+
+Real cron-job.org execution after retry-budget deployment:
+
+| Planned UTC | Actual UTC | cron-job.org HTTP | cron-job.org duration | App status | App failed stage | Finding |
+| --- | --- | ---: | ---: | --- | --- | --- |
+| 2026-06-12 22:30:00 | 2026-06-12 22:30:45 | 200 | 19.63s | failed | market_data | External scheduler path works and completes under 30s; market data sources fail inside Vercel runtime. |
+
+Latest app-side scheduler stage summary:
+
+| Stage | Status | Duration | Failed Sources | Dead Letters |
+| --- | --- | ---: | ---: | ---: |
+| market_data | failed | 12.94s | 3 | 3 |
+| macro_data | success | 13.06s | 0 | 0 |
+| news | success | 8.64s | 0 | 0 |
+| etf | success_with_limited_confidence | 8.96s | 0 | 0 |
+| fusion | degraded | 1.33s | 14 | 0 |
+
+Market data root cause:
+
+```text
+binance-public-rest: failed in Vercel production runtime
+bybit-public-rest: failed in Vercel production runtime
+cmip-public-market-signal-adapters: failed because Binance market adapter and Bybit derivatives adapter are treated as blocking core adapters
+```
+
+This is not an external scheduler failure. It is a production data-source availability/classification issue. No fake market data was generated.
 
 ## Production Readiness Gate
 
@@ -201,7 +264,8 @@ PRODUCTION_READY_FOR_SCHEDULER_TRUST = false
 
 Reason:
 
-- External scheduler path has not yet accumulated 24 hours of production run history.
+- External scheduler path has one successful real cron-job.org execution after the latest deployment, but has not yet accumulated 24 hours of production run history.
+- App-side scheduler status is still `failed` because `market_data` is failed in the Vercel production runtime.
 
 ## Production Deployment Checks
 
@@ -250,8 +314,9 @@ Completed:
 - production root endpoint verification
 - production Data Health endpoint verification
 - production cron unauthorized guard verification
+- first real cron-job.org execution after retry-budget hardening: HTTP `200`, `19.63s`
 
 Still pending:
 
-- first real cron-job.org execution
 - 24 hours of external production scheduler observations
+- production market data blocker resolution for Binance/Bybit or reclassification to limited-confidence fallback when real CoinGecko/Yahoo data is available

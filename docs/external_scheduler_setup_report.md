@@ -96,10 +96,23 @@ https://kahencrypto.vercel.app/api/cron/ingest
 
 ## Required Authorization Header
 
-cron-job.org must send:
+Preferred format for clients that can send `Authorization`:
 
 ```http
 Authorization: Bearer <INGESTION_CRON_SECRET>
+X-CMIP-Scheduler-Source: cron-job.org
+```
+
+cron-job.org strips or does not persist custom secret headers in job details. For cron-job.org, use its built-in Basic Auth fields:
+
+```text
+Basic Auth username: cmip-cron
+Basic Auth password: <INGESTION_CRON_SECRET>
+```
+
+Keep the non-secret source header:
+
+```http
 X-CMIP-Scheduler-Source: cron-job.org
 ```
 
@@ -112,13 +125,44 @@ Do not put the secret in the URL query string.
 - Schedule: every 30 minutes
 - Timeout: at least 300 seconds if available
 - Headers:
-  - `Authorization: Bearer <INGESTION_CRON_SECRET>`
   - `X-CMIP-Scheduler-Source: cron-job.org`
+- Auth:
+  - Basic Auth enabled
+  - username `cmip-cron`
+  - password `<INGESTION_CRON_SECRET>`
 - Expected success HTTP status: `200`
+
+## cron-job.org Job Creation
+
+Created via cron-job.org REST API on 2026-06-12.
+
+```text
+jobId: 7801183
+title: C.M.I.P Production Ingestion
+schedule: minutes [0, 30], every hour/day/month/weekday
+timezone: Europe/Paris
+enabled: true
+requestTimeout: 300 seconds
+```
+
+Configured request headers:
+
+```http
+X-CMIP-Scheduler-Source: cron-job.org
+```
+
+Configured auth:
+
+```text
+Basic Auth username: cmip-cron
+Basic Auth password: <redacted INGESTION_CRON_SECRET>
+```
+
+The cron-job.org API initially returned `{"jobId":7801183}`. The first scheduled requests reached Vercel at 22:22 and 22:30 CEST but returned `401` because cron-job.org did not persist/send the `Authorization` header. A follow-up attempt to use `X-CMIP-Cron-Secret` also showed that cron-job.org did not persist the secret custom header. The endpoint was then hardened to also accept Basic Auth with username `cmip-cron` and password equal to `INGESTION_CRON_SECRET`.
 
 ## First External Cron Execution Verification
 
-Pending. This cannot be honestly marked complete until cron-job.org executes the deployed production endpoint.
+Pending first scheduled execution. This cannot be honestly marked complete until cron-job.org executes the deployed production endpoint.
 
 Required checks after first external execution:
 

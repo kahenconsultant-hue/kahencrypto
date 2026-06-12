@@ -26,11 +26,29 @@ function schedulerSourceForRequest(request: NextRequest, sync: boolean) {
   return "unknown_http" as const;
 }
 
+function basicAuthSecret(request: NextRequest) {
+  const authorization = request.headers.get("authorization") ?? "";
+  if (!authorization.toLowerCase().startsWith("basic ")) return null;
+  try {
+    const decoded = Buffer.from(authorization.slice(6), "base64").toString("utf8");
+    const separatorIndex = decoded.indexOf(":");
+    if (separatorIndex === -1) return null;
+    const username = decoded.slice(0, separatorIndex);
+    const password = decoded.slice(separatorIndex + 1);
+    return username === "cmip-cron" ? password : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const secret = process.env.INGESTION_CRON_SECRET ?? process.env.CRON_SECRET;
-  const provided = request.headers.get("authorization")?.replace("Bearer ", "");
+  const authorization = request.headers.get("authorization") ?? "";
+  const provided = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7) : "";
+  const providedCronHeader = request.headers.get("x-cmip-cron-secret");
+  const providedBasicSecret = basicAuthSecret(request);
 
-  if (secret && provided !== secret) {
+  if (secret && provided !== secret && providedCronHeader !== secret && providedBasicSecret !== secret) {
     return apiJson({ error: "unauthorized" }, { status: 401 });
   }
 

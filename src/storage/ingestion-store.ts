@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSupabaseServerClient } from "@/server/supabase/client";
+import type { DataPoint } from "@/lib/types";
 import type {
   IngestionDeadLetterEntry,
   IngestionLogEntry,
@@ -29,6 +30,15 @@ import type {
 
 const INGESTION_STORE_DIR = process.env.CMIP_INGESTION_STORE_PATH ?? join(process.cwd(), ".cache", "cmip", "ingestion");
 
+export interface SharedSignalCachePayload {
+  generatedAt: string;
+  expiresAt: string;
+  points: DataPoint[];
+  counts?: Record<string, number>;
+  retainedPreviousSnapshot?: boolean;
+  retentionReason?: string;
+}
+
 function ensureStoreDir() {
   mkdirSync(INGESTION_STORE_DIR, { recursive: true });
 }
@@ -42,6 +52,14 @@ function appendJsonl(filename: string, rows: unknown[]) {
 function writeLatest(filename: string, value: unknown) {
   ensureStoreDir();
   writeFileSync(join(INGESTION_STORE_DIR, filename), JSON.stringify(value, null, 2));
+}
+
+function tryWriteLatest(filename: string, value: unknown) {
+  try {
+    writeLatest(filename, value);
+  } catch {
+    // Runtime hydration is a best-effort bridge for serverless instances.
+  }
 }
 
 function readLatest<T>(filename: string, fallback: T): T {
@@ -744,6 +762,32 @@ export async function persistTelemetryLogs(logs: TelemetryLogInput[]): Promise<I
   return supabaseWrite.storageMode;
 }
 
+export async function persistSharedSignalCache(payload: SharedSignalCachePayload): Promise<IngestionStorageMode> {
+  writeLatest("latest-shared-signal-cache.json", payload);
+  const observedAt = new Date().toISOString();
+  return persistTelemetryLogs([
+    {
+      scope: "signal_cache",
+      eventType: "signal_cache_refreshed",
+      level: payload.retainedPreviousSnapshot ? "warning" : "info",
+      message: payload.retainedPreviousSnapshot
+        ? `Signal cache refresh retained the previous usable snapshot: ${payload.retentionReason ?? "quality guard"}`
+        : "Signal cache refreshed from live public adapters.",
+      sourceId: "signal-cache",
+      tableName: "telemetry_logs",
+      payload: {
+        generatedAt: payload.generatedAt,
+        expiresAt: payload.expiresAt,
+        counts: payload.counts ?? null,
+        retainedPreviousSnapshot: payload.retainedPreviousSnapshot ?? false,
+        retentionReason: payload.retentionReason ?? null,
+        points: payload.points,
+      },
+      observedAt,
+    },
+  ]);
+}
+
 export async function persistSchedulerRun(run: SchedulerRunRecord): Promise<IngestionStorageMode> {
   const previous = readLatest<SchedulerRunRecord[]>("latest-scheduler-runs.json", []);
   const next = [run, ...previous.filter((item) => item.runId !== run.runId)].slice(0, 50);
@@ -946,6 +990,56 @@ export async function getLatestSchedulerRuns(limit = 48) {
   const logs = await getLatestTelemetryLogs(Math.max(100, limit * 4));
   const runs = logs.map(schedulerRunFromTelemetryLog).filter((run): run is SchedulerRunRecord => Boolean(run));
   return runs.length ? runs.slice(0, limit) : getLatestSchedulerRunsSync(limit);
+}
+
+function sharedSignalCacheFromPayload(payload: unknown): SharedSignalCachePayload | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const record = payload as Record<string, unknown>;
+  const points = Array.isArray(record.points) ? record.points : [];
+  if (typeof record.generatedAt !== "string" || typeof record.expiresAt !== "string" || !points.length) return null;
+  if (!Number.isFinite(Date.parse(record.generatedAt)) || !Number.isFinite(Date.parse(record.expiresAt))) return null;
+  return {
+    generatedAt: record.generatedAt,
+    expiresAt: record.expiresAt,
+    points: points as DataPoint[],
+    counts: typeof record.counts === "object" && record.counts !== null ? (record.counts as Record<string, number>) : undefined,
+    retainedPreviousSnapshot: record.retainedPreviousSnapshot === true,
+    retentionReason: typeof record.retentionReason === "string" ? record.retentionReason : undefined,
+  };
+}
+
+export async function getLatestSharedSignalCache(): Promise<SharedSignalCachePayload | null> {
+  const client = createSupabaseServerClient();
+  if (client) {
+    try {
+      const { data, error } = await withSupabaseTimeout(
+        Promise.resolve(
+          client
+            .from("telemetry_logs")
+            .select("payload, observed_at")
+            .eq("scope", "signal_cache")
+            .eq("event_type", "signal_cache_refreshed")
+            .order("observed_at", { ascending: false })
+            .limit(1),
+        ),
+      );
+      if (!error && data?.[0]?.payload) {
+        const payload = sharedSignalCacheFromPayload(data[0].payload);
+        if (payload) return payload;
+      }
+    } catch {
+      writeStorageReport({
+        table: "telemetry_logs",
+        rows: 1,
+        status: "failed",
+        storageMode: "local_fallback",
+        attemptedAt: new Date().toISOString(),
+        error: "Supabase select latest signal cache timed out; local fallback cache used.",
+      });
+    }
+  }
+
+  return sharedSignalCacheFromPayload(readLatest<unknown>("latest-shared-signal-cache.json", null));
 }
 
 async function selectSupabaseRows<T>(table: string, orderBy: string, limit: number): Promise<T[]> {
@@ -1276,6 +1370,40 @@ export async function getLatestIntelligenceOutputs(limit = 100) {
 export async function getLatestTelemetryLogs(limit = 100) {
   const rows = await selectSupabaseRows<TelemetryLogRow>("telemetry_logs", "observed_at", limit);
   return rows.length ? rows.map(telemetryLogFromRow) : getLatestTelemetryLogsSync(limit);
+}
+
+let runtimeStoreHydratedAt = 0;
+
+export async function hydrateRuntimeStoreFromSupabase(force = false) {
+  if (!force && Date.now() - runtimeStoreHydratedAt < 15_000) {
+    return { hydrated: false, reason: "recently_hydrated" as const };
+  }
+
+  const [sourceHealth, rawEvents, rawMetrics, latestRun, schedulerRuns, telemetryLogs] = await Promise.all([
+    getLatestSourceHealth(),
+    getLatestRawEvents(300),
+    getLatestRawMetrics(500),
+    getLatestIngestionRun(),
+    getLatestSchedulerRuns(48),
+    getLatestTelemetryLogs(200),
+  ]);
+
+  if (sourceHealth.length) tryWriteLatest("source-health.json", sourceHealth);
+  if (rawEvents.length) tryWriteLatest("latest-events.json", rawEvents);
+  if (rawMetrics.length) tryWriteLatest("latest-metrics.json", rawMetrics);
+  if (latestRun) tryWriteLatest("latest-ingestion-run.json", latestRun);
+  if (schedulerRuns.length) tryWriteLatest("latest-scheduler-runs.json", schedulerRuns);
+  if (telemetryLogs.length) tryWriteLatest("latest-telemetry-logs.json", telemetryLogs);
+
+  runtimeStoreHydratedAt = Date.now();
+  return {
+    hydrated: true,
+    sourceHealth: sourceHealth.length,
+    rawEvents: rawEvents.length,
+    rawMetrics: rawMetrics.length,
+    schedulerRuns: schedulerRuns.length,
+    latestRun: Boolean(latestRun),
+  };
 }
 
 export async function getSupabaseTableCounts(tableNames: string[]) {

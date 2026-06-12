@@ -20,10 +20,10 @@ import { getRefreshHealth, getSignalSnapshot, minutesSinceEngineUpdate, REFRESH_
 import { getRiskReport } from "@/server/analytics/risk-engine";
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
 import { getUsdtRiskCenter } from "@/server/analytics/usdt-risk-engine";
-import { getSignalCacheStatusSync, refreshSignalCache } from "@/server/data/signal-cache";
+import { getSignalCacheStatusSync, loadSharedSignalCache, refreshSignalCache } from "@/server/data/signal-cache";
 import { getIntelligenceReliabilityReportSync } from "@/server/intelligence/reliability-engine";
 import { getIngestionFoundationStatusSync } from "@/health/source-health";
-import { getLatestNormalizedEventsSync, getLatestRawEventsSync } from "@/storage/ingestion-store";
+import { getLatestNormalizedEventsSync, getLatestRawEventsSync, hydrateRuntimeStoreFromSupabase } from "@/storage/ingestion-store";
 
 export const dashboardCategoryLabels = categoryLabels;
 export const dashboardPricingPlans = pricingPlans;
@@ -58,6 +58,7 @@ function scheduleDashboardSignalRefresh() {
 }
 
 export async function ensureDashboardSignalCacheFresh() {
+  await Promise.all([loadSharedSignalCache(), hydrateRuntimeStoreFromSupabase()]);
   const status = getSignalCacheStatusSync();
   if (status.exists && !status.stale) return { refreshed: false, status };
 

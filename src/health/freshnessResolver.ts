@@ -217,7 +217,7 @@ export function resolveGlobalFreshness(params: {
   now?: Date;
 }) {
   const timestamps = [params.lastSuccessfulRun, params.lastSuccessfulSignal, params.lastSuccessfulSource]
-    .filter((timestamp): timestamp is string => Boolean(timestamp))
+    .filter((timestamp): timestamp is string => typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp)))
     .sort((left, right) => Date.parse(right) - Date.parse(left));
   const latest = timestamps[0] ?? null;
   const primary = resolveFreshness({

@@ -391,7 +391,9 @@ export function buildTimestampedReturnSeries(key: SeriesKey, frequency: "intrada
 
 export function minutesSinceEngineUpdate(now = new Date()) {
   const timestamp = getSignalCacheStatusSync().generatedAt ?? getEngineLastUpdatedAt();
-  const diff = now.getTime() - new Date(timestamp).getTime();
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return 0;
+  const diff = now.getTime() - parsed;
   return Math.max(0, Math.round(diff / 60_000));
 }
 

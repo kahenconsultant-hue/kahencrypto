@@ -3,9 +3,9 @@ import { getFreshnessReportSync } from "@/health/freshness-engine";
 import { buildForecastSnapshots } from "@/server/analytics/forecast_snapshot_engine";
 import { validateDueForecasts } from "@/server/analytics/forecast_validation_engine";
 import { REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
-import { getSignalCacheStatusSync, refreshSignalCache } from "@/server/data/signal-cache";
+import { getSignalCacheStatusSync, loadSharedSignalCache, refreshSignalCache } from "@/server/data/signal-cache";
 import { runStagedScheduledIngestion } from "@/server/ingestion/scheduler";
-import { persistForecastSnapshots, persistForecastValidations } from "@/storage/ingestion-store";
+import { hydrateRuntimeStoreFromSupabase, persistForecastSnapshots, persistForecastValidations } from "@/storage/ingestion-store";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -81,6 +81,7 @@ function scheduleCatchupIngestionIfNeeded() {
 }
 
 export async function GET() {
+  await Promise.all([loadSharedSignalCache(), hydrateRuntimeStoreFromSupabase()]);
   const status = getSignalCacheStatusSync();
 
   if (status.exists && status.ageMinutes !== null && status.ageMinutes < REFRESH_INTERVAL_MINUTES) {

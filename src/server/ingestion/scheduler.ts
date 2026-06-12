@@ -290,20 +290,32 @@ function staleSignalCount() {
 
 type SchedulerRunOptions = Pick<SchedulerRunRecord, "schedulerSource" | "executionEnvironment">;
 
+async function runSchedulerStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number]) {
+  const stageStartedAt = new Date().toISOString();
+  try {
+    const summary = await withStageTimeout(runIngestionFoundation({ sourceIds: [...stage.sourceIds], stageId: stage.stageId }), stage.label, "timeoutMs" in stage ? stage.timeoutMs : DEFAULT_STAGE_TIMEOUT_MS);
+    return { stageRun: stageFromSummary(stage, summary), summary };
+  } catch (error) {
+    return { stageRun: failedStage(stage, stageStartedAt, error), summary: null };
+  }
+}
+
 export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["trigger"] = "cron_http", options: SchedulerRunOptions = {}) {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const stages: SchedulerStageRun[] = [];
   const summaries: IngestionRunSummary[] = [];
 
-  for (const stage of INGESTION_SCHEDULER_STAGES) {
-    const stageStartedAt = new Date().toISOString();
-    try {
-      const summary = await withStageTimeout(runIngestionFoundation({ sourceIds: [...stage.sourceIds], stageId: stage.stageId }), stage.label, "timeoutMs" in stage ? stage.timeoutMs : DEFAULT_STAGE_TIMEOUT_MS);
-      summaries.push(summary);
-      stages.push(stageFromSummary(stage, summary));
-    } catch (error) {
-      stages.push(failedStage(stage, stageStartedAt, error));
+  const runStagesInParallel = options.schedulerSource === "external_cron_job_org";
+  if (runStagesInParallel) {
+    const stageResults = await Promise.all(INGESTION_SCHEDULER_STAGES.map((stage) => runSchedulerStage(stage)));
+    stages.push(...stageResults.map((result) => result.stageRun));
+    summaries.push(...stageResults.map((result) => result.summary).filter((summary): summary is IngestionRunSummary => Boolean(summary)));
+  } else {
+    for (const stage of INGESTION_SCHEDULER_STAGES) {
+      const result = await runSchedulerStage(stage);
+      if (result.summary) summaries.push(result.summary);
+      stages.push(result.stageRun);
     }
   }
 

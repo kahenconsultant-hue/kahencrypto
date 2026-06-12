@@ -162,20 +162,32 @@ The cron-job.org API initially returned `{"jobId":7801183}`. The first scheduled
 
 ## First External Cron Execution Verification
 
-Pending first scheduled execution. This cannot be honestly marked complete until cron-job.org executes the deployed production endpoint.
+Initial external execution observations:
+
+| Time Europe/Paris | Source | Vercel Status | cron-job.org Result | Finding |
+| --- | --- | ---: | ---: | --- |
+| 2026-06-12 22:30 | cron-job.org | 401 | 401 Unauthorized | `Authorization` header was not sent/persisted by cron-job.org. |
+| 2026-06-12 23:00 | cron-job.org | 401 | 401 Unauthorized | Basic Auth was configured with the cron-job.org API token, not the real C.M.I.P ingestion secret. |
+| 2026-06-12 23:30 | cron-job.org | 200 | timeout after ~30s | Auth reached the app, but full sequential ingestion exceeded cron-job.org's practical timeout window. |
+
+Corrective action:
+
+- cron-job.org now uses Basic Auth username `cmip-cron` and the real `INGESTION_CRON_SECRET`.
+- `/api/cron/ingest` still completes ingestion inside the request lifecycle.
+- For `schedulerSource=external_cron_job_org`, ingestion stages 1-4 now run in parallel and fusion runs afterward. This keeps the endpoint synchronous while reducing wall-clock runtime for cron-job.org.
 
 Required checks after first external execution:
 
-- HTTP status
-- duration
-- runId
-- trigger = `cron_http`
-- schedulerSource = `external_cron_job_org`
-- executionEnvironment = `production`
-- storage = `supabase`
-- failedStage = `null`, or documented reason
-- stale sources
-- stale signals
+- HTTP status: pending after parallel-stage deploy
+- duration: pending after parallel-stage deploy
+- runId: pending after parallel-stage deploy
+- trigger = `cron_http`: pending after parallel-stage deploy
+- schedulerSource = `external_cron_job_org`: pending after parallel-stage deploy
+- executionEnvironment = `production`: pending after parallel-stage deploy
+- storage = `supabase`: pending after parallel-stage deploy
+- failedStage = `null`, or documented reason: pending after parallel-stage deploy
+- stale sources: pending after parallel-stage deploy
+- stale signals: pending after parallel-stage deploy
 
 ## Production Readiness Gate
 

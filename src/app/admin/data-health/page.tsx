@@ -53,13 +53,60 @@ function statusVariant(status: AdminSourceStatus): "success" | "warning" | "dang
 
 function metricStatusFa(status: MetricAvailability) {
   if (status === "available") return "Available";
+  if (status === "proxy") return "Proxy";
   if (status === "estimated") return "Estimated";
   return "Missing";
 }
 
 function metricStatusVariant(status: MetricAvailability): "success" | "warning" | "danger" {
   if (status === "available") return "success";
-  if (status === "estimated") return "warning";
+  if (status === "estimated" || status === "proxy") return "warning";
+  return "danger";
+}
+
+function bundleStatusVariant(status: "success" | "degraded" | "failed"): "success" | "warning" | "danger" {
+  if (status === "success") return "success";
+  if (status === "degraded") return "warning";
+  return "danger";
+}
+
+function bundleStatusLabel(status: "success" | "degraded" | "failed") {
+  if (status === "success") return "Success";
+  if (status === "degraded") return "Degraded";
+  return "Fail";
+}
+
+function schedulerStatusVariant(status: "success" | "success_with_limited_confidence" | "degraded" | "failed" | "skipped"): "success" | "warning" | "danger" {
+  if (status === "success") return "success";
+  if (status === "success_with_limited_confidence" || status === "degraded" || status === "skipped") return "warning";
+  return "danger";
+}
+
+function schedulerStatusLabel(status: "success" | "success_with_limited_confidence" | "degraded" | "failed" | "skipped") {
+  if (status === "success") return "Success";
+  if (status === "success_with_limited_confidence") return "Limited Success";
+  if (status === "degraded") return "Degraded";
+  if (status === "skipped") return "No run";
+  return "Fail";
+}
+
+function detailText(value: unknown) {
+  if (value === null || value === undefined || value === "") return "ناموجود";
+  if (typeof value === "number") return Number.isFinite(value) ? formatNumber(value, 0) : "ناموجود";
+  if (typeof value === "boolean") return value ? "بله" : "خیر";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function apiLogVariant(status: string): "success" | "warning" | "danger" {
+  if (status === "success") return "success";
+  if (status === "degraded") return "warning";
+  return "danger";
+}
+
+function integrityStatusVariant(status: "clean" | "corrected" | "violations"): "success" | "warning" | "danger" {
+  if (status === "clean") return "success";
+  if (status === "corrected") return "warning";
   return "danger";
 }
 
@@ -139,6 +186,9 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
             <Link className="rounded-sm border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground" href="/admin/ingestion">
               ingestion admin
             </Link>
+            <Link className="rounded-sm border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground" href="/admin/ops">
+              ops center
+            </Link>
             <Link
               className="rounded-sm border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
               href={debug ? "/admin/data-health" : "/admin/data-health?debug=1"}
@@ -147,7 +197,7 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
             </Link>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           <div className="rounded-md border bg-secondary/25 p-3">
             <div className="text-[11px] text-muted-foreground">Overall Health</div>
             <div className={`mt-1 text-xl font-medium ${scoreColor(dashboard.scores.overallPlatformHealthScore)}`}>
@@ -161,9 +211,27 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
             </div>
           </div>
           <div className="rounded-md border bg-secondary/25 p-3">
-            <div className="text-[11px] text-muted-foreground">Connected Sources</div>
+            <div className="text-[11px] text-muted-foreground">Critical Core Sources</div>
             <div className="mt-1 text-xl font-medium">
-              {dashboard.scores.connectedSources}/{dashboard.scores.totalSources}
+              {dashboard.scores.criticalCoreConnectedSources}/{dashboard.scores.criticalCoreTotalSources}
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">All Active Sources</div>
+            <div className="mt-1 text-xl font-medium">
+              {dashboard.scores.allActiveConnectedSources}/{dashboard.scores.allActiveTotalSources}
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">Optional/Premium Active</div>
+            <div className="mt-1 text-xl font-medium">
+              {dashboard.scores.optionalPremiumActiveSources}/{dashboard.scores.optionalPremiumTotalSources}
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">Degraded / Disabled</div>
+            <div className="mt-1 text-xl font-medium">
+              {dashboard.scores.degradedSources}/{dashboard.scores.disabledSources}
             </div>
           </div>
           <div className="rounded-md border bg-secondary/25 p-3">
@@ -173,9 +241,158 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
             </div>
           </div>
           <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">Operational Reliability</div>
+            <div className={`mt-1 text-xl font-medium ${scoreColor(dashboard.scores.operationalReliabilityScore)}`}>
+              {formatNumber(dashboard.scores.operationalReliabilityScore, 0)}/100
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
             <div className="text-[11px] text-muted-foreground">Last Ingestion Run</div>
             <div className="mt-1 text-xs leading-6 text-foreground">
               {dashboard.lastIngestionRun ? timeFa(dashboard.lastIngestionRun.finishedAt) : "ناموجود"}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <SectionTitle
+          icon={Activity}
+          title="Scheduler Dashboard"
+          description="وضعیت اجرای مرحله‌ای cron، زمان‌بندی بعدی، retry، stageهای ناموفق و شبیه‌سازی ۱۲ چرخه برای پایداری عملیاتی."
+        />
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Scheduler Status</div>
+              <div className="mt-2">
+                <Badge variant={schedulerStatusVariant(dashboard.scheduler.status)}>{schedulerStatusLabel(dashboard.scheduler.status)}</Badge>
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Last Run</div>
+              <div className="mt-1 text-xs leading-6">{timeFa(dashboard.scheduler.lastRun)}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Next Run</div>
+              <div className="mt-1 text-xs leading-6">{timeFa(dashboard.scheduler.nextRun)}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Duration</div>
+              <div className="mt-1 text-lg font-medium">{dashboard.scheduler.durationMs === null ? "ناموجود" : `${formatNumber(dashboard.scheduler.durationMs / 1000, 1)}s`}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Success Rate</div>
+              <div className={`mt-1 text-lg font-medium ${scoreColor(dashboard.scheduler.successRate)}`}>{formatNumber(dashboard.scheduler.successRate, 0)}%</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Retry / Stale</div>
+              <div className="mt-1 text-xs leading-6">Retry {dashboard.scheduler.retryCount} / Stale {dashboard.scheduler.staleSignals}</div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-separate border-spacing-y-2 text-right text-xs">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1 font-medium">Stage</th>
+                  <th className="px-2 py-1 font-medium">Status</th>
+                  <th className="px-2 py-1 font-medium">Duration</th>
+                  <th className="px-2 py-1 font-medium">Failed Sources</th>
+                  <th className="px-2 py-1 font-medium">Degraded Sources</th>
+                  <th className="px-2 py-1 font-medium">Dead Letters</th>
+                  <th className="px-2 py-1 font-medium">Retry</th>
+                  <th className="px-2 py-1 font-medium">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.scheduler.stages.length ? dashboard.scheduler.stages.map((stage) => (
+                  <tr key={stage.stageId} className="bg-secondary/25 align-top">
+                    <td className="rounded-r-md border-y border-r px-2 py-2">
+                      <div className="font-medium">{stage.label}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">{stage.stageId}</div>
+                    </td>
+                    <td className="border-y px-2 py-2"><Badge variant={schedulerStatusVariant(stage.status)}>{schedulerStatusLabel(stage.status)}</Badge></td>
+                    <td className="border-y px-2 py-2">{formatNumber(stage.durationMs / 1000, 1)}s</td>
+                    <td className="border-y px-2 py-2">{stage.failedSources}</td>
+                    <td className="border-y px-2 py-2">{stage.degradedSources}</td>
+                    <td className="border-y px-2 py-2">{stage.deadLetters}</td>
+                    <td className="border-y px-2 py-2">{stage.retryCount}</td>
+                    <td className="rounded-l-md border-y border-l px-2 py-2 text-muted-foreground">
+                      <div>{stage.error ?? "بدون خطا"}</div>
+                      {stage.stageId === "etf" && stage.details ? (
+                        <div className="mt-2 grid gap-1 rounded-md border bg-background/40 p-2 text-[11px] leading-5">
+                          <div>ETF duration: {formatNumber(Number(stage.details.etfStageDurationMs ?? stage.durationMs) / 1000, 1)}s</div>
+                          <div>Farside: {detailText(stage.details.farsideStatus)} / The Block: {detailText(stage.details.theBlockStatus)}</div>
+                          <div>BTC rows: {detailText(stage.details.parsedBtcRows)} / ETH rows: {detailText(stage.details.parsedEthRows)}</div>
+                          <div>BTC date: {detailText(stage.details.latestBtcEtfDate)} / ETH date: {detailText(stage.details.latestEthEtfDate)}</div>
+                          <div>Fallback: {detailText(stage.details.usedFallbackSource)} / Freshness: {detailText(stage.details.etfFreshness)}</div>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr><td className="rounded-md border bg-secondary/25 p-3 text-muted-foreground" colSpan={8}>هنوز اجرای scheduler ثبت نشده است.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">Simulation cycles: {dashboard.scheduler.simulation.cycles}</div>
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">Successful: {dashboard.scheduler.simulation.successfulCycles}</div>
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">Failed: {dashboard.scheduler.simulation.failedCycles}</div>
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">Missed updates: {dashboard.scheduler.simulation.missedUpdates}</div>
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">Avg duration: {formatNumber(dashboard.scheduler.simulation.averageDurationMs / 1000, 1)}s</div>
+          </div>
+          <p className="text-xs leading-6 text-muted-foreground">{dashboard.scheduler.simulation.noteFa}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <SectionTitle
+          icon={ShieldAlert}
+          title="Integrity Dashboard"
+          description="کنترل تناقض روایت، تورم confidence، stale signals، ورودی‌های missing و خروجی‌هایی که باید downgrade یا reject شوند."
+        />
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={integrityStatusVariant(dashboard.integrity.status)}>
+              {dashboard.integrity.status === "clean" ? "Clean" : dashboard.integrity.status === "corrected" ? "Corrected" : "Violations"}
+            </Badge>
+            <Badge variant="outline">Corrections {dashboard.integrity.correctionsApplied}</Badge>
+            <Badge variant="outline">Narratives rejected {dashboard.integrity.narrativesRejected}</Badge>
+            <Badge variant="outline">Signals downgraded {dashboard.integrity.signalsDowngraded}</Badge>
+            <Badge variant="outline">Confidence adjustments {dashboard.integrity.confidenceAdjustments}</Badge>
+          </div>
+          <p className="text-xs leading-6 text-muted-foreground">{dashboard.integrity.summaryFa}</p>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-xs font-medium">Consistency Violations</div>
+              <div className="mt-2 space-y-2">
+                {dashboard.integrity.consistencyViolations.length ? dashboard.integrity.consistencyViolations.slice(0, 5).map((item) => (
+                  <p key={item.id} className="text-[11px] leading-5 text-muted-foreground">{item.titleFa}: {item.correctionFa}</p>
+                )) : <p className="text-[11px] text-muted-foreground">تناقض بحرانی ثبت نشده است.</p>}
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-xs font-medium">Freshness / Confidence</div>
+              <div className="mt-2 space-y-2">
+                {[...dashboard.integrity.freshnessViolations, ...dashboard.integrity.confidenceViolations].slice(0, 5).map((item) => (
+                  <p key={item.id} className="text-[11px] leading-5 text-muted-foreground">{item.titleFa}: {item.detailFa}</p>
+                ))}
+                {!dashboard.integrity.freshnessViolations.length && !dashboard.integrity.confidenceViolations.length ? <p className="text-[11px] text-muted-foreground">confidence/freshness violation فعالی ثبت نشده است.</p> : null}
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-xs font-medium">Rejected / Missing</div>
+              <div className="mt-2 space-y-2">
+                {dashboard.integrity.narrativeCorrections.slice(0, 4).map((item) => (
+                  <p key={item.id} className="text-[11px] leading-5 text-muted-foreground">{item.titleFa}: {item.correctionFa}</p>
+                ))}
+                {dashboard.integrity.missingInputs.length ? (
+                  <p className="text-[11px] leading-5 text-amber-200">Missing: {dashboard.integrity.missingInputs.slice(0, 8).join("، ")}</p>
+                ) : null}
+                {!dashboard.integrity.narrativeCorrections.length && !dashboard.integrity.missingInputs.length ? <p className="text-[11px] text-muted-foreground">ورودی missing یا روایت reject شده فعالی ثبت نشده است.</p> : null}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -226,6 +443,125 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
               ))}
             </tbody>
           </table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <SectionTitle
+          icon={Layers3}
+          title="Internal Adapter Bundle Breakdown"
+          description="جزئیات adapterهای هسته‌ای و اختیاری؛ نبود enrichment اختیاری نباید bundle را Fail کند."
+        />
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Bundle Status</div>
+              <div className="mt-2">
+                <Badge variant={bundleStatusVariant(dashboard.adapterBundleBreakdown.status)}>
+                  {bundleStatusLabel(dashboard.adapterBundleBreakdown.status)}
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Core adapters</div>
+              <div className="mt-1 text-lg font-medium">
+                {dashboard.adapterBundleBreakdown.coreHealthy}/{dashboard.adapterBundleBreakdown.coreTotal} healthy
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Optional adapters</div>
+              <div className="mt-1 text-lg font-medium">
+                {dashboard.adapterBundleBreakdown.optionalHealthy}/{dashboard.adapterBundleBreakdown.optionalTotal} healthy
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Blocking failures</div>
+              <div className="mt-1 text-xs leading-6 text-foreground">
+                {dashboard.adapterBundleBreakdown.blockingFailures.length ? dashboard.adapterBundleBreakdown.blockingFailures.join("، ") : "۰"}
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Non-blocking missing</div>
+              <div className="mt-1 text-xs leading-6 text-foreground">
+                {dashboard.adapterBundleBreakdown.nonBlockingMissingInputs.length
+                  ? dashboard.adapterBundleBreakdown.nonBlockingMissingInputs.slice(0, 4).join("، ")
+                  : "۰"}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground">
+            {dashboard.adapterBundleBreakdown.summaryFa}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1120px] border-separate border-spacing-y-2 text-right text-xs">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1 font-medium">Adapter</th>
+                  <th className="px-2 py-1 font-medium">Source</th>
+                  <th className="px-2 py-1 font-medium">Status</th>
+                  <th className="px-2 py-1 font-medium">Required Inputs</th>
+                  <th className="px-2 py-1 font-medium">Missing Inputs</th>
+                  <th className="px-2 py-1 font-medium">Output Metrics</th>
+                  <th className="px-2 py-1 font-medium">Freshness</th>
+                  <th className="px-2 py-1 font-medium">Blocking</th>
+                  <th className="px-2 py-1 font-medium">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.adapterBundleBreakdown.rows.map((row) => (
+                  <tr key={row.adapterName} className="bg-secondary/25 align-top">
+                    <td className="rounded-r-md border-y border-r px-2 py-2">
+                      <div className="font-medium">{row.adapterName}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">{row.class}</div>
+                    </td>
+                    <td className="max-w-[220px] border-y px-2 py-2 text-muted-foreground">{row.source}</td>
+                    <td className="border-y px-2 py-2">
+                      <Badge variant={bundleStatusVariant(row.status)}>{bundleStatusLabel(row.status)}</Badge>
+                    </td>
+                    <td className="max-w-[220px] border-y px-2 py-2">{row.requiredInputs.length ? row.requiredInputs.join(" | ") : "ناموجود / اختیاری"}</td>
+                    <td className="max-w-[220px] border-y px-2 py-2 text-muted-foreground">{row.missingInputs.length ? row.missingInputs.join(" | ") : "موردی نیست"}</td>
+                    <td className="max-w-[220px] border-y px-2 py-2 text-muted-foreground">{row.outputMetricsGenerated.length ? row.outputMetricsGenerated.join(" | ") : "۰"}</td>
+                    <td className="border-y px-2 py-2">{agoFa(row.freshnessMinutes)}</td>
+                    <td className="border-y px-2 py-2">{row.blocking ? "بله" : "خیر"}</td>
+                    <td className="rounded-l-md border-y border-l px-2 py-2 text-muted-foreground">{row.errorMessage ?? "بدون خطا"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <SectionTitle
+          icon={Waves}
+          title="Liquidity Intelligence Health"
+          description="وضعیت موتورهای Stablecoin، ETF، Derivatives، Macro Calendar و Sentiment در Fusion Engine."
+        />
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {dashboard.liquidityIntelligenceHealth.map((engine) => (
+            <div key={engine.engineId} className="rounded-md border bg-secondary/25 p-3 text-xs">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="font-medium">{engine.engineName}</div>
+                <Badge variant={statusVariant(engine.status)}>{statusLabel(engine.status)}</Badge>
+              </div>
+              <div className="space-y-2 leading-5">
+                <div className="flex justify-between gap-2"><span>Score</span><span>{valueFa(engine.score)}</span></div>
+                <div className="flex justify-between gap-2"><span>Coverage</span><span className={scoreColor(engine.coverage)}>{formatNumber(engine.coverage, 0)}%</span></div>
+                <div className="flex justify-between gap-2"><span>Confidence</span><span>{formatNumber(engine.confidence, 0)}%</span></div>
+                <div className="flex justify-between gap-2"><span>Contribution</span><span>{engine.contribution === null ? "ناموجود" : `${engine.contribution}/100`}</span></div>
+                <div className="flex justify-between gap-2"><span>Weight</span><span>{formatNumber(engine.redistributedWeight * 100, 0)}%</span></div>
+                <div className="flex justify-between gap-2"><span>Sources</span><span>{engine.sourceCount}</span></div>
+                <div className="flex justify-between gap-2"><span>Last Update</span><span>{timeFa(engine.lastUpdate)}</span></div>
+                {engine.missingInputs.length ? (
+                  <div className="rounded-sm border bg-background/30 p-2 text-[11px] text-muted-foreground">
+                    Missing: {engine.missingInputs.slice(0, 6).join("، ")}
+                  </div>
+                ) : null}
+                <div className="rounded-sm border bg-background/30 p-2 text-[11px] text-muted-foreground">{engine.explanationFa}</div>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -316,6 +652,33 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
 
         <Card>
           <SectionTitle
+            icon={Database}
+            title="FRED Series Breakdown"
+            description="وضعیت هر سری FRED جدا از Internal Adapter Bundle محاسبه می‌شود؛ خطای bundle به FRED نسبت داده نمی‌شود."
+          />
+          <CardContent className="space-y-2">
+            {dashboard.fredSeriesBreakdown.map((series) => (
+              <div key={series.seriesId} className="rounded-md border bg-secondary/25 p-3 text-xs">
+                <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium">{series.seriesId}</div>
+                    <div className="mt-1 text-muted-foreground">{series.label}</div>
+                  </div>
+                  <Badge variant={metricStatusVariant(series.status)}>{metricStatusFa(series.status)}</Badge>
+                </div>
+                <div className="grid gap-2 text-[11px] leading-5 md:grid-cols-2">
+                  <div>Latest value: {valueFa(series.latestValue)}</div>
+                  <div>Observation date: {series.observationDate ?? "ناموجود"}</div>
+                  <div>Fetch timestamp: {timeFa(series.fetchTimestamp)}</div>
+                  <div className="text-muted-foreground">{series.error ?? "بدون خطای سری"}</div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <SectionTitle
             icon={Waves}
             title="۵. Stablecoin Data"
             description="USDT، USDC، dominance و جریان‌های صرافی. داده ناموجود با Missing مشخص می‌شود."
@@ -338,6 +701,39 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <SectionTitle
+          icon={Database}
+          title="ETF Intelligence"
+          description="وضعیت Farside به‌عنوان منبع اصلی ETF و fallback عمومی The Block؛ اگر Farside با Cloudflare مسدود شود، وضعیت Degraded نمایش داده می‌شود نه fake Connected."
+        />
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          {dashboard.etfIntelligence.map((row) => (
+            <div key={row.asset} className="rounded-md border bg-secondary/25 p-3 text-xs">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-lg font-medium">{row.asset} ETF</div>
+                  <div className="mt-1 text-muted-foreground">{row.sourceName}</div>
+                </div>
+                <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>
+              </div>
+              <div className="grid gap-2 text-[11px] leading-5 md:grid-cols-2">
+                <div>Last fetch: {timeFa(row.lastSuccessfulFetch)}</div>
+                <div>Parsed rows: {formatNumber(row.parsedRowsCount, 0)}</div>
+                <div>Latest ETF date: {row.latestEtfDate ?? "ناموجود"}</div>
+                <div>Freshness: {row.freshnessStatus}</div>
+                <div>Latest total: {row.latestTotalFlowUsdMillion === null ? "ناموجود" : `$${formatNumber(row.latestTotalFlowUsdMillion, 1)}M`}</div>
+                <div>Age: {agoFa(row.freshnessMinutes)}</div>
+              </div>
+              <div className="mt-3 rounded-sm border bg-background/30 p-2 text-[11px] text-muted-foreground">
+                {row.sourceUrl ?? "source URL unavailable"}
+              </div>
+              {row.error ? <div className="mt-2 rounded-sm border border-amber-400/30 bg-amber-500/10 p-2 text-[11px] text-amber-100">{row.error}</div> : null}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <SectionTitle
@@ -371,6 +767,62 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
 
       <Card>
         <SectionTitle
+          icon={BarChart3}
+          title="Correlation Engine Detail"
+          description="همبستگی‌ها از بازده لگاریتمی سری‌های تاریخی واقعی محاسبه می‌شوند؛ نمونه ناکافی به‌صورت null نمایش داده می‌شود، نه صفر."
+        />
+        <CardContent className="overflow-x-auto">
+          <table className="w-full min-w-[1040px] border-separate border-spacing-y-2 text-right text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="px-2 py-1 font-medium">Pair</th>
+                <th className="px-2 py-1 font-medium">24h</th>
+                <th className="px-2 py-1 font-medium">7d</th>
+                <th className="px-2 py-1 font-medium">30d</th>
+                <th className="px-2 py-1 font-medium">90d</th>
+                <th className="px-2 py-1 font-medium">Stability</th>
+                <th className="px-2 py-1 font-medium">Strength</th>
+                <th className="px-2 py-1 font-medium">Lead/Lag</th>
+                <th className="px-2 py-1 font-medium">Observations</th>
+                <th className="px-2 py-1 font-medium">Source</th>
+                <th className="px-2 py-1 font-medium">Status</th>
+                <th className="px-2 py-1 font-medium">Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dashboard.correlationTable.map((row) => (
+                <tr key={row.pair} className="bg-secondary/25 align-top">
+                  <td className="rounded-r-md border-y border-r px-2 py-2 font-medium">{row.pair}</td>
+                  <td className="border-y px-2 py-2">{valueFa(row.correlation24h)}</td>
+                  <td className="border-y px-2 py-2">{valueFa(row.correlation7d)}</td>
+                  <td className="border-y px-2 py-2">{valueFa(row.correlation30d)}</td>
+                  <td className="border-y px-2 py-2">{valueFa(row.correlation90d)}</td>
+                  <td className="border-y px-2 py-2">{row.stabilityScore === null ? "ناموجود" : `${formatNumber(row.stabilityScore, 0)}%`}</td>
+                  <td className="border-y px-2 py-2">{row.statisticalStrength === "strong" ? "Strong" : row.statisticalStrength === "moderate" ? "Moderate" : row.statisticalStrength === "weak" ? "Weak" : "Insufficient"}</td>
+                  <td className="border-y px-2 py-2">
+                    {row.leadLag.leader === "insufficient" ? "نمونه ناکافی" : `${row.leadLag.leader} / ${row.leadLag.lag ?? "-"}`}
+                  </td>
+                  <td className="border-y px-2 py-2">
+                    24h: {row.observations24h} / 7d: {row.observations7d} / 30d: {row.observations30d} / 90d: {row.observations90d}
+                  </td>
+                  <td className="max-w-[300px] border-y px-2 py-2 text-muted-foreground">{row.source}</td>
+                  <td className="border-y px-2 py-2">
+                    <Badge variant={row.status === "available" ? "success" : row.status === "insufficient_data" ? "warning" : "danger"}>
+                      {row.status}
+                    </Badge>
+                  </td>
+                  <td className="rounded-l-md border-y border-l px-2 py-2">
+                    {row.confidence === null ? "ناموجود" : `${formatNumber(row.confidence, 0)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <SectionTitle
           icon={ShieldAlert}
           title="۷. Alert Quality Audit"
           description="برای هر alert منابع استفاده‌شده، تعداد indicator، confidence، ورودی‌های missing و ریسک هشدار بررسی می‌شود."
@@ -386,6 +838,10 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
                 <div className="flex flex-wrap gap-2">
                   <Badge variant={alert.flagged ? "danger" : "success"}>{alert.indicatorCount} indicators</Badge>
                   <Badge variant="outline">confidence {alert.confidence === null ? "ناموجود" : `${formatNumber(alert.confidence, 0)}%`}</Badge>
+                  <Badge variant="outline">coverage {alert.dataCoveragePercent === null ? "ناموجود" : `${formatNumber(alert.dataCoveragePercent, 0)}%`}</Badge>
+                  <Badge variant={alert.alertQualityScore !== null && alert.alertQualityScore >= 65 ? "success" : alert.alertQualityScore !== null && alert.alertQualityScore >= 45 ? "warning" : "danger"}>
+                    quality {alert.alertQualityScore === null ? "ناموجود" : `${formatNumber(alert.alertQualityScore, 0)}/100`}
+                  </Badge>
                   <Badge variant="warning">{alert.riskLevel}</Badge>
                 </div>
               </div>
@@ -397,6 +853,14 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
                 <div className="rounded-sm border bg-background/30 p-2">
                   <div className="mb-1 text-[11px] text-muted-foreground">Missing Inputs</div>
                   <div className="leading-6">{alert.missingInputs.length ? alert.missingInputs.join(" | ") : "موردی ثبت نشده"}</div>
+                </div>
+                <div className="rounded-sm border bg-background/30 p-2">
+                  <div className="mb-1 text-[11px] text-muted-foreground">Supporting Signals</div>
+                  <div className="leading-6">{alert.supportingSignals.length ? alert.supportingSignals.join(" | ") : "ناموجود"}</div>
+                </div>
+                <div className="rounded-sm border bg-background/30 p-2">
+                  <div className="mb-1 text-[11px] text-muted-foreground">Invalidation</div>
+                  <div className="leading-6">{alert.invalidationCondition ?? "ثبت نشده"}</div>
                 </div>
               </div>
             </div>
@@ -429,7 +893,7 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
                     <td className="rounded-r-md border-y border-r px-2 py-2">{log.sourceName}</td>
                     <td className="max-w-[360px] border-y px-2 py-2 text-muted-foreground">{log.endpoint ?? "endpoint unavailable"}</td>
                     <td className="border-y px-2 py-2">
-                      <Badge variant={log.success ? "success" : "danger"}>{log.success ? "Success" : "Fail"}</Badge>
+                      <Badge variant={apiLogVariant(log.status)}>{log.statusLabel}</Badge>
                     </td>
                     <td className="border-y px-2 py-2">{log.latencyMs === null ? "ناموجود" : `${formatNumber(log.latencyMs, 0)} ms`}</td>
                     <td className="border-y px-2 py-2">{timeFa(log.timestamp)}</td>
@@ -448,13 +912,16 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
           title="۹. Data Quality Score"
           description="امتیاز کیفیت از reliability منابع، freshness، coverage و سلامت موتورهای تحلیلی ساخته می‌شود."
         />
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           {[
             ["Source Reliability", dashboard.scores.sourceReliabilityScore],
             ["Freshness", dashboard.scores.freshnessScore],
             ["Coverage", dashboard.scores.coverageScore],
+            ["Analytics Quality", dashboard.scores.analyticsQualityScore],
+            ["Operational Reliability", dashboard.scores.operationalReliabilityScore],
             ["Engine Reliability", dashboard.scores.engineReliabilityScore],
             ["Overall Platform Health", dashboard.scores.overallPlatformHealthScore],
+            ["Production Readiness", dashboard.scores.productionReadinessScore],
           ].map(([label, score]) => (
             <div key={label as string} className="rounded-md border bg-secondary/25 p-3">
               <div className="text-[11px] text-muted-foreground">{label}</div>
@@ -484,7 +951,7 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
             )) : <div className="text-muted-foreground">موردی ثبت نشده</div>}
           </div>
           <div className="rounded-md border bg-secondary/25 p-3 text-xs">
-            <div className="mb-2 flex items-center gap-2"><Database className="h-4 w-4 text-primary" /> Dead Letters</div>
+            <div className="mb-2 flex items-center gap-2"><Database className="h-4 w-4 text-primary" /> Dead Letters آخرین اجرا</div>
             {dashboard.failures.deadLetters.length ? dashboard.failures.deadLetters.slice(0, 8).map((letter) => (
               <div key={`${letter.sourceId}-${letter.failedAt}`} className="border-t py-2">{letter.sourceName}: {letter.error}</div>
             )) : <div className="text-muted-foreground">موردی ثبت نشده</div>}

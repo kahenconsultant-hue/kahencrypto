@@ -3,7 +3,15 @@ import { clampPercent, scoresToLegacyScores } from "@/server/analytics/scoring-e
 import { getCachedDataPointsSync, getSignalCacheStatusSync } from "@/server/data/signal-cache";
 import { freshnessStatus } from "@/server/analytics/quality-engine";
 
-export type SeriesKey = IntelligenceAssetSymbol | "VIX" | "Stablecoin dominance" | "Liquidity" | "ETF flows" | "Tech Beta" | "Retail Risk Appetite";
+export type SeriesKey =
+  | IntelligenceAssetSymbol
+  | "VIX"
+  | "Stablecoin dominance"
+  | "Stablecoin Market Cap"
+  | "Liquidity"
+  | "ETF flows"
+  | "Tech Beta"
+  | "Retail Risk Appetite";
 
 export interface SourceQuality {
   name: string;
@@ -19,8 +27,16 @@ let signalSnapshotMemo: ReturnType<typeof buildSignalSnapshot> | null = null;
 let signalSnapshotMemoKey: string | null = null;
 const returnSeriesMemo = new Map<string, number[]>();
 
+function latestCachedPointTimestamp() {
+  const latest = getCachedDataPointsSync()
+    .map((point) => (point.timestamp ? Date.parse(point.timestamp) : NaN))
+    .filter(Number.isFinite)
+    .sort((left, right) => right - left)[0];
+  return Number.isFinite(latest) ? new Date(latest).toISOString() : null;
+}
+
 export function getEngineLastUpdatedAt() {
-  return getSignalCacheStatusSync().generatedAt ?? new Date().toISOString();
+  return getSignalCacheStatusSync().generatedAt ?? latestCachedPointTimestamp() ?? new Date(0).toISOString();
 }
 
 const channelByKey: Record<string, TransmissionChannel> = {
@@ -42,19 +58,26 @@ const channelByKey: Record<string, TransmissionChannel> = {
   gold_trend_24h: "geopolitical_risk",
   vix_trend_24h: "sentiment_news_shock",
   usdt_supply_7d: "stablecoin_flows",
+  usdt_supply_30d: "stablecoin_flows",
   usdc_supply_7d: "stablecoin_flows",
+  usdc_supply_30d: "stablecoin_flows",
   stablecoin_market_cap_7d: "stablecoin_flows",
   stablecoin_market_cap_30d: "stablecoin_flows",
   total_stablecoin_market_cap_usd: "stablecoin_flows",
   stablecoin_dominance: "stablecoin_flows",
   btc_etf_flow_24h: "etf_flows",
+  btc_etf_flow_7d: "etf_flows",
+  btc_etf_flow_30d: "etf_flows",
   eth_etf_flow_24h: "etf_flows",
+  eth_etf_flow_7d: "etf_flows",
+  eth_etf_flow_30d: "etf_flows",
   funding_btc: "leverage",
   funding_eth: "leverage",
   funding_sol: "leverage",
   open_interest_btc_24h: "leverage",
   open_interest_eth_24h: "leverage",
   open_interest_sol_24h: "leverage",
+  liquidation_btc_24h: "leverage",
   spot_volume_btc_24h: "liquidity",
   spot_volume_eth_24h: "liquidity",
   spot_volume_sol_24h: "liquidity",
@@ -87,19 +110,26 @@ const labelByKey: Record<string, string> = {
   gold_trend_24h: "روند ۲۴ ساعته طلا",
   vix_trend_24h: "تغییر ۲۴ ساعته VIX",
   usdt_supply_7d: "تغییر ۷ روزه عرضه USDT",
+  usdt_supply_30d: "تغییر ۳۰ روزه عرضه USDT",
   usdc_supply_7d: "تغییر ۷ روزه عرضه USDC",
+  usdc_supply_30d: "تغییر ۳۰ روزه عرضه USDC",
   stablecoin_market_cap_7d: "تغییر ۷ روزه ارزش بازار استیبل‌کوین‌ها",
   stablecoin_market_cap_30d: "تغییر ۳۰ روزه ارزش بازار استیبل‌کوین‌ها",
   total_stablecoin_market_cap_usd: "ارزش کل بازار استیبل‌کوین‌ها",
   stablecoin_dominance: "دامیننس استیبل‌کوین‌ها",
   btc_etf_flow_24h: "جریان ۲۴ ساعته ETF بیت‌کوین",
+  btc_etf_flow_7d: "جریان ۷ روزه ETF بیت‌کوین",
+  btc_etf_flow_30d: "جریان ۳۰ روزه ETF بیت‌کوین",
   eth_etf_flow_24h: "جریان ۲۴ ساعته ETF اتریوم",
+  eth_etf_flow_7d: "جریان ۷ روزه ETF اتریوم",
+  eth_etf_flow_30d: "جریان ۳۰ روزه ETF اتریوم",
   funding_btc: "نرخ فاندینگ BTC",
   funding_eth: "نرخ فاندینگ ETH",
   funding_sol: "نرخ فاندینگ SOL",
   open_interest_btc_24h: "تغییر موقعیت‌های باز BTC",
   open_interest_eth_24h: "تغییر موقعیت‌های باز ETH",
   open_interest_sol_24h: "تغییر موقعیت‌های باز SOL",
+  liquidation_btc_24h: "تأیید لیکوییدیشن ۲۴ ساعته BTC",
   spot_volume_btc_24h: "تغییر حجم اسپات BTC",
   spot_volume_eth_24h: "تغییر حجم اسپات ETH",
   spot_volume_sol_24h: "تغییر حجم اسپات SOL",
@@ -275,7 +305,7 @@ export function deriveBaseScores(): SignalScores {
   return scoresToLegacyScores({ marketRisk: marketRiskScore, liquidity: liquidityScore, macroStress: macroStressScore, narrative: narrativeStrength, volatility: volatilityRisk });
 }
 
-const seriesKeyToSignalKey: Record<SeriesKey, string> = {
+export const seriesKeyToSignalKey: Record<SeriesKey, string> = {
   BTC: "btc_trend_24h",
   ETH: "eth_trend_24h",
   SOL: "sol_trend_24h",
@@ -286,6 +316,7 @@ const seriesKeyToSignalKey: Record<SeriesKey, string> = {
   US10Y: "us10y_trend_24h",
   VIX: "vix_trend_24h",
   "Stablecoin dominance": "stablecoin_dominance",
+  "Stablecoin Market Cap": "stablecoin_market_cap_7d",
   Liquidity: "stablecoin_market_cap_7d",
   "ETF flows": "btc_etf_flow_24h",
   "Tech Beta": "nasdaq_trend_24h",
@@ -326,6 +357,35 @@ export function buildReturnSeries(key: SeriesKey, frequency: "intraday" | "daily
   const history = frequency === "intraday" ? signal.intradayHistory : signal.history;
   const returns = valuesToReturns(history ?? []);
   returnSeriesMemo.set(cacheKey, returns);
+  return returns;
+}
+
+export function getSeriesSignal(key: SeriesKey) {
+  return getSignalSnapshot().byKey[seriesKeyToSignalKey[key]] ?? null;
+}
+
+export function getSeriesHistory(key: SeriesKey, frequency: "intraday" | "daily" = "daily"): DataSeriesPoint[] {
+  const signal = getSeriesSignal(key);
+  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return [];
+  const history = frequency === "intraday" ? signal.intradayHistory ?? signal.history : signal.history;
+  return orderedHistory(history);
+}
+
+export function buildTimestampedReturnSeries(key: SeriesKey, frequency: "intraday" | "daily" = "daily") {
+  const history = getSeriesHistory(key, frequency);
+  const returns: Array<{ timestamp: string; value: number }> = [];
+
+  for (let index = 1; index < history.length; index += 1) {
+    const previous = history[index - 1].value;
+    const current = history[index].value;
+    const timestamp = history[index].timestamp;
+    if (previous > 0 && current > 0) {
+      returns.push({ timestamp, value: Number(Math.log(current / previous).toFixed(6)) });
+    } else if (previous !== 0) {
+      returns.push({ timestamp, value: Number(((current - previous) / Math.abs(previous)).toFixed(6)) });
+    }
+  }
+
   return returns;
 }
 

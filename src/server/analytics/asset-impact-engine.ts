@@ -10,6 +10,14 @@ import { calculateImpactScore, clampSigned, signalAgreementScore } from "@/serve
 import type { NormalizedSignal, SignalGroup } from "@/lib/types";
 
 const assets: IntelligenceAssetSymbol[] = ["BTC", "ETH", "SOL", "USDT", "DXY", "Gold", "Nasdaq", "US10Y"];
+const ASSET_IMPACT_CACHE_TTL_MS = 30_000;
+
+let assetImpactCache:
+  | {
+      expiresAt: number;
+      value: DirectionalImpactProfile[];
+    }
+  | null = null;
 
 const assetLabels: Record<IntelligenceAssetSymbol, string> = {
   BTC: "بیت‌کوین",
@@ -413,5 +421,15 @@ export function generateAssetImpactProfile(asset: IntelligenceAssetSymbol): Dire
 }
 
 export function getAssetImpactProfiles() {
-  return assets.map(generateAssetImpactProfile);
+  const now = Date.now();
+  if (assetImpactCache && assetImpactCache.expiresAt > now) {
+    return assetImpactCache.value;
+  }
+
+  const value = assets.map(generateAssetImpactProfile);
+  assetImpactCache = {
+    expiresAt: now + ASSET_IMPACT_CACHE_TTL_MS,
+    value,
+  };
+  return value;
 }

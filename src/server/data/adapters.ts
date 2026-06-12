@@ -1,5 +1,6 @@
 import type { AssetSymbol, DataPoint, DataQuality, DataSeriesPoint, SignalGroup, SourceType } from "@/lib/types";
 import { getEtfFlows } from "@/server/data/etf-flow-module";
+import { classifyGeopoliticalEvent } from "@/server/analytics/geopolitical-classifier";
 
 export interface AdapterResult<T = number> {
   value: T | null;
@@ -88,6 +89,11 @@ function devFallback(params: {
   };
 }
 
+function usableAdapterResult<T>(result: AdapterResult<T> | null | undefined): AdapterResult<T> | null {
+  if (!result || result.quality === "unavailable" || result.value === null) return null;
+  return result;
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
@@ -150,6 +156,27 @@ async function fetchText(url: string): Promise<string | null> {
     return await response.text();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchTextWithStatus(url: string, timeoutMs = requestTimeoutMs): Promise<{ text: string | null; status: number; error?: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "accept": "text/html,text/plain,*/*",
+        "user-agent": "CMIP/1.0 market intelligence data adapter",
+      },
+    });
+    const text = await response.text().catch(() => "");
+    if (!response.ok) return { text: text || null, status: response.status, error: text.slice(0, 300) || response.statusText };
+    return { text, status: response.status };
+  } catch (error) {
+    return { text: null, status: 0, error: error instanceof Error ? error.message : "Network request failed." };
   } finally {
     clearTimeout(timeout);
   }
@@ -218,8 +245,30 @@ type CoinGeckoMarketChart = {
   market_caps?: Array<[number, number]>;
 };
 
-async function fetchCoinGeckoMarketChart(id: "bitcoin" | "ethereum" | "solana", days = 7) {
-  return fetchJson<CoinGeckoMarketChart>(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}&interval=hourly`);
+type CoinGeckoMarketRow = {
+  id?: string;
+  market_cap?: number;
+  current_price?: number;
+  total_volume?: number;
+  last_updated?: string;
+};
+
+const coinGeckoChartCache = new Map<string, Promise<CoinGeckoMarketChart | null>>();
+let coinGeckoMarketsCache: Promise<CoinGeckoMarketRow[] | null> | null = null;
+
+async function fetchCoinGeckoMarketChart(id: "bitcoin" | "ethereum" | "solana", days = 7, interval: "hourly" | "daily" = days > 90 ? "daily" : "hourly") {
+  const key = `${id}:${days}:${interval}`;
+  if (!coinGeckoChartCache.has(key)) {
+    coinGeckoChartCache.set(key, fetchJson<CoinGeckoMarketChart>(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}&interval=${interval}`));
+  }
+  return coinGeckoChartCache.get(key)!;
+}
+
+async function fetchCoinGeckoMarkets() {
+  coinGeckoMarketsCache ??= fetchJson<CoinGeckoMarketRow[]>(
+    "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum,solana&order=market_cap_desc&per_page=3&page=1&sparkline=false",
+  );
+  return coinGeckoMarketsCache;
 }
 
 function marketChartHistory(rows: Array<[number, number]> | undefined): DataSeriesPoint[] {
@@ -229,7 +278,7 @@ function marketChartHistory(rows: Array<[number, number]> | undefined): DataSeri
 }
 
 async function fetchCoinGeckoTrend(id: "bitcoin" | "ethereum" | "solana") {
-  const data = await fetchCoinGeckoMarketChart(id, 7);
+  const [data, dailyData] = await Promise.all([fetchCoinGeckoMarketChart(id, 7, "hourly"), fetchCoinGeckoMarketChart(id, 180, "daily")]);
   const prices = data?.prices ?? [];
   if (prices.length < 25) return null;
   const first = prices[Math.max(0, prices.length - 25)][1];
@@ -247,11 +296,11 @@ async function fetchCoinGeckoTrend(id: "bitcoin" | "ethereum" | "solana") {
     sourceType: "API",
     quality: "delayed",
     intradayHistory: marketChartHistory(prices),
-    history: marketChartHistory(data?.market_caps),
+    history: marketChartHistory(dailyData?.prices ?? data?.prices),
   });
 }
 
-async function fetchCoinGeckoVolumeTrend(id: "bitcoin") {
+async function fetchCoinGeckoVolumeTrend(id: "bitcoin" | "ethereum" | "solana") {
   const data = await fetchCoinGeckoMarketChart(id, 7);
   const volumes = data?.total_volumes ?? [];
   if (volumes.length < 48) return null;
@@ -265,7 +314,7 @@ async function fetchCoinGeckoVolumeTrend(id: "bitcoin") {
     value: change,
     previousValue: 0,
     timestamp: new Date(volumes[volumes.length - 1][0]).toISOString(),
-    source: "CoinGecko public BTC total volume",
+    source: `CoinGecko public ${id} total volume`,
     reliability: 76,
     quality: "delayed",
     sourceType: "API",
@@ -471,6 +520,16 @@ function extractStablecoinUsd(row: unknown): number | null {
   return null;
 }
 
+function stablecoinRowTimestamp(row: unknown): string | null {
+  if (!row || typeof row !== "object") return null;
+  const candidate = row as Record<string, unknown>;
+  const raw = candidate.date ?? candidate.timestamp ?? candidate.time;
+  const value = typeof raw === "string" ? Number(raw) : typeof raw === "number" ? raw : NaN;
+  if (!Number.isFinite(value)) return null;
+  const millis = value > 1_000_000_000_000 ? value : value * 1000;
+  return new Date(millis).toISOString();
+}
+
 async function fetchStablecoinMarketCapTrend() {
   const data = await fetchJson<unknown[]>("https://stablecoins.llama.fi/stablecoincharts/all");
   if (!Array.isArray(data) || data.length < 8) return null;
@@ -490,8 +549,7 @@ async function fetchStablecoinMarketCapTrend() {
     history: data
       .map((row) => {
         const value = extractStablecoinUsd(row);
-        const date = typeof row === "object" && row !== null ? (row as Record<string, unknown>).date : null;
-        const timestamp = typeof date === "number" ? new Date(date * 1000).toISOString() : null;
+        const timestamp = stablecoinRowTimestamp(row);
         return value !== null && timestamp ? { timestamp, value } : null;
       })
       .filter((row): row is DataSeriesPoint => Boolean(row))
@@ -518,8 +576,7 @@ async function fetchStablecoinMarketCapChange(daysBack: 7 | 30) {
     history: data
       .map((row) => {
         const value = extractStablecoinUsd(row);
-        const date = typeof row === "object" && row !== null ? (row as Record<string, unknown>).date : null;
-        const timestamp = typeof date === "number" ? new Date(date * 1000).toISOString() : null;
+        const timestamp = stablecoinRowTimestamp(row);
         return value !== null && timestamp ? { timestamp, value } : null;
       })
       .filter((row): row is DataSeriesPoint => Boolean(row))
@@ -532,14 +589,23 @@ async function fetchStablecoinTotalMarketCap() {
   if (!Array.isArray(data) || !data.length) return null;
   const last = extractStablecoinUsd(data[data.length - 1]);
   if (last === null) return null;
+  const history = data
+    .map((row) => {
+      const value = extractStablecoinUsd(row);
+      const timestamp = stablecoinRowTimestamp(row);
+      return value !== null && timestamp ? { timestamp, value } : null;
+    })
+    .filter((row): row is DataSeriesPoint => Boolean(row))
+    .slice(-180);
   return live({
     value: last,
-    previousValue: null,
+    previousValue: history.length > 1 ? history[history.length - 2].value : null,
     timestamp: new Date().toISOString(),
     source: "DefiLlama total stablecoin market cap",
     reliability: 88,
     quality: "delayed",
     sourceType: "API",
+    history,
   });
 }
 
@@ -551,10 +617,22 @@ type CoinGeckoGlobal = {
   };
 };
 
+type CoinGeckoGlobalMarketCapChart = {
+  market_cap_chart?: {
+    market_cap?: Array<[number, number]>;
+  };
+};
+
+async function fetchCoinGeckoGlobalMarketCapHistory(days = 180) {
+  const data = await fetchJson<CoinGeckoGlobalMarketCapChart>(`https://api.coingecko.com/api/v3/global/market_cap_chart?vs_currency=usd&days=${days}`);
+  return marketChartHistory(data?.market_cap_chart?.market_cap).slice(-days);
+}
+
 async function fetchStablecoinDominance() {
-  const [stablecoins, global] = await Promise.all([
+  const [stablecoins, global, cryptoMarketCapHistory] = await Promise.all([
     fetchStablecoinTotalMarketCap(),
     fetchJson<CoinGeckoGlobal>("https://api.coingecko.com/api/v3/global"),
+    fetchCoinGeckoGlobalMarketCapHistory(180),
   ]);
   const stablecoinMarketCap = stablecoins?.value;
   const totalMarketCap = global?.data?.total_market_cap?.usd;
@@ -569,6 +647,16 @@ async function fetchStablecoinDominance() {
     reliability: 82,
     quality: "delayed",
     sourceType: "API",
+    history:
+      stablecoins?.history && cryptoMarketCapHistory.length
+        ? stablecoins.history
+            .map((row) => {
+              const day = row.timestamp.slice(0, 10);
+              const crypto = cryptoMarketCapHistory.find((item) => item.timestamp.slice(0, 10) === day);
+              return crypto && crypto.value > 0 ? { timestamp: row.timestamp, value: (row.value / crypto.value) * 100 } : null;
+            })
+            .filter((row): row is DataSeriesPoint => Boolean(row))
+        : undefined,
   });
 }
 
@@ -579,14 +667,18 @@ type StablecoinListResponse = {
     circulating?: { peggedUSD?: number };
     circulatingPrevDay?: { peggedUSD?: number };
     circulatingPrevWeek?: { peggedUSD?: number };
+    circulatingPrevMonth?: { peggedUSD?: number };
   }>;
 };
 
-async function fetchStablecoinAssetTrend(symbol: "USDT" | "USDC") {
+async function fetchStablecoinAssetTrend(symbol: "USDT" | "USDC", daysBack: 7 | 30 = 7) {
   const data = await fetchJson<StablecoinListResponse>("https://stablecoins.llama.fi/stablecoins?includePrices=true");
   const asset = data?.peggedAssets?.find((item) => item.symbol?.toUpperCase() === symbol);
   const current = asset?.circulating?.peggedUSD;
-  const previous = asset?.circulatingPrevWeek?.peggedUSD ?? asset?.circulatingPrevDay?.peggedUSD;
+  const previous =
+    daysBack === 30
+      ? asset?.circulatingPrevMonth?.peggedUSD
+      : asset?.circulatingPrevWeek?.peggedUSD ?? asset?.circulatingPrevDay?.peggedUSD;
   if (typeof current !== "number" || typeof previous !== "number") return null;
   const change = percentChange(current, previous);
   if (change === null) return null;
@@ -594,7 +686,7 @@ async function fetchStablecoinAssetTrend(symbol: "USDT" | "USDC") {
     value: change,
     previousValue: 0,
     timestamp: new Date().toISOString(),
-    source: `DefiLlama ${symbol} circulating supply`,
+    source: `DefiLlama ${symbol} circulating supply ${daysBack}d`,
     reliability: symbol === "USDT" ? 88 : 86,
     quality: "delayed",
     sourceType: "API",
@@ -602,18 +694,19 @@ async function fetchStablecoinAssetTrend(symbol: "USDT" | "USDC") {
 }
 
 async function fetchCoinGeckoMarketCap(id: "bitcoin" | "ethereum" | "solana") {
-  const data = await fetchCoinGeckoMarketChart(id, 7);
+  const [data, marketRows] = await Promise.all([fetchCoinGeckoMarketChart(id, 180, "daily"), fetchCoinGeckoMarkets()]);
   const marketCaps = data?.market_caps ?? [];
-  if (!marketCaps.length) return null;
-  const latest = marketCaps[marketCaps.length - 1];
+  const row = marketRows?.find((item) => item.id === id);
+  const latest = marketCaps[marketCaps.length - 1] ?? (row?.market_cap ? [Date.now(), row.market_cap] : null);
   const previous = marketCaps.length > 1 ? marketCaps[marketCaps.length - 2] : null;
+  if (!latest) return null;
   const value = Number(latest[1]);
   if (!Number.isFinite(value)) return null;
   return live({
     value,
     previousValue: previous ? Number(previous[1]) : null,
-    timestamp: new Date(latest[0]).toISOString(),
-    source: `CoinGecko public market cap ${id}`,
+    timestamp: row?.last_updated ?? new Date(latest[0]).toISOString(),
+    source: marketCaps.length ? `CoinGecko public market_chart market cap ${id}` : `CoinGecko public coins/markets market cap ${id}`,
     reliability: 76,
     quality: "delayed",
     sourceType: "API",
@@ -631,6 +724,23 @@ async function fetchFundingRate(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT" = "BTC
     timestamp: data?.time ? new Date(data.time).toISOString() : new Date().toISOString(),
     source: `Binance Futures public funding rate ${symbol}`,
     reliability: 82,
+  });
+}
+
+async function fetchBybitFundingRate(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT" = "BTCUSDT") {
+  const data = await fetchJson<{
+    retCode?: number;
+    result?: { list?: Array<{ fundingRate?: string; updatedTime?: string }> };
+  }>(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`);
+  const row = data?.result?.list?.[0];
+  const rate = Number(row?.fundingRate);
+  if (!Number.isFinite(rate)) return null;
+  return live({
+    value: rate * 100,
+    previousValue: null,
+    timestamp: row?.updatedTime ? new Date(Number(row.updatedTime)).toISOString() : new Date().toISOString(),
+    source: `Bybit public funding rate ${symbol}`,
+    reliability: 78,
   });
 }
 
@@ -653,6 +763,165 @@ async function fetchOpenInterestTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT" 
   });
 }
 
+type CoinAnkApiResponse<T = unknown> = {
+  success?: boolean;
+  code?: string | number;
+  msg?: string;
+  message?: string;
+  data?: T;
+};
+
+function flattenRecords(input: unknown): Record<string, unknown>[] {
+  if (Array.isArray(input)) return input.flatMap(flattenRecords);
+  if (!input || typeof input !== "object") return [];
+  const record = input as Record<string, unknown>;
+  const nested = Object.values(record).flatMap((value) => (Array.isArray(value) || (value && typeof value === "object") ? flattenRecords(value) : []));
+  return [record, ...nested];
+}
+
+function recordMatchesAsset(record: Record<string, unknown>, baseCoin: "BTC" | "ETH" | "SOL") {
+  const values = Object.entries(record)
+    .filter(([key]) => /symbol|pair|base|coin|asset|instrument|inst/i.test(key))
+    .map(([, value]) => String(value ?? "").toUpperCase());
+  return values.some((value) => value === baseCoin || value.includes(`${baseCoin}USDT`) || value.includes(`${baseCoin}-USDT`));
+}
+
+function firstNumeric(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const raw = record[key];
+    const value = typeof raw === "string" ? Number(raw.replace(/,/g, "")) : typeof raw === "number" ? raw : NaN;
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+async function fetchCoinAnk<T>(path: string, params: Record<string, string>) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`https://api.coinank.com${normalizedPath}`);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  const response = await fetchJsonWithStatus<CoinAnkApiResponse<T>>(url.toString(), {
+    headers: {
+      client: "web",
+      "web-version": "1.0.0",
+    },
+  });
+  if (response.status !== 200) {
+    return { data: null as T | null, error: `CoinAnk HTTP ${response.status}: ${response.error ?? "request failed"}` };
+  }
+  if (!response.data || response.data.success === false || String(response.data.code ?? "0") === "403") {
+    return {
+      data: null as T | null,
+      error: `CoinAnk rejected unauthenticated public access${response.data?.code ? ` (code ${response.data.code})` : ""}: ${response.data?.msg ?? response.data?.message ?? "no data"}`,
+    };
+  }
+  return { data: response.data.data ?? (response.data as T), error: null };
+}
+
+async function fetchCoinAnkFundingRate(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT") {
+  const baseCoin = symbol.replace("USDT", "") as "BTC" | "ETH" | "SOL";
+  const response = await fetchCoinAnk("api/fundingRate/current", { type: "current" });
+  if (!response.data) return unavailable(`CoinAnk funding validation ${symbol}`, response.error ?? "CoinAnk funding validation unavailable.", 0);
+  const row = flattenRecords(response.data).find((record) => recordMatchesAsset(record, baseCoin));
+  const rawRate = row
+    ? firstNumeric(row, ["fundingRate", "funding_rate", "lastFundingRate", "rate", "fundingRateNow", "fundingRateLong"])
+    : null;
+  if (rawRate === null) return unavailable(`CoinAnk funding validation ${symbol}`, "CoinAnk response did not contain a usable funding field for this asset.", 0);
+  const normalized = Math.abs(rawRate) <= 1 ? rawRate * 100 : rawRate;
+  return live({
+    value: normalized,
+    previousValue: null,
+    timestamp: new Date().toISOString(),
+    source: `CoinAnk public funding validation proxy ${symbol}`,
+    reliability: 58,
+    quality: "proxy",
+    sourceType: "API",
+  });
+}
+
+async function fetchCoinAnkOpenInterestTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT") {
+  const baseCoin = symbol.replace("USDT", "") as "BTC" | "ETH" | "SOL";
+  const response = await fetchCoinAnk("api/openInterest/allOiAndVol", { baseCoin });
+  if (!response.data) return unavailable(`CoinAnk open interest validation ${symbol}`, response.error ?? "CoinAnk open interest validation unavailable.", 0);
+  const row = flattenRecords(response.data).find((record) => recordMatchesAsset(record, baseCoin)) ?? flattenRecords(response.data)[0];
+  const change = row
+    ? firstNumeric(row, ["openInterestChange24h", "oiChange24h", "change24h", "changeRate24h", "changeRate", "oiChange", "openInterestChange"])
+    : null;
+  if (change === null) return unavailable(`CoinAnk open interest validation ${symbol}`, "CoinAnk response did not expose a usable 24h open-interest change field.", 0);
+  const normalized = Math.abs(change) <= 1 ? change * 100 : change;
+  return live({
+    value: normalized,
+    previousValue: 0,
+    timestamp: new Date().toISOString(),
+    source: `CoinAnk public open interest validation proxy ${symbol}`,
+    reliability: 56,
+    quality: "proxy",
+    sourceType: "API",
+  });
+}
+
+async function fetchCoinAnkLiquidationProxy(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT") {
+  const baseCoin = symbol.replace("USDT", "") as "BTC" | "ETH" | "SOL";
+  const response = await fetchCoinAnk("api/liquidation/statistic", { baseCoin, interval: "1d" });
+  if (!response.data) return unavailable(`CoinAnk liquidation confirmation ${symbol}`, response.error ?? "CoinAnk liquidation confirmation unavailable.", 0);
+  const records = flattenRecords(response.data);
+  const row = records.find((record) => recordMatchesAsset(record, baseCoin)) ?? records[0];
+  const longLiquidations = row ? firstNumeric(row, ["longLiquidation", "longLiquidationUsd", "longVolUsd", "longVol", "long"]) : null;
+  const shortLiquidations = row ? firstNumeric(row, ["shortLiquidation", "shortLiquidationUsd", "shortVolUsd", "shortVol", "short"]) : null;
+  if (longLiquidations === null && shortLiquidations === null) {
+    return unavailable(`CoinAnk liquidation confirmation ${symbol}`, "CoinAnk response did not contain usable liquidation totals.", 0);
+  }
+  return live({
+    value: (longLiquidations ?? 0) - (shortLiquidations ?? 0),
+    previousValue: null,
+    timestamp: new Date().toISOString(),
+    source: `CoinAnk public liquidation confirmation proxy ${symbol}`,
+    reliability: 52,
+    quality: "proxy",
+    sourceType: "API",
+  });
+}
+
+function isMacroMicroChallenge(text: string | null | undefined) {
+  const lower = (text ?? "").toLowerCase();
+  return lower.includes("cf-mitigated") || lower.includes("cloudflare") || lower.includes("just a moment") || lower.includes("challenge-platform");
+}
+
+function parseMacroMicroDateValueSeries(html: string): DataSeriesPoint[] {
+  const rows = Array.from(html.matchAll(/"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"[\s\S]{0,160}?"value"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/gi))
+    .map((match) => ({ timestamp: new Date(`${match[1]}T00:00:00.000Z`).toISOString(), value: Number(match[2]) }))
+    .filter((row) => Number.isFinite(row.value));
+  return rows.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+async function fetchMacroMicroExchangeReserveProxy() {
+  const url = "https://en.macromicro.me/charts/29045/bitcoin-exchange-balance-total";
+  const response = await fetchTextWithStatus(url, 5_000);
+  if (response.status === 403 || isMacroMicroChallenge(response.text)) {
+    return unavailable("MacroMicro Bitcoin exchange balance proxy", "MacroMicro page is protected by Cloudflare challenge; no exchange reserve proxy value was parsed.", 0);
+  }
+  if (!response.text) {
+    return unavailable("MacroMicro Bitcoin exchange balance proxy", response.error ?? `MacroMicro returned HTTP ${response.status}.`, 0);
+  }
+  const history = parseMacroMicroDateValueSeries(response.text).slice(-120);
+  if (history.length < 8) {
+    return unavailable("MacroMicro Bitcoin exchange balance proxy", "MacroMicro HTML did not expose a parseable exchange-balance time series.", 0);
+  }
+  const latest = history[history.length - 1];
+  const previous = history[Math.max(0, history.length - 8)];
+  const change = percentChange(latest.value, previous.value);
+  if (change === null) return unavailable("MacroMicro Bitcoin exchange balance proxy", "MacroMicro exchange-balance series could not be transformed into a 7d change.", 0);
+  return live({
+    value: change,
+    previousValue: 0,
+    timestamp: latest.timestamp,
+    source: "MacroMicro Bitcoin exchange balance total proxy",
+    reliability: 50,
+    quality: "proxy",
+    sourceType: "crawler",
+    history,
+  });
+}
+
 function stripXml(value: string) {
   return value.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -666,7 +935,22 @@ function parseRssTitles(xml: string) {
 
 const macroNegativeTerms = ["hawkish", "higher for longer", "inflation", "yield", "yields rise", "rates rise", "tariff", "sanction", "selloff", "risk-off"];
 const macroPositiveTerms = ["rate cut", "dovish", "liquidity", "inflow", "approval", "easing", "soft landing", "rally"];
-const geopoliticalTerms = ["war", "attack", "sanction", "nato", "opec", "treasury", "white house", "oil", "iran", "russia", "china", "security"];
+const geopoliticalNoiseTerms = [
+  "appointment",
+  "appoints",
+  "board appointment",
+  "administrative notice",
+  "committee meeting",
+  "ceremonial",
+  "generic statement",
+  "routine enforcement",
+  "personnel",
+  "calendar",
+  "agenda",
+  "webcast",
+  "remarks by",
+  "speech by",
+];
 
 function scoreTitles(titles: string[]) {
   const text = titles.join(" ").toLowerCase();
@@ -694,16 +978,22 @@ async function fetchNewsScore(kind: "macro" | "geopolitical") {
   const titles = texts.flatMap((text) => (text ? parseRssTitles(text) : []));
   if (!titles.length) return null;
   if (kind === "geopolitical") {
-    const joined = titles.join(" ").toLowerCase();
-    const hits = geopoliticalTerms.reduce((count, term) => count + (joined.includes(term) ? 1 : 0), 0);
+    const relevantTitles = titles.filter((title) => {
+      const normalized = title.toLowerCase();
+      const isNoise = geopoliticalNoiseTerms.some((term) => normalized.includes(term));
+      return !isNoise && classifyGeopoliticalEvent(title).accepted;
+    });
+    const hits = relevantTitles.reduce((count, title) => {
+      return count + classifyGeopoliticalEvent(title).keywordHits.length;
+    }, 0);
     return live({
-      value: Math.min(100, hits * 11),
+      value: Math.min(100, hits * 16),
       previousValue: 0,
       timestamp: new Date().toISOString(),
-    source: "Official RSS basket: Treasury / White House / NATO / CNBC",
-    reliability: 82,
-    quality: "delayed",
-    sourceType: "RSS",
+      source: "Official RSS basket: Treasury / White House / NATO / CNBC",
+      reliability: 82,
+      quality: "delayed",
+      sourceType: "RSS",
     });
   }
 
@@ -740,9 +1030,6 @@ const fallbackValues: Record<string, { value: number; previousValue: number; sou
   us10y_trend_24h: { value: 0.11, previousValue: 0.03, source: "Yahoo Finance / US10Y delayed feed", reliability: 84, reason: "خوراک بازده ۱۰ ساله در این runtime در دسترس نبود." },
   gold_trend_24h: { value: 0.8, previousValue: 0.1, source: "Yahoo Finance / Gold delayed feed", reliability: 80, reason: "خوراک طلا در این runtime در دسترس نبود." },
   vix_trend_24h: { value: 7.6, previousValue: 1.9, source: "Yahoo Finance / VIX delayed feed", reliability: 78, reason: "خوراک VIX در این runtime در دسترس نبود." },
-  usdt_supply_7d: { value: 0.9, previousValue: 0.3, source: "DefiLlama stablecoins", reliability: 86, reason: "داده DefiLlama در این runtime در دسترس نبود." },
-  usdc_supply_7d: { value: -0.2, previousValue: 0.1, source: "DefiLlama stablecoins", reliability: 84, reason: "داده DefiLlama در این runtime در دسترس نبود." },
-  stablecoin_market_cap_7d: { value: 0.5, previousValue: 0.2, source: "DefiLlama stablecoins", reliability: 86, reason: "داده DefiLlama در این runtime در دسترس نبود." },
   funding_btc: { value: 0.018, previousValue: 0.009, source: "Binance Futures funding", reliability: 82, reason: "داده Funding در این runtime در دسترس نبود." },
   open_interest_btc_24h: { value: 5.2, previousValue: 1.4, source: "Binance Futures open interest", reliability: 80, reason: "داده Open Interest در این runtime در دسترس نبود." },
   spot_volume_btc_24h: { value: -8.4, previousValue: 3.1, source: "Binance spot volume", reliability: 82, reason: "داده حجم اسپات در این runtime در دسترس نبود." },
@@ -767,8 +1054,8 @@ export const marketDataAdapter: DataAdapter = {
     if (key === "eth_market_cap") return (await fetchCoinGeckoMarketCap("ethereum")) ?? unavailable("CoinGecko ETH market cap", "CoinGecko ETH market cap unavailable.");
     if (key === "sol_market_cap") return (await fetchCoinGeckoMarketCap("solana")) ?? unavailable("CoinGecko SOL market cap", "CoinGecko SOL market cap unavailable.");
     if (key === "spot_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT")) ?? (await fetchCoinGeckoVolumeTrend("bitcoin")) ?? fallbackPoint(key);
-    if (key === "spot_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT")) ?? unavailable("Binance ETH spot volume", "ETH spot volume unavailable.");
-    if (key === "spot_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT")) ?? unavailable("Binance SOL spot volume", "SOL spot volume unavailable.");
+    if (key === "spot_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT")) ?? (await fetchCoinGeckoVolumeTrend("ethereum")) ?? unavailable("Binance/CoinGecko ETH spot volume", "ETH spot volume unavailable.");
+    if (key === "spot_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT")) ?? (await fetchCoinGeckoVolumeTrend("solana")) ?? unavailable("Binance/CoinGecko SOL spot volume", "SOL spot volume unavailable.");
     if (key === "futures_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT", true)) ?? fallbackPoint(key);
     if (key === "futures_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT", true)) ?? unavailable("Binance ETH futures volume", "ETH futures volume unavailable.");
     if (key === "futures_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT", true)) ?? unavailable("Binance SOL futures volume", "SOL futures volume unavailable.");
@@ -782,13 +1069,13 @@ export const macroDataAdapter: DataAdapter = {
     if (key === "nasdaq_trend_24h") return (await fetchYahooTrend("^IXIC", "Yahoo Finance delayed Nasdaq Composite", 80)) ?? fallbackPoint(key);
     if (key === "dxy_trend_24h") {
       return process.env.FRED_API_KEY
-        ? (await fetchFredSeries("DTWEXBGS", "percent_change")) ?? (await fetchYahooTrend("DX-Y.NYB", "Yahoo Finance delayed DXY", 82)) ?? fallbackPoint(key)
+        ? usableAdapterResult(await fetchFredSeries("DTWEXBGS", "percent_change")) ?? (await fetchYahooTrend("DX-Y.NYB", "Yahoo Finance delayed DXY", 82)) ?? fallbackPoint(key)
         : (await fetchYahooTrend("DX-Y.NYB", "Yahoo Finance delayed DXY", 82)) ?? fallbackPoint(key);
     }
     if (key === "gold_trend_24h") return (await fetchYahooTrend("GC=F", "Yahoo Finance delayed Gold futures", 80)) ?? fallbackPoint(key);
     if (key === "us10y_trend_24h") {
       return process.env.FRED_API_KEY
-        ? (await fetchFredSeries("DGS10", "point_change")) ?? (await fetchYahooTrend("^TNX", "Yahoo Finance delayed US10Y yield", 84, "point")) ?? fallbackPoint(key)
+        ? usableAdapterResult(await fetchFredSeries("DGS10", "point_change")) ?? (await fetchYahooTrend("^TNX", "Yahoo Finance delayed US10Y yield", 84, "point")) ?? fallbackPoint(key)
         : (await fetchYahooTrend("^TNX", "Yahoo Finance delayed US10Y yield", 84, "point")) ?? fallbackPoint(key);
     }
     if (key === "us2y_trend_24h") return (await fetchFredSeries("DGS2", "point_change")) ?? unavailable("FRED DGS2", "US2Y requires FRED_API_KEY or successful FRED fetch.");
@@ -805,7 +1092,9 @@ export const macroDataAdapter: DataAdapter = {
 export const newsAdapter: DataAdapter = {
   id: "newsAdapter",
   async fetchPoint(key) {
-    if (key === "geopolitical_event_score") return (await fetchNewsScore("geopolitical")) ?? fallbackPoint(key);
+    if (key === "geopolitical_event_score") {
+      return (await fetchNewsScore("geopolitical")) ?? unavailable("Official geopolitical RSS basket", "خبر ژئوپلیتیک market-relevant از منابع RSS پذیرفته‌شده در دسترس نیست.");
+    }
     return fallbackPoint(key);
   },
 };
@@ -813,7 +1102,9 @@ export const newsAdapter: DataAdapter = {
 export const sentimentAdapter: DataAdapter = {
   id: "sentimentAdapter",
   async fetchPoint(key) {
-    if (key === "news_sentiment_macro") return (await fetchNewsScore("macro")) ?? fallbackPoint(key);
+    if (key === "news_sentiment_macro") {
+      return (await fetchNewsScore("macro")) ?? unavailable("Official/RSS news basket", "خبر market-relevant پذیرفته‌شده برای سنتیمنت کلان در دسترس نیست.");
+    }
     return fallbackPoint(key);
   },
 };
@@ -821,14 +1112,16 @@ export const sentimentAdapter: DataAdapter = {
 export const etfFlowAdapter: DataAdapter = {
   id: "etfFlowAdapter",
   async fetchPoint(key) {
-    if (key === "btc_etf_flow_24h") {
+    if (key === "btc_etf_flow_24h" || key === "btc_etf_flow_7d" || key === "btc_etf_flow_30d") {
       const snapshot = await getEtfFlows("BTC", "24h");
-      if (snapshot.netFlow24h !== null) return live({ value: snapshot.netFlow24h, previousValue: null, timestamp: snapshot.timestamp, source: snapshot.source, reliability: 88, quality: snapshot.freshness === "stale" ? "delayed" : "partial_live", sourceType: "API" });
+      const value = key === "btc_etf_flow_7d" ? snapshot.netFlow7d : key === "btc_etf_flow_30d" ? snapshot.netFlow30d : snapshot.netFlow24h;
+      if (value !== null) return live({ value, previousValue: null, timestamp: snapshot.timestamp, source: snapshot.source, reliability: 88, quality: snapshot.freshness === "stale" ? "delayed" : "partial_live", sourceType: "crawler" });
       return unavailable(snapshot.source, snapshot.error ?? "BTC ETF flow source is missing.", 0);
     }
-    if (key === "eth_etf_flow_24h") {
+    if (key === "eth_etf_flow_24h" || key === "eth_etf_flow_7d" || key === "eth_etf_flow_30d") {
       const snapshot = await getEtfFlows("ETH", "24h");
-      if (snapshot.netFlow24h !== null) return live({ value: snapshot.netFlow24h, previousValue: null, timestamp: snapshot.timestamp, source: snapshot.source, reliability: 78, quality: snapshot.freshness === "stale" ? "delayed" : "partial_live", sourceType: "API" });
+      const value = key === "eth_etf_flow_7d" ? snapshot.netFlow7d : key === "eth_etf_flow_30d" ? snapshot.netFlow30d : snapshot.netFlow24h;
+      if (value !== null) return live({ value, previousValue: null, timestamp: snapshot.timestamp, source: snapshot.source, reliability: 78, quality: snapshot.freshness === "stale" ? "delayed" : "partial_live", sourceType: "crawler" });
       return unavailable(snapshot.source, snapshot.error ?? "ETH ETF flow source is missing.", 0);
     }
     return fallbackPoint(key);
@@ -838,12 +1131,14 @@ export const etfFlowAdapter: DataAdapter = {
 export const stablecoinAdapter: DataAdapter = {
   id: "stablecoinAdapter",
   async fetchPoint(key) {
-    if (key === "stablecoin_market_cap_7d") return (await fetchStablecoinMarketCapTrend()) ?? fallbackPoint(key);
+    if (key === "stablecoin_market_cap_7d") return (await fetchStablecoinMarketCapTrend()) ?? unavailable("DefiLlama stablecoin market cap 7d", "Stablecoin 7d change unavailable from DefiLlama; no fallback value is generated.");
     if (key === "stablecoin_market_cap_30d") return (await fetchStablecoinMarketCapChange(30)) ?? unavailable("DefiLlama stablecoin market cap 30d", "Stablecoin 30d change unavailable.");
     if (key === "total_stablecoin_market_cap_usd") return (await fetchStablecoinTotalMarketCap()) ?? unavailable("DefiLlama stablecoin market cap", "Total stablecoin market cap unavailable.");
     if (key === "stablecoin_dominance") return (await fetchStablecoinDominance()) ?? unavailable("DefiLlama + CoinGecko stablecoin dominance", "Stablecoin dominance cannot be calculated without real total crypto market cap.");
-    if (key === "usdt_supply_7d") return (await fetchStablecoinAssetTrend("USDT")) ?? fallbackPoint(key);
-    if (key === "usdc_supply_7d") return (await fetchStablecoinAssetTrend("USDC")) ?? fallbackPoint(key);
+    if (key === "usdt_supply_7d") return (await fetchStablecoinAssetTrend("USDT", 7)) ?? unavailable("DefiLlama USDT circulating supply 7d", "USDT 7d supply change unavailable from DefiLlama; no fallback value is generated.");
+    if (key === "usdt_supply_30d") return (await fetchStablecoinAssetTrend("USDT", 30)) ?? unavailable("DefiLlama USDT circulating supply 30d", "USDT 30d supply change unavailable from DefiLlama; no fallback value is generated.");
+    if (key === "usdc_supply_7d") return (await fetchStablecoinAssetTrend("USDC", 7)) ?? unavailable("DefiLlama USDC circulating supply 7d", "USDC 7d supply change unavailable from DefiLlama; no fallback value is generated.");
+    if (key === "usdc_supply_30d") return (await fetchStablecoinAssetTrend("USDC", 30)) ?? unavailable("DefiLlama USDC circulating supply 30d", "USDC 30d supply change unavailable from DefiLlama; no fallback value is generated.");
     return fallbackPoint(key);
   },
 };
@@ -852,7 +1147,11 @@ export const onchainAdapter: DataAdapter = {
   id: "onchainAdapter",
   async fetchPoint(key) {
     if (key === "exchange_reserves_btc_7d") {
-      return (await fetchEnvNumeric("CMIP_BTC_EXCHANGE_RESERVES_7D", "Configured Glassnode/CryptoQuant exchange reserves feed", 88)) ?? unavailable("Exchange reserves adapter", "Exchange reserve source is not configured; no fallback value is generated.");
+      return (
+        (await fetchEnvNumeric("CMIP_BTC_EXCHANGE_RESERVES_7D", "Configured Glassnode/CryptoQuant exchange reserves feed", 88)) ??
+        (await fetchMacroMicroExchangeReserveProxy()) ??
+        unavailable("Exchange reserves adapter", "Exchange reserve source is not configured or parseable; no fallback value is generated.")
+      );
     }
     if (key === "exchange_inflows" || key === "exchange_outflows") return unavailable("Exchange flow adapter", "Exchange inflow/outflow source is not configured; no fallback value is generated.");
     return fallbackPoint(key);
@@ -862,12 +1161,13 @@ export const onchainAdapter: DataAdapter = {
 export const correlationAdapter: DataAdapter = {
   id: "correlationAdapter",
   async fetchPoint(key) {
-    if (key === "funding_btc") return (await fetchFundingRate("BTCUSDT")) ?? fallbackPoint(key);
-    if (key === "funding_eth") return (await fetchFundingRate("ETHUSDT")) ?? unavailable("Binance ETH funding", "ETH funding unavailable.");
-    if (key === "funding_sol") return (await fetchFundingRate("SOLUSDT")) ?? unavailable("Binance SOL funding", "SOL funding unavailable.");
-    if (key === "open_interest_btc_24h") return (await fetchOpenInterestTrend("BTCUSDT")) ?? fallbackPoint(key);
-    if (key === "open_interest_eth_24h") return (await fetchOpenInterestTrend("ETHUSDT")) ?? unavailable("Binance ETH open interest", "ETH open interest unavailable.");
-    if (key === "open_interest_sol_24h") return (await fetchOpenInterestTrend("SOLUSDT")) ?? unavailable("Binance SOL open interest", "SOL open interest unavailable.");
+    if (key === "funding_btc") return (await fetchFundingRate("BTCUSDT")) ?? (await fetchBybitFundingRate("BTCUSDT")) ?? (await fetchCoinAnkFundingRate("BTCUSDT"));
+    if (key === "funding_eth") return (await fetchFundingRate("ETHUSDT")) ?? (await fetchBybitFundingRate("ETHUSDT")) ?? (await fetchCoinAnkFundingRate("ETHUSDT"));
+    if (key === "funding_sol") return (await fetchFundingRate("SOLUSDT")) ?? (await fetchBybitFundingRate("SOLUSDT")) ?? (await fetchCoinAnkFundingRate("SOLUSDT"));
+    if (key === "open_interest_btc_24h") return (await fetchOpenInterestTrend("BTCUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("BTCUSDT")) ?? fallbackPoint(key);
+    if (key === "open_interest_eth_24h") return (await fetchOpenInterestTrend("ETHUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("ETHUSDT")) ?? unavailable("Binance/CoinAnk ETH open interest", "ETH open interest unavailable.");
+    if (key === "open_interest_sol_24h") return (await fetchOpenInterestTrend("SOLUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("SOLUSDT")) ?? unavailable("Binance/CoinAnk SOL open interest", "SOL open interest unavailable.");
+    if (key === "liquidation_btc_24h") return await fetchCoinAnkLiquidationProxy("BTCUSDT");
     return fallbackPoint(key);
   },
 };
@@ -894,19 +1194,26 @@ const adapterByKey: Record<string, { adapter: DataAdapter; group: SignalGroup }>
   gold_trend_24h: { adapter: macroDataAdapter, group: "macro" },
   vix_trend_24h: { adapter: macroDataAdapter, group: "volatility" },
   usdt_supply_7d: { adapter: stablecoinAdapter, group: "stablecoins" },
+  usdt_supply_30d: { adapter: stablecoinAdapter, group: "stablecoins" },
   usdc_supply_7d: { adapter: stablecoinAdapter, group: "stablecoins" },
+  usdc_supply_30d: { adapter: stablecoinAdapter, group: "stablecoins" },
   stablecoin_market_cap_7d: { adapter: stablecoinAdapter, group: "liquidity" },
   stablecoin_market_cap_30d: { adapter: stablecoinAdapter, group: "liquidity" },
   total_stablecoin_market_cap_usd: { adapter: stablecoinAdapter, group: "stablecoins" },
   stablecoin_dominance: { adapter: stablecoinAdapter, group: "stablecoins" },
   btc_etf_flow_24h: { adapter: etfFlowAdapter, group: "flows" },
+  btc_etf_flow_7d: { adapter: etfFlowAdapter, group: "flows" },
+  btc_etf_flow_30d: { adapter: etfFlowAdapter, group: "flows" },
   eth_etf_flow_24h: { adapter: etfFlowAdapter, group: "flows" },
+  eth_etf_flow_7d: { adapter: etfFlowAdapter, group: "flows" },
+  eth_etf_flow_30d: { adapter: etfFlowAdapter, group: "flows" },
   funding_btc: { adapter: correlationAdapter, group: "leverage" },
   funding_eth: { adapter: correlationAdapter, group: "leverage" },
   funding_sol: { adapter: correlationAdapter, group: "leverage" },
   open_interest_btc_24h: { adapter: correlationAdapter, group: "leverage" },
   open_interest_eth_24h: { adapter: correlationAdapter, group: "leverage" },
   open_interest_sol_24h: { adapter: correlationAdapter, group: "leverage" },
+  liquidation_btc_24h: { adapter: correlationAdapter, group: "leverage" },
   spot_volume_btc_24h: { adapter: marketDataAdapter, group: "liquidity" },
   spot_volume_eth_24h: { adapter: marketDataAdapter, group: "liquidity" },
   spot_volume_sol_24h: { adapter: marketDataAdapter, group: "liquidity" },
@@ -941,26 +1248,33 @@ const descriptorByKey: Record<string, { asset: AssetSymbol | "VIX" | "Stablecoin
   gold_trend_24h: { asset: "Gold", metric: "price_trend_24h_pct", sourceType: "API" },
   vix_trend_24h: { asset: "VIX", metric: "volatility_trend_24h_pct", sourceType: "API" },
   usdt_supply_7d: { asset: "USDT", metric: "supply_change_7d_pct", sourceType: "API" },
+  usdt_supply_30d: { asset: "USDT", metric: "supply_change_30d_pct", sourceType: "API" },
   usdc_supply_7d: { asset: "Stablecoins", metric: "usdc_supply_change_7d_pct", sourceType: "API" },
+  usdc_supply_30d: { asset: "Stablecoins", metric: "usdc_supply_change_30d_pct", sourceType: "API" },
   stablecoin_market_cap_7d: { asset: "Stablecoins", metric: "market_cap_change_7d_pct", sourceType: "API" },
   stablecoin_market_cap_30d: { asset: "Stablecoins", metric: "market_cap_change_30d_pct", sourceType: "API" },
   total_stablecoin_market_cap_usd: { asset: "Stablecoins", metric: "total_stablecoin_market_cap_usd", sourceType: "API" },
   stablecoin_dominance: { asset: "Stablecoins", metric: "stablecoin_dominance_pct", sourceType: "API" },
-  btc_etf_flow_24h: { asset: "BTC", metric: "etf_net_flow_24h_usd", sourceType: "API" },
-  eth_etf_flow_24h: { asset: "ETH", metric: "etf_net_flow_24h_usd", sourceType: "API" },
+  btc_etf_flow_24h: { asset: "BTC", metric: "etf_net_flow_24h_usd", sourceType: "crawler" },
+  btc_etf_flow_7d: { asset: "BTC", metric: "etf_net_flow_7d_usd", sourceType: "crawler" },
+  btc_etf_flow_30d: { asset: "BTC", metric: "etf_net_flow_30d_usd", sourceType: "crawler" },
+  eth_etf_flow_24h: { asset: "ETH", metric: "etf_net_flow_24h_usd", sourceType: "crawler" },
+  eth_etf_flow_7d: { asset: "ETH", metric: "etf_net_flow_7d_usd", sourceType: "crawler" },
+  eth_etf_flow_30d: { asset: "ETH", metric: "etf_net_flow_30d_usd", sourceType: "crawler" },
   funding_btc: { asset: "BTC", metric: "funding_rate_pct", sourceType: "API" },
   funding_eth: { asset: "ETH", metric: "funding_rate_pct", sourceType: "API" },
   funding_sol: { asset: "SOL", metric: "funding_rate_pct", sourceType: "API" },
   open_interest_btc_24h: { asset: "BTC", metric: "open_interest_change_24h_pct", sourceType: "API" },
   open_interest_eth_24h: { asset: "ETH", metric: "open_interest_change_24h_pct", sourceType: "API" },
   open_interest_sol_24h: { asset: "SOL", metric: "open_interest_change_24h_pct", sourceType: "API" },
+  liquidation_btc_24h: { asset: "BTC", metric: "liquidation_confirmation_24h_usd", sourceType: "API" },
   spot_volume_btc_24h: { asset: "BTC", metric: "spot_volume_change_24h_pct", sourceType: "API" },
   spot_volume_eth_24h: { asset: "ETH", metric: "spot_volume_change_24h_pct", sourceType: "API" },
   spot_volume_sol_24h: { asset: "SOL", metric: "spot_volume_change_24h_pct", sourceType: "API" },
   futures_volume_btc_24h: { asset: "BTC", metric: "futures_volume_change_24h_pct", sourceType: "API" },
   futures_volume_eth_24h: { asset: "ETH", metric: "futures_volume_change_24h_pct", sourceType: "API" },
   futures_volume_sol_24h: { asset: "SOL", metric: "futures_volume_change_24h_pct", sourceType: "API" },
-  exchange_reserves_btc_7d: { asset: "BTC", metric: "exchange_reserves_change_7d_pct", sourceType: "premium" },
+  exchange_reserves_btc_7d: { asset: "BTC", metric: "exchange_reserves_change_7d_pct", sourceType: "crawler" },
   exchange_inflows: { asset: "USDT", metric: "exchange_inflows_usd", sourceType: "premium" },
   exchange_outflows: { asset: "USDT", metric: "exchange_outflows_usd", sourceType: "premium" },
   news_sentiment_macro: { asset: "BTC", metric: "macro_news_sentiment_score", sourceType: "RSS" },

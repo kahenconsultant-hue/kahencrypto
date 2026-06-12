@@ -11,11 +11,15 @@ import type {
   MarketSnapshotInput,
   NormalizedEventInput,
   DerivedSignalInput,
+  ETFDailyFlowInput,
+  ForecastSnapshotInput,
+  ForecastValidationInput,
   LiquidityScoreSnapshotInput,
   RegimeInputSnapshotInput,
   RawEventPersistenceResult,
   RawEventInput,
   RawMetricInput,
+  SchedulerRunRecord,
   SourceHealthSnapshot,
   SourceDefinition,
   StorageWriteReport,
@@ -98,6 +102,20 @@ function writeStorageReport(report: StorageWriteReport) {
   writeLatest("latest-storage-write-status.json", next);
 }
 
+async function withSupabaseTimeout<T>(promise: Promise<T>, timeoutMs = 8_000): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Supabase operation timed out after ${timeoutMs}ms.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function trySupabaseInsert(table: string, rows: unknown[], onConflict?: string): Promise<StorageWriteReport> {
   const attemptedAt = new Date().toISOString();
   const client = createSupabaseServerClient();
@@ -118,9 +136,15 @@ async function trySupabaseInsert(table: string, rows: unknown[], onConflict?: st
     writeStorageReport(report);
     return report;
   }
-  const { error } = await client.from(table).upsert(rows as never, { ignoreDuplicates: false, onConflict });
-  const report: StorageWriteReport = error
-    ? { table, rows: rows.length, status: "failed", storageMode: "local_fallback", attemptedAt, error: error.message }
+  let writeError: Error | { message: string } | null = null;
+  try {
+    const response = await withSupabaseTimeout(Promise.resolve(client.from(table).upsert(rows as never, { ignoreDuplicates: false, onConflict })));
+    writeError = (response as { error?: { message: string } | null }).error ?? null;
+  } catch (error) {
+    writeError = error instanceof Error ? error : new Error(String(error));
+  }
+  const report: StorageWriteReport = writeError
+    ? { table, rows: rows.length, status: "failed", storageMode: "local_fallback", attemptedAt, error: writeError.message }
     : { table, rows: rows.length, status: "success", storageMode: "supabase", attemptedAt };
   writeStorageReport(report);
   return report;
@@ -248,6 +272,21 @@ function rawMetricRow(metric: RawMetricInput) {
     confidence_base: metric.reliability,
     error: metric.error ?? null,
     raw_payload: metric.rawPayload ?? {},
+  };
+}
+
+function etfDailyFlowRow(flow: ETFDailyFlowInput) {
+  return {
+    asset: flow.asset,
+    flow_date: flow.date,
+    provider: flow.provider,
+    net_flow_usd_million: flow.netFlowUsdMillion,
+    source: flow.source,
+    source_url: flow.sourceUrl,
+    fetched_at: flow.fetchedAt,
+    quality: flow.quality,
+    raw_payload: flow.rawPayload ?? {},
+    updated_at: new Date().toISOString(),
   };
 }
 
@@ -433,12 +472,73 @@ function regimeInputRow(input: RegimeInputSnapshotInput) {
   };
 }
 
+function forecastSnapshotRow(snapshot: ForecastSnapshotInput) {
+  return {
+    snapshot_id: snapshot.snapshotId,
+    forecast_timestamp: snapshot.timestamp,
+    asset: snapshot.asset,
+    asset_type: snapshot.assetType,
+    prediction_horizon: snapshot.predictionHorizon,
+    predicted_direction: snapshot.predictedDirection,
+    predicted_bias: snapshot.predictedBias,
+    predicted_confidence: snapshot.predictedConfidence,
+    risk_score: snapshot.riskScore,
+    liquidity_score: snapshot.liquidityScore,
+    regime: snapshot.regime,
+    main_drivers: snapshot.mainDrivers,
+    price_at_prediction: snapshot.priceAtPrediction,
+    validation_date: snapshot.validationDate,
+    run_id: snapshot.runId,
+    engine_contributions: snapshot.engineContributions ?? {},
+    created_at: new Date().toISOString(),
+  };
+}
+
+function forecastValidationRow(validation: ForecastValidationInput) {
+  return {
+    validation_id: validation.validationId,
+    snapshot_id: validation.snapshotId,
+    asset: validation.asset,
+    asset_type: validation.assetType,
+    prediction_horizon: validation.predictionHorizon,
+    prediction_timestamp: validation.predictionTimestamp,
+    validation_date: validation.validationDate,
+    validated_at: validation.validatedAt,
+    predicted_direction: validation.predictedDirection,
+    predicted_confidence: validation.predictedConfidence,
+    price_at_prediction: validation.priceAtPrediction,
+    actual_price: validation.actualPrice,
+    realized_change_pct: validation.realizedChangePct,
+    realized_direction: validation.realizedDirection,
+    result: validation.result,
+    internal_score: validation.internalScore,
+    main_drivers: validation.mainDrivers,
+    engine_contributions: validation.engineContributions ?? {},
+    outcome_summary_fa: validation.outcomeSummaryFa,
+    explanation_fa: validation.explanationFa,
+    quality: validation.quality,
+    created_at: new Date().toISOString(),
+  };
+}
+
 async function countExistingRawEvents(dedupHashes: string[]) {
   const client = createSupabaseServerClient();
   if (!client || !dedupHashes.length) return 0;
-  const { count, error } = await client.from("raw_events").select("id", { count: "exact", head: true }).in("dedup_hash", dedupHashes);
-  if (error) return 0;
-  return count ?? 0;
+  try {
+    const { count, error } = await withSupabaseTimeout(Promise.resolve(client.from("raw_events").select("id", { count: "exact", head: true }).in("dedup_hash", dedupHashes)));
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    writeStorageReport({
+      table: "raw_events",
+      rows: dedupHashes.length,
+      status: "failed",
+      storageMode: "local_fallback",
+      attemptedAt: new Date().toISOString(),
+      error: "Supabase raw_events count timed out; insertion will use local fallback assumptions.",
+    });
+    return 0;
+  }
 }
 
 export async function persistRawEvents(events: RawEventInput[]): Promise<RawEventPersistenceResult> {
@@ -461,9 +561,33 @@ export async function persistRawMetrics(metrics: RawMetricInput[]): Promise<{ pe
   return { persisted: metrics.length, storageMode: "local_fallback" };
 }
 
+export async function persistEtfDailyFlows(flows: ETFDailyFlowInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
+  const unique = Array.from(new Map(flows.map((flow) => [`${flow.asset}:${flow.date}:${flow.provider}:${flow.source}`, flow])).values());
+  const supabaseWrite = await trySupabaseInsert("etf_daily_flows", unique.map(etfDailyFlowRow), "asset,flow_date,provider,source");
+  if (unique.length) {
+    const existing = readLatest<ETFDailyFlowInput[]>("latest-etf-daily-flows.json", []);
+    const merged = Array.from(
+      new Map(
+        [...existing, ...unique].map((flow) => [`${flow.asset}:${flow.date}:${flow.provider}`, flow]),
+      ).values(),
+    )
+      .sort((left, right) => Date.parse(`${right.date}T00:00:00.000Z`) - Date.parse(`${left.date}T00:00:00.000Z`) || Date.parse(right.fetchedAt) - Date.parse(left.fetchedAt))
+      .slice(0, 20_000);
+    writeLatest("latest-etf-daily-flows.json", merged);
+  }
+  if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, storageMode: "supabase" };
+  return { persisted: unique.length, storageMode: "local_fallback" };
+}
+
 export async function persistNormalizedEvents(events: NormalizedEventInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
   const supabaseWrite = await trySupabaseInsert("normalized_events", events.map(normalizedEventRow), "raw_event_id");
-  writeLatest("latest-normalized-events.json", events.slice(0, 200));
+  if (events.length) {
+    const latest = events
+      .slice()
+      .sort((left, right) => Date.parse(right.eventTimestamp) - Date.parse(left.eventTimestamp))
+      .slice(0, 200);
+    writeLatest("latest-normalized-events.json", latest);
+  }
   if (supabaseWrite.storageMode === "supabase") return { persisted: events.length, storageMode: "supabase" };
   return { persisted: events.length, storageMode: "local_fallback" };
 }
@@ -475,12 +599,16 @@ export async function persistEventClusters(clusters: EventClusterInput[]): Promi
     const keys = clusters.map((cluster) => cluster.clusterKey);
     const oldest = clusters.reduce((min, cluster) => (Date.parse(cluster.firstSeenAt) < Date.parse(min) ? cluster.firstSeenAt : min), clusters[0].firstSeenAt);
     const newest = clusters.reduce((max, cluster) => (Date.parse(cluster.lastSeenAt) > Date.parse(max) ? cluster.lastSeenAt : max), clusters[0].lastSeenAt);
-    await client
-      ?.from("event_clusters")
-      .delete()
-      .gte("last_seen_at", oldest)
-      .lte("first_seen_at", newest)
-      .not("cluster_key", "in", `(${keys.join(",")})`);
+    await withSupabaseTimeout(
+      Promise.resolve(
+        client
+          ?.from("event_clusters")
+          .delete()
+          .gte("last_seen_at", oldest)
+          .lte("first_seen_at", newest)
+          .not("cluster_key", "in", `(${keys.join(",")})`),
+      ),
+    ).catch(() => undefined);
   }
   writeLatest("latest-event-clusters.json", clusters.slice(0, 200));
   if (supabaseWrite.storageMode === "supabase") return { persisted: clusters.length, storageMode: "supabase" };
@@ -568,6 +696,32 @@ export async function persistRegimeInputSnapshot(input: RegimeInputSnapshotInput
   return supabaseWrite.storageMode;
 }
 
+export async function persistForecastSnapshots(snapshots: ForecastSnapshotInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
+  const unique = Array.from(new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot])).values());
+  const previous = readLatest<ForecastSnapshotInput[]>("forecast-snapshots.json", []);
+  const merged = Array.from(new Map([...previous, ...unique].map((snapshot) => [snapshot.snapshotId, snapshot])).values())
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .slice(0, 30_000);
+  writeLatest("forecast-snapshots.json", merged);
+  appendJsonl("forecast-snapshots.jsonl", unique);
+  const supabaseWrite = await trySupabaseInsert("forecast_snapshots", unique.map(forecastSnapshotRow), "snapshot_id");
+  if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, storageMode: "supabase" };
+  return { persisted: unique.length, storageMode: "local_fallback" };
+}
+
+export async function persistForecastValidations(validations: ForecastValidationInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
+  const unique = Array.from(new Map(validations.map((validation) => [validation.validationId, validation])).values());
+  const previous = readLatest<ForecastValidationInput[]>("forecast-validations.json", []);
+  const merged = Array.from(new Map([...previous, ...unique].map((validation) => [validation.validationId, validation])).values())
+    .sort((left, right) => Date.parse(right.validatedAt) - Date.parse(left.validatedAt))
+    .slice(0, 30_000);
+  writeLatest("forecast-validations.json", merged);
+  appendJsonl("forecast-validations.jsonl", unique);
+  const supabaseWrite = await trySupabaseInsert("forecast_validations", unique.map(forecastValidationRow), "validation_id");
+  if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, storageMode: "supabase" };
+  return { persisted: unique.length, storageMode: "local_fallback" };
+}
+
 export async function persistMarketSnapshots(snapshots: MarketSnapshotInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
   const supabaseWrite = await trySupabaseInsert("market_snapshots", snapshots.map(marketSnapshotRow));
   writeLatest("latest-market-snapshots.json", snapshots);
@@ -589,12 +743,52 @@ export async function persistTelemetryLogs(logs: TelemetryLogInput[]): Promise<I
   return supabaseWrite.storageMode;
 }
 
+export async function persistSchedulerRun(run: SchedulerRunRecord): Promise<IngestionStorageMode> {
+  const previous = readLatest<SchedulerRunRecord[]>("latest-scheduler-runs.json", []);
+  const next = [run, ...previous.filter((item) => item.runId !== run.runId)].slice(0, 50);
+  writeLatest("latest-scheduler-runs.json", next);
+  appendJsonl("scheduler-runs.jsonl", [run]);
+  await persistTelemetryLogs([
+    {
+      runId: run.runId,
+      scope: "scheduler",
+      eventType: "scheduler_run_completed",
+      level: run.status === "failed" ? "error" : run.status === "degraded" ? "warning" : "info",
+      message: `Scheduler ${run.status}: ${run.stages.filter((stage) => stage.status === "success" || stage.status === "success_with_limited_confidence").length}/${run.stages.length} stages completed without blocking failure.`,
+      durationMs: run.durationMs,
+      payload: {
+        trigger: run.trigger,
+        failedStage: run.failedStage,
+        retryCount: run.retryCount,
+        successRate: run.successRate,
+        staleSignals: run.staleSignals,
+        stages: run.stages.map((stage) => ({
+          stageId: stage.stageId,
+          status: stage.status,
+          durationMs: stage.durationMs,
+          failedSources: stage.failedSources,
+          degradedSources: stage.degradedSources,
+          deadLetters: stage.deadLetters,
+          error: stage.error ?? null,
+          details: stage.details ?? null,
+        })),
+      },
+      observedAt: run.finishedAt,
+    },
+  ]);
+  return "local_fallback";
+}
+
 export function getLatestRawEventsSync(limit = 40) {
   return readLatest<RawEventInput[]>("latest-events.json", []).slice(0, limit);
 }
 
 export function getLatestRawMetricsSync(limit = 80) {
   return readLatest<RawMetricInput[]>("latest-metrics.json", []).slice(0, limit);
+}
+
+export function getLatestEtfDailyFlowsSync(limit = 20_000) {
+  return readLatest<ETFDailyFlowInput[]>("latest-etf-daily-flows.json", []).slice(0, limit);
 }
 
 export function getLatestNormalizedEventsSync(limit = 100) {
@@ -637,6 +831,14 @@ export function getLatestRegimeInputSync() {
   return readLatest<RegimeInputSnapshotInput | null>("latest-regime-input.json", null);
 }
 
+export function getForecastSnapshotsSync(limit = 30_000) {
+  return readLatest<ForecastSnapshotInput[]>("forecast-snapshots.json", []).slice(0, limit);
+}
+
+export function getForecastValidationsSync(limit = 30_000) {
+  return readLatest<ForecastValidationInput[]>("forecast-validations.json", []).slice(0, limit);
+}
+
 export function getLatestMarketSnapshotsSync(limit = 100) {
   return readLatest<MarketSnapshotInput[]>("latest-market-snapshots.json", []).slice(0, limit);
 }
@@ -649,16 +851,33 @@ export function getLatestTelemetryLogsSync(limit = 100) {
   return readLatest<TelemetryLogInput[]>("latest-telemetry-logs.json", []).slice(0, limit);
 }
 
+export function getLatestSchedulerRunsSync(limit = 20) {
+  return readLatest<SchedulerRunRecord[]>("latest-scheduler-runs.json", []).slice(0, limit);
+}
+
 async function selectSupabaseRows<T>(table: string, orderBy: string, limit: number): Promise<T[]> {
   const client = createSupabaseServerClient();
   if (!client) return [];
-  const { data, error } = await client.from(table).select("*").order(orderBy, { ascending: false }).limit(limit);
-  if (error || !data) return [];
-  return data as T[];
+  try {
+    const { data, error } = await withSupabaseTimeout(Promise.resolve(client.from(table).select("*").order(orderBy, { ascending: false }).limit(limit)));
+    if (error || !data) return [];
+    return data as T[];
+  } catch {
+    writeStorageReport({
+      table,
+      rows: limit,
+      status: "failed",
+      storageMode: "local_fallback",
+      attemptedAt: new Date().toISOString(),
+      error: `Supabase select from ${table} timed out; local fallback cache used.`,
+    });
+    return [];
+  }
 }
 
 type RawEventRow = ReturnType<typeof rawEventRow> & { id?: string; created_at?: string };
 type RawMetricRow = ReturnType<typeof rawMetricRow> & { id?: string; created_at?: string };
+type ETFDailyFlowRow = ReturnType<typeof etfDailyFlowRow> & { id?: string; created_at?: string };
 type SourceHealthRow = ReturnType<typeof sourceHealthRow> & { id?: string };
 type IngestionLogRow = ReturnType<typeof ingestionLogRow> & { id?: string };
 type IngestionRunRow = ReturnType<typeof ingestionRunRow> & { id?: string; created_at?: string };
@@ -809,6 +1028,21 @@ function rawMetricFromRow(row: RawMetricRow): RawMetricInput {
   };
 }
 
+function etfDailyFlowFromRow(row: ETFDailyFlowRow): ETFDailyFlowInput {
+  return {
+    id: row.id,
+    asset: row.asset as ETFDailyFlowInput["asset"],
+    date: row.flow_date,
+    provider: row.provider,
+    netFlowUsdMillion: row.net_flow_usd_million === null ? null : Number(row.net_flow_usd_million),
+    source: row.source,
+    sourceUrl: row.source_url,
+    fetchedAt: row.fetched_at,
+    quality: row.quality as ETFDailyFlowInput["quality"],
+    rawPayload: row.raw_payload,
+  };
+}
+
 function sourceHealthFromRow(row: SourceHealthRow): SourceHealthSnapshot {
   return {
     sourceId: row.source_id_text,
@@ -893,12 +1127,12 @@ export async function getLatestRawEvents(limit = 40) {
 
 export async function getRecentRawEventsForNormalization(limit = 500) {
   const rows = await selectSupabaseRows<RawEventRow>("raw_events", "event_timestamp", limit);
-  return rows.map(rawEventFromRow);
+  return rows.length ? rows.map(rawEventFromRow) : getLatestRawEventsSync(limit);
 }
 
 export async function getLatestNormalizedEvents(limit = 100) {
   const rows = await selectSupabaseRows<NormalizedEventRow>("normalized_events", "event_timestamp", limit);
-  return rows.map(normalizedEventFromRow);
+  return rows.length ? rows.map(normalizedEventFromRow) : getLatestNormalizedEventsSync(limit);
 }
 
 export async function getLatestEventClusters(limit = 100) {
@@ -909,6 +1143,11 @@ export async function getLatestEventClusters(limit = 100) {
 export async function getLatestRawMetrics(limit = 80) {
   const rows = await selectSupabaseRows<RawMetricRow>("raw_metrics", "created_at", limit);
   return rows.length ? rows.map(rawMetricFromRow) : getLatestRawMetricsSync(limit);
+}
+
+export async function getLatestEtfDailyFlows(limit = 20_000) {
+  const rows = await selectSupabaseRows<ETFDailyFlowRow>("etf_daily_flows", "flow_date", limit);
+  return rows.length ? rows.map(etfDailyFlowFromRow) : getLatestEtfDailyFlowsSync(limit);
 }
 
 export async function getLatestSourceHealth() {

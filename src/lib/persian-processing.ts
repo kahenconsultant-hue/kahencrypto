@@ -1,4 +1,5 @@
 import type { RawEventInput, NormalizedEventInput } from "@/types/ingestion";
+import type { NewsCategory } from "@/lib/types";
 
 type EventLike = Pick<RawEventInput, "title" | "content" | "sourceName" | "timestamp" | "quality"> & {
   eventType?: string;
@@ -104,6 +105,67 @@ const publicSlugLabels: Record<string, string> = {
   etf_flow_analysis: "تحلیل جریان صندوق قابل معامله",
 };
 
+const publicNewsCategories = new Set<NewsCategory>([
+  "central_banks",
+  "economic_data",
+  "financial_media",
+  "crypto_media",
+  "onchain",
+  "derivatives",
+  "stablecoins",
+  "etf",
+  "sentiment",
+  "geopolitics",
+  "alternative_data",
+  "exchange_health",
+  "volatility_regime",
+]);
+
+const eventTypeCategoryMap: Record<string, NewsCategory> = {
+  central_bank_policy: "central_banks",
+  treasury_yield_move: "economic_data",
+  dxy_move: "economic_data",
+  inflation_data: "economic_data",
+  employment_data: "economic_data",
+  etf_flow: "etf",
+  stablecoin_liquidity: "stablecoins",
+  exchange_risk: "exchange_health",
+  regulation: "financial_media",
+  security_risk: "exchange_health",
+  liquidation_leverage: "derivatives",
+  geopolitical_risk: "geopolitics",
+  institutional_adoption: "crypto_media",
+  crypto_market_structure: "crypto_media",
+  macro_news: "financial_media",
+  financial_market_news: "financial_media",
+  market_sentiment: "sentiment",
+};
+
+export function resolvePublicNewsCategory(event: {
+  category?: string | null;
+  eventType?: string | null;
+  sourceName?: string | null;
+  title?: string | null;
+  content?: string | null;
+}): NewsCategory {
+  if (event.category && publicNewsCategories.has(event.category as NewsCategory)) {
+    return event.category as NewsCategory;
+  }
+
+  if (event.eventType && eventTypeCategoryMap[event.eventType]) {
+    return eventTypeCategoryMap[event.eventType];
+  }
+
+  const text = `${event.sourceName ?? ""} ${event.title ?? ""} ${event.content ?? ""}`.toLowerCase();
+  if (/\betf|ibit|fbtc|gbtc|spot bitcoin|spot ethereum/.test(text)) return "etf";
+  if (/\bstablecoin|usdt|usdc|tether|circle/.test(text)) return "stablecoins";
+  if (/\bfunding|open interest|liquidation|futures|derivatives/.test(text)) return "derivatives";
+  if (/\bfed|fomc|ecb|treasury|rate|yield|cpi|ppi|inflation|employment|unemployment/.test(text)) return "central_banks";
+  if (/\bbtc|bitcoin|eth|ethereum|sol|solana|crypto|defi|blockchain/.test(text)) return "crypto_media";
+  if (/\bwar|sanction|geopolitical|opec|nato|conflict/.test(text)) return "geopolitics";
+  return "financial_media";
+}
+
 export function normalizePersianText(value?: string | null) {
   return String(value ?? "")
     .replace(/ي/g, "ی")
@@ -181,6 +243,7 @@ export function buildPersianEventSummary(event: EventLike) {
 export function toPublicRawEvent(event: RawEventInput) {
   const projected = {
     ...event,
+    category: resolvePublicNewsCategory(event),
     titleFa: buildPersianEventTitle(event),
     summaryFa: buildPersianEventSummary(event),
     contentFa: buildPersianEventSummary(event),
@@ -195,27 +258,34 @@ export function toPublicRawEvent(event: RawEventInput) {
 }
 
 export function toPublicNormalizedEvent(event: NormalizedEventInput) {
+  const title = buildPersianEventTitle({
+    title: event.title,
+    content: event.summary,
+    sourceName: event.sourceName,
+    timestamp: event.eventTimestamp,
+    quality: event.quality,
+    eventType: event.eventType,
+    affectedAssets: event.affectedAssets,
+    entities: event.entities,
+  });
+  const summary = buildPersianEventSummary({
+    title: event.title,
+    content: event.summary,
+    sourceName: event.sourceName,
+    timestamp: event.eventTimestamp,
+    quality: event.quality,
+    eventType: event.eventType,
+    affectedAssets: event.affectedAssets,
+    entities: event.entities,
+  });
   return {
     ...event,
-    title: buildPersianEventTitle({
-      title: event.title,
-      content: event.summary,
-      sourceName: event.sourceName,
-      timestamp: event.eventTimestamp,
-      quality: event.quality,
-      eventType: event.eventType,
-      affectedAssets: event.affectedAssets,
-      entities: event.entities,
-    }),
-    summary: buildPersianEventSummary({
-      title: event.title,
-      content: event.summary,
-      sourceName: event.sourceName,
-      timestamp: event.eventTimestamp,
-      quality: event.quality,
-      eventType: event.eventType,
-      affectedAssets: event.affectedAssets,
-      entities: event.entities,
-    }),
+    category: resolvePublicNewsCategory(event),
+    timestamp: event.eventTimestamp,
+    dedupHash: event.rawEventId ?? event.id ?? `${event.sourceId}:${event.eventTimestamp}:${event.title}`,
+    title,
+    summary,
+    content: summary,
+    sourceLabelFa: event.sourceName,
   };
 }

@@ -22,6 +22,7 @@ const runOnce = args.has("--once");
 const baseUrl = process.env.CMIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3004";
 const intervalMinutes = Number(process.env.CMIP_INGEST_INTERVAL_MINUTES || "30");
 const cronSecret = process.env.INGESTION_CRON_SECRET || process.env.CRON_SECRET || "";
+const localTarget = process.env.CMIP_LOCAL_INGEST_TARGET || "cron-async";
 
 if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
   console.error("CMIP_INGEST_INTERVAL_MINUTES must be a positive number.");
@@ -29,7 +30,13 @@ if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
 }
 
 async function runIngestion() {
-  const url = `${baseUrl.replace(/\/$/, "")}/api/cron/ingest`;
+  const path =
+    localTarget === "cron-sync"
+      ? "/api/cron/ingest?sync=1"
+      : localTarget === "cron-async"
+        ? "/api/cron/ingest"
+        : "/api/v1/refresh";
+  const url = `${baseUrl.replace(/\/$/, "")}${path}`;
   const started = new Date().toISOString();
   const headers = cronSecret ? { authorization: `Bearer ${cronSecret}` } : {};
 
@@ -40,6 +47,67 @@ async function runIngestion() {
       throw new Error(`HTTP ${response.status}: ${body.slice(0, 500)}`);
     }
     const payload = JSON.parse(body);
+    if (payload.accepted) {
+      console.log(
+        JSON.stringify(
+          {
+            started,
+            finished: new Date().toISOString(),
+            url,
+            accepted: true,
+            mode: payload.mode,
+            message: payload.message,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (typeof payload.refreshed === "boolean") {
+      console.log(
+        JSON.stringify(
+          {
+            started,
+            finished: new Date().toISOString(),
+            url,
+            refreshed: payload.refreshed,
+            reason: payload.reason,
+            cacheGeneratedAt: payload.refresh?.generatedAt ?? payload.status?.generatedAt ?? null,
+            cacheExpiresAt: payload.refresh?.expiresAt ?? payload.status?.expiresAt ?? null,
+            cacheAgeMinutes: payload.status?.ageMinutes ?? null,
+            nextScheduledUpdateMinutes: payload.nextScheduledUpdateMinutes ?? null,
+            signalCounts: payload.refresh?.counts ?? null,
+            backgroundIngestionScheduled: payload.backgroundIngestionScheduled ?? false,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (payload.schedulerRun) {
+      console.log(
+        JSON.stringify(
+          {
+            started,
+            finished: new Date().toISOString(),
+            url,
+            runId: payload.schedulerRun.runId,
+            status: payload.schedulerRun.status,
+            durationMs: payload.schedulerRun.durationMs,
+            successRate: payload.schedulerRun.successRate,
+            failedStage: payload.schedulerRun.failedStage,
+            retryCount: payload.schedulerRun.retryCount,
+            staleSignals: payload.schedulerRun.staleSignals,
+            stages: payload.result?.stages ?? [],
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     console.log(
       JSON.stringify(
         {
@@ -83,6 +151,6 @@ await runIngestion();
 
 if (!runOnce) {
   const intervalMs = intervalMinutes * 60_000;
-  console.log(`C.M.I.P local ingestion scheduler active: every ${intervalMinutes} minutes -> ${baseUrl}`);
+  console.log(`C.M.I.P local ingestion scheduler active: every ${intervalMinutes} minutes -> ${baseUrl} (${localTarget} mode)`);
   setInterval(runIngestion, intervalMs);
 }

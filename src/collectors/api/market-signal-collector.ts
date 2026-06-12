@@ -1,5 +1,8 @@
 import type { Collector, CollectorOutput, RawMetricInput, SourceDefinition } from "@/types/ingestion";
 import { fetchCurrentDataPoints } from "@/server/data/adapters";
+import { buildAdapterBundleBreakdown } from "@/server/data/adapter-bundle-diagnostics";
+import { getSignalSnapshot } from "@/server/analytics/market-signals";
+import type { DataPoint } from "@/lib/types";
 
 function metricFromDataPoint(source: SourceDefinition, point: Awaited<ReturnType<typeof fetchCurrentDataPoints>>[number]): RawMetricInput {
   return {
@@ -18,8 +21,38 @@ function metricFromDataPoint(source: SourceDefinition, point: Awaited<ReturnType
     reliability: point.reliability,
     sampleSize: point.sampleSize,
     error: point.error,
-    rawPayload: { key: point.key, estimatedReason: point.estimatedReason },
+    rawPayload: { key: point.key, estimatedReason: point.estimatedReason, adapterSource: point.source },
   };
+}
+
+function isUsablePoint(point: DataPoint) {
+  return typeof point.value === "number" && Number.isFinite(point.value) && point.quality !== "unavailable" && point.quality !== "estimated";
+}
+
+function sourceLevelStatus(source: SourceDefinition, points: DataPoint[]): Pick<CollectorOutput, "status" | "error"> {
+  const requestedKeys = source.signalKeys ?? [];
+  const usable = points.filter(isUsablePoint);
+  const missing = points.filter((point) => !isUsablePoint(point));
+
+  if (!requestedKeys.length) {
+    return { status: "disabled", error: "No signal keys configured for this market signal source." };
+  }
+
+  if (!usable.length) {
+    return {
+      status: "failed",
+      error: missing.map((point) => `${point.key}: ${point.error ?? "unavailable"}`).join(" | ") || "No requested source-level metrics were available.",
+    };
+  }
+
+  if (missing.length) {
+    return {
+      status: "degraded",
+      error: `Partial source fetch: ${usable.length}/${requestedKeys.length} metrics updated. Missing: ${missing.map((point) => point.key).join(", ")}`,
+    };
+  }
+
+  return { status: "success", error: undefined };
 }
 
 export const marketSignalCollector: Collector = {
@@ -29,16 +62,35 @@ export const marketSignalCollector: Collector = {
     try {
       const points = await fetchCurrentDataPoints(source.signalKeys);
       const rawMetrics = points.map((point) => metricFromDataPoint(source, point));
-      const failed = rawMetrics.filter((metric) => metric.quality === "unavailable" || metric.error).length;
-      const status = failed === rawMetrics.length ? "failed" : failed > 0 ? "degraded" : "success";
+      const isInternalBundle = source.id === "cmip-public-market-signal-adapters";
+      const bundleSignals = isInternalBundle
+        ? Array.from(new Map([...getSignalSnapshot().signals, ...points].map((signal) => [signal.key, signal])).values())
+        : points;
+      const breakdown = isInternalBundle ? buildAdapterBundleBreakdown(bundleSignals) : null;
+      const sourceStatus = isInternalBundle ? null : sourceLevelStatus(source, points);
+      const status = breakdown?.status ?? sourceStatus?.status ?? "failed";
+      const diagnosticSummary = breakdown
+        ? status === "success"
+          ? undefined
+          : status === "failed"
+            ? `Blocking core adapter failure: ${breakdown.blockingFailures.join(", ")}`
+            : `Core adapters ${breakdown.coreHealthy}/${breakdown.coreTotal}; optional enrichments missing: ${breakdown.nonBlockingMissingInputs.slice(0, 8).join(", ") || "none"}`
+        : sourceStatus?.error;
       return {
         source,
         status,
         fetchedAt: new Date().toISOString(),
         latencyMs: Date.now() - started,
         rawEvents: [],
-        rawMetrics,
-        error: status === "failed" ? "All market signal adapters failed or were unavailable." : undefined,
+        rawMetrics: rawMetrics.map((metric) => ({
+          ...metric,
+          rawPayload: {
+            ...(typeof metric.rawPayload === "object" && metric.rawPayload !== null ? metric.rawPayload : {}),
+            sourceLevelStatus: status,
+            ...(breakdown ? { adapterBundleStatus: breakdown.status } : {}),
+          },
+        })),
+        error: diagnosticSummary,
       };
     } catch (error) {
       return {

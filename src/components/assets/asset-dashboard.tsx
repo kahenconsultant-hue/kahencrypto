@@ -25,7 +25,7 @@ function toneVariant(tone: AssetIntelligence["metrics"][number]["tone"]): "succe
 
 function statusVariant(status: SourceSignal["status"]): "success" | "warning" | "danger" | "muted" {
   if (status === "live") return "success";
-  if (status === "partial_live" || status === "delayed") return "warning";
+  if (status === "partial_live" || status === "delayed" || status === "proxy") return "warning";
   if (status === "unavailable") return "danger";
   return "muted";
 }

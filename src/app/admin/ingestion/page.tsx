@@ -94,9 +94,14 @@ export default async function AdminIngestionPage() {
             این صفحه فقط وضعیت فنی ingestion را نشان می‌دهد. اگر منبعی در دسترس نباشد یا کلید API تنظیم نشده باشد، داده ساخته نمی‌شود و همان وضعیت در health و dead-letter ثبت می‌شود.
           </p>
         </div>
-        <Link className="rounded-sm border px-3 py-2 text-xs text-muted-foreground hover:text-foreground" href="/admin">
-          بازگشت به ادمین
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link className="rounded-sm border px-3 py-2 text-xs text-muted-foreground hover:text-foreground" href="/admin/ops">
+            ops center
+          </Link>
+          <Link className="rounded-sm border px-3 py-2 text-xs text-muted-foreground hover:text-foreground" href="/admin">
+            بازگشت به ادمین
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-4">

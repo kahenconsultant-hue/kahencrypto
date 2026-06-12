@@ -58,6 +58,15 @@ const pressureFa: Record<DominantPressure, string> = {
   unavailable: "ناموجود",
 };
 
+const BASIC_INTELLIGENCE_CACHE_TTL_MS = 30_000;
+
+let basicIntelligenceCache:
+  | {
+      expiresAt: number;
+      value: BasicIntelligenceOutput;
+    }
+  | null = null;
+
 function confidenceForAggregation(confidence: ConfidenceResult | undefined): ConfidenceResult {
   return (
     confidence ?? {
@@ -96,6 +105,11 @@ function assetRow(asset: ReturnType<typeof getAssetImpactProfiles>[number], risk
 }
 
 export function getBasicIntelligenceReport(): BasicIntelligenceOutput {
+  const now = Date.now();
+  if (basicIntelligenceCache && basicIntelligenceCache.expiresAt > now) {
+    return basicIntelligenceCache.value;
+  }
+
   const regime = getMarketRegimeReport();
   const liquidity = getLiquidityReport();
   const risk = getRiskReport();
@@ -116,7 +130,7 @@ export function getBasicIntelligenceReport(): BasicIntelligenceOutput {
     liquidity.unavailablePremiumInputs?.length ? `داده‌های تکمیلی ناموجود: ${liquidity.unavailablePremiumInputs.slice(0, 3).join("، ")}` : "",
   ].filter(Boolean);
 
-  return {
+  const output: BasicIntelligenceOutput = {
     moduleName: "basic_intelligence_engine_v1",
     status,
     sourceType: status === "unavailable" ? "unavailable" : "derived",
@@ -142,4 +156,9 @@ export function getBasicIntelligenceReport(): BasicIntelligenceOutput {
     dataWarningsFa,
     lastUpdatedAt: getEngineLastUpdatedAt(),
   };
+  basicIntelligenceCache = {
+    expiresAt: now + BASIC_INTELLIGENCE_CACHE_TTL_MS,
+    value: output,
+  };
+  return output;
 }

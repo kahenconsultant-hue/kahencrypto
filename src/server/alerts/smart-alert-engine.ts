@@ -1,11 +1,15 @@
 import type { AlertLevel, AssetSymbol, DirectionalBias, IntelligenceTimeframe, SmartAlert, TraderAlertPriority } from "@/lib/types";
 import { getDynamicCorrelationReport } from "@/server/analytics/correlation-engine";
 import { getDerivedSignalReport } from "@/server/analytics/derived-signal-engine";
+import { getLiquidityIntelligenceStack } from "@/server/analytics/liquidity-intelligence-stack";
 import { getLiquidityReport } from "@/server/analytics/liquidity-engine";
 import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
 import { getSignalSnapshot } from "@/server/analytics/market-signals";
 import { clampPercent } from "@/server/analytics/scoring-engine";
+import { isFreshUsableSignal } from "@/server/analytics/intelligence-quality";
+import { signalFreshnessState, validateAndCorrectAlerts } from "@/server/analytics/intelligence-integrity-engine";
 import { getIntelligenceReliabilityReportSync } from "@/server/intelligence/reliability-engine";
+import { applyAlertSuppression, calculateAlertQualityScore, classifyAlertQuality } from "@/server/alerts/alert-suppression-engine";
 
 const levelWeight: Record<AlertLevel, number> = {
   Critical: 4,
@@ -23,7 +27,7 @@ function levelFromPriority(priority: TraderAlertPriority): AlertLevel {
 
 function value(key: string) {
   const signal = getSignalSnapshot().byKey[key];
-  if (!signal || signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return null;
+  if (!isFreshUsableSignal(signal)) return null;
   return signal.value;
 }
 
@@ -56,16 +60,35 @@ const alertIndicatorLabels: Record<string, string> = {
 
 function alertDataFromKeys(keys: string[]): NonNullable<SmartAlert["dataUsed"]> {
   const snapshot = getSignalSnapshot();
-  const uniqueKeys = Array.from(new Set(keys.filter((key) => snapshot.byKey[key])));
+  const uniqueKeys = Array.from(new Set(keys));
   return uniqueKeys.map((key) => {
     const signal = snapshot.byKey[key];
-    const ageMinutes = signal.timestamp ? Math.max(0, Math.round((Date.now() - Date.parse(signal.timestamp)) / 60_000)) : null;
+    if (!signal) {
+      const derived = getDerivedSignalReport().signals.find((item) => item.signalKey === key);
+      if (derived) {
+        return {
+          label: alertIndicatorLabels[key] ?? key,
+          key,
+          source: `Derived Signal Engine (${derived.sourceType})`,
+          status: derived.score === null || derived.quality === "unavailable" ? ("missing" as const) : ("available" as const),
+          value: derived.score,
+        };
+      }
+      return {
+        label: alertIndicatorLabels[key] ?? key,
+        key,
+        source: "منبع یا نگاشت سیگنال موجود نیست",
+        status: "missing" as const,
+        value: null,
+      };
+    }
+    const freshnessState = signalFreshnessState(signal);
     const status =
       signal.quality === "estimated"
         ? "estimated"
         : signal.value === null || signal.quality === "unavailable"
           ? "missing"
-          : ageMinutes !== null && ageMinutes > 90
+          : freshnessState === "stale"
             ? "stale"
             : "available";
     return {
@@ -78,6 +101,34 @@ function alertDataFromKeys(keys: string[]): NonNullable<SmartAlert["dataUsed"]> 
   });
 }
 
+function correlationDataForAlert(pairNames: string[]) {
+  const report = getDynamicCorrelationReport();
+  const rows = pairNames.map((pairName) => {
+    const row = report.correlationTable.find((item) => item.pair === pairName);
+    const selected = row?.correlation7d ?? row?.correlation30d ?? row?.correlation24h ?? null;
+    const usable = row?.status === "available" && row.narrativeAllowed && selected !== null && Math.abs(selected) >= 0.2;
+    return {
+      label: `Correlation (همبستگی) ${pairName}`,
+      key: `correlation:${pairName}`,
+      source: row?.source ?? "Correlation Engine",
+      status: usable ? ("available" as const) : ("missing" as const),
+      value: selected,
+    };
+  });
+  const available = rows.filter((row) => row.status === "available");
+  return {
+    dataUsed: rows,
+    availableCount: available.length,
+    confidenceBoost: available.length
+      ? Math.min(6, available.reduce((sum, row) => sum + Math.min(100, Math.abs(row.value ?? 0) * 100), 0) / available.length / 18)
+      : 0,
+    explanation:
+      available.length === rows.length
+        ? "تأیید همبستگی با رابطه‌های بالاتر از آستانه ۰٫۲۰ در دسترس است."
+        : "تأیید همبستگی معتبر برای بخشی از این هشدار ناموجود یا از نظر آماری ضعیف است؛ confidence از این مسیر افزایش نمی‌گیرد.",
+  };
+}
+
 function capPriority(priority: TraderAlertPriority, maxPriority: TraderAlertPriority) {
   const order: TraderAlertPriority[] = ["low", "medium", "high", "critical"];
   return order.indexOf(priority) > order.indexOf(maxPriority) ? maxPriority : priority;
@@ -85,6 +136,85 @@ function capPriority(priority: TraderAlertPriority, maxPriority: TraderAlertPrio
 
 function humanCapReason(reason: string | null, cap: number | null) {
   return reason && cap !== null ? `${reason} سقف اطمینان: ${cap}٪.` : reason;
+}
+
+function availableIndicatorCount(dataUsed: NonNullable<SmartAlert["dataUsed"]>) {
+  return dataUsed.filter((item) => item.status === "available").length;
+}
+
+function alertCoverage(dataUsed: NonNullable<SmartAlert["dataUsed"]>) {
+  if (!dataUsed.length) return 0;
+  return clampPercent((availableIndicatorCount(dataUsed) / dataUsed.length) * 100);
+}
+
+function crossConfirmationCount(dataUsed: NonNullable<SmartAlert["dataUsed"]>) {
+  return new Set(dataUsed.filter((item) => item.status === "available").map((item) => item.source)).size;
+}
+
+function ttlMinutesForAlert(type: SmartAlert["type"], timeframe: IntelligenceTimeframe, priority: TraderAlertPriority) {
+  if (type === "data_degradation_alert") return 60;
+  if (type === "premium_data_missing_notice") return 180;
+  if (type === "volatility_expansion_alert" || type === "Leverage Trap Alert") return timeframe === "intraday" ? 45 : 180;
+  if (type === "Macro Alert" || type === "Dollar Pressure Alert" || type === "Rates Shock Alert" || type === "Fed Alert" || type === "macro_pressure_proxy_alert") {
+    return timeframe === "7d" ? 3 * 24 * 60 : 12 * 60;
+  }
+  if (type === "Geopolitical Shock Alert" || type === "Geopolitical Alert") return timeframe === "7d" ? 3 * 24 * 60 : 24 * 60;
+  if (priority === "critical") return 90;
+  if (timeframe === "intraday") return 60;
+  if (timeframe === "24h") return 6 * 60;
+  if (timeframe === "3d") return 24 * 60;
+  return 3 * 24 * 60;
+}
+
+function expiresAt(createdAt: string, ttlMinutes: number) {
+  const created = Date.parse(createdAt);
+  const base = Number.isFinite(created) ? created : Date.now();
+  return new Date(base + ttlMinutes * 60_000).toISOString();
+}
+
+function isOperationalAlert(type: SmartAlert["type"]) {
+  return type === "data_degradation_alert" || type === "premium_data_missing_notice";
+}
+
+function severityReasonFa(params: {
+  type: SmartAlert["type"];
+  priority: TraderAlertPriority;
+  confidence: number;
+  indicatorCount: number;
+  dataCoveragePercent: number;
+  alertQualityScore: number;
+  confidenceCapReason?: string | null;
+  isOperational: boolean;
+}) {
+  if (params.isOperational) {
+    return "شدت این هشدار عملیاتی است و بر اساس سلامت منبع، تازگی داده و پوشش ورودی‌ها تعیین شده؛ پیام آن درباره کیفیت تحلیل است، نه جهت بازار.";
+  }
+  const confidencePart =
+    params.confidence >= 75
+      ? "اطمینان عددی بالا است"
+      : params.confidence >= 55
+        ? "اطمینان در محدوده متوسط است"
+        : "اطمینان محدود است";
+  const indicatorPart =
+    params.indicatorCount >= 4
+      ? "و حداقل چهار شاخص واقعی این سناریو را پشتیبانی می‌کنند."
+      : params.indicatorCount >= 3
+        ? "و سه شاخص واقعی در محاسبه استفاده شده است."
+        : "اما تعداد شاخص‌های واقعی برای شدت بالا کافی نیست.";
+  const context: Partial<Record<SmartAlert["type"], string>> = {
+    "Geopolitical Shock Alert": "شدت بر اساس امتیاز ریسک ژئوپلیتیک، واکنش Gold/DXY/VIX و تأیید یا نبود تأیید همبستگی تعیین شده است.",
+    "Liquidity Alert": "شدت بر اساس فشار نقدینگی، رشد استیبل‌کوین، کیفیت اسپات و نبود یا وجود تأیید ETF/Exchange Flow تعیین شده است.",
+    stablecoin_pressure_alert: "شدت بر اساس ضعف عرضه استیبل‌کوین، وضعیت پروکسی نقدینگی و تأیید همبستگی BTC با DXY/Stablecoin تعیین شده است.",
+    "Dollar Pressure Alert": "شدت بر اساس هم‌زمانی DXY، US10Y، Nasdaq و تأیید همبستگی بین‌بازاری تعیین شده است.",
+    macro_pressure_proxy_alert: "شدت بر اساس پروکسی فشار کلان، رفتار BTC و هم‌جهتی DXY و US10Y تعیین شده است.",
+    volatility_expansion_alert: "شدت بر اساس گسترش نوسان و تأیید یا عدم مخالفت فشار اهرمی تعیین شده است.",
+    "Leverage Trap Alert": "شدت بر اساس Funding Rate، Open Interest، نسبت حجم فیوچرز به اسپات و شکنندگی نقدینگی تعیین شده است.",
+    "Correlation Breakdown Alert": "شدت بر اساس اندازه شکست همبستگی، تغییر VIX و کیفیت نمونه همبستگی تعیین شده است.",
+    "Regime Shift Alert": "شدت بر اساس تغییر رژیم، confidence موتور رژیم و تعداد دارایی‌های درگیر تعیین شده است.",
+    "Weak Rally Alert": "شدت بر اساس رشد قیمت بدون تأیید ETF/استیبل‌کوین/اسپات و فشار فاندینگ تعیین شده است.",
+  };
+  const capPart = params.confidenceCapReason ? ` ${params.confidenceCapReason}` : "";
+  return `${context[params.type] ?? "شدت بر اساس ترکیب شاخص‌های واقعی، کیفیت داده و سقف confidence تعیین شده است."} ${confidencePart}، پوشش داده ${params.dataCoveragePercent}٪ و کیفیت هشدار ${params.alertQualityScore}/100 است. ${indicatorPart}${capPart}`;
 }
 
 function applyAlertQualityRules(params: {
@@ -97,16 +227,39 @@ function applyAlertQualityRules(params: {
   let priority = params.priority;
   let cap: number | null = null;
   const reasons: string[] = [];
-  const availableCount = params.dataUsed.filter((item) => item.status === "available" || item.status === "stale").length;
+  const availableCount = availableIndicatorCount(params.dataUsed);
+  const coveragePercent = alertCoverage(params.dataUsed);
+  const staleCount = params.dataUsed.filter((item) => item.status === "stale").length;
+  const estimatedCount = params.dataUsed.filter((item) => item.status === "estimated").length;
+  const confirmationCount = crossConfirmationCount(params.dataUsed);
   const missing = new Set(params.dataUsed.filter((item) => item.status === "missing").map((item) => item.key));
   const isProxyAlert = params.type.toString().includes("_proxy_") || params.type === "premium_data_missing_notice";
   const isLiquidityAlert = params.type === "Liquidity Alert" || params.type === "liquidity_proxy_alert" || params.type === "stablecoin_pressure_alert";
   const isMacroAlert = params.type === "Macro Alert" || params.type === "Dollar Pressure Alert" || params.type === "Rates Shock Alert" || params.type === "Fed Alert" || params.type === "macro_pressure_proxy_alert";
+  const availableSignals = params.dataUsed
+    .map((item) => getSignalSnapshot().byKey[item.key])
+    .filter((signal): signal is NonNullable<ReturnType<typeof getSignalSnapshot>["byKey"][string]> => Boolean(signal));
+  const sourceQuality = availableSignals.length ? clampPercent(availableSignals.reduce((sum, signal) => sum + signal.reliability, 0) / availableSignals.length) : coveragePercent;
+  const freshnessQuality = clampPercent(100 - staleCount * 30 - estimatedCount * 10 - Math.max(0, params.dataUsed.length - availableCount) * 6);
+  const signalQuality = clampPercent(Math.min(100, availableCount * 25) * 0.55 + Math.min(100, confirmationCount * 35) * 0.45);
 
   if (availableCount < 3) {
     cap = Math.min(cap ?? 100, 50);
     priority = capPriority(priority, "medium");
     reasons.push("این هشدار کمتر از سه شاخص واقعی در اختیار دارد؛ بنابراین شدت High یا Critical مجاز نیست.");
+  }
+
+  if (confirmationCount < 2) reasons.push("تأیید دو منبع مستقل وجود ندارد؛ confidence نمی‌تواند تقویت شود.");
+
+  if (staleCount > 0) {
+    cap = Math.min(cap ?? 100, Math.max(0, coveragePercent - staleCount * 6));
+    priority = capPriority(priority, "medium");
+    reasons.push("داده stale برای افزایش confidence یا severity حساب نمی‌شود.");
+  }
+
+  if (estimatedCount > 0) {
+    cap = Math.min(cap ?? 100, Math.max(0, coveragePercent - estimatedCount * 4));
+    reasons.push("داده estimated/proxy نمی‌تواند شدت هشدار را به‌تنهایی بالا ببرد.");
   }
 
   if (isProxyAlert) {
@@ -139,13 +292,39 @@ function applyAlertQualityRules(params: {
     }
   }
 
-  if (cap !== null) confidence = Math.min(confidence, cap);
+  const weakestComponent = Math.min(coveragePercent, sourceQuality, freshnessQuality, signalQuality);
+  cap = Math.min(cap ?? 100, weakestComponent);
+  confidence = Math.min(confidence, cap);
+  if (confidence < params.confidence) {
+    reasons.push(`confidence با ضعیف‌ترین مؤلفه کیفیت محدود شد: coverage=${coveragePercent}٪، source=${sourceQuality}٪، freshness=${freshnessQuality}٪، signal=${signalQuality}٪.`);
+  }
   if (confidence < 68) priority = capPriority(priority, "medium");
+  if (coveragePercent < 50) priority = capPriority(priority, "medium");
+  if (coveragePercent < 35) priority = capPriority(priority, "low");
+
+  const freshnessPenalty = staleCount * 6 + estimatedCount * 4;
+  const qualityBreakdown = {
+    signalQuality,
+    dataCoverage: coveragePercent,
+    sourceReliability: sourceQuality,
+    freshness: freshnessQuality,
+  };
+  const alertQualityScore = calculateAlertQualityScore(qualityBreakdown);
+  if (alertQualityScore < 55) priority = capPriority(priority, "medium");
+  if (alertQualityScore < 35) priority = capPriority(priority, "low");
 
   return {
     priority,
     confidence: clampPercent(confidence),
     confidenceCapReason: humanCapReason(reasons.join(" "), cap),
+    dataCoveragePercent: coveragePercent,
+    supportingSignals: params.dataUsed.filter((item) => item.status === "available").map((item) => item.label),
+    missingSignals: params.dataUsed.filter((item) => item.status !== "available").map((item) => item.label),
+    freshnessPenalty,
+    crossConfirmationCount: confirmationCount,
+    alertQualityScore,
+    alertQualityLabel: classifyAlertQuality(alertQualityScore),
+    alertQualityBreakdown: qualityBreakdown,
   };
 }
 
@@ -198,6 +377,11 @@ function alertBase(params: {
     confidence: params.confidence,
     dataUsed,
   });
+  const createdAt = params.createdAt ?? new Date().toISOString();
+  const indicatorCount = availableIndicatorCount(dataUsed);
+  const ttlMinutes = ttlMinutesForAlert(params.type, params.timeframe, quality.priority);
+  const operational = isOperationalAlert(params.type);
+  const confidenceCapReason = params.confidenceCapReason ?? quality.confidenceCapReason;
   return {
     id: params.id,
     type: params.type,
@@ -220,9 +404,31 @@ function alertBase(params: {
     monitoringFa: params.monitoringFa,
     dataUsed,
     missingCriticalInputs,
-    confidenceCapReason: params.confidenceCapReason ?? quality.confidenceCapReason,
+    confidenceCapReason,
+    dataCoveragePercent: quality.dataCoveragePercent,
+    supportingSignals: quality.supportingSignals,
+    missingSignals: quality.missingSignals,
+    freshnessPenalty: quality.freshnessPenalty,
+    crossConfirmationCount: quality.crossConfirmationCount,
+    alertQualityScore: quality.alertQualityScore,
+    alertQualityLabel: quality.alertQualityLabel,
+    alertQualityBreakdown: quality.alertQualityBreakdown,
     dataQuality: params.dataQuality,
-    createdAt: params.createdAt ?? new Date().toISOString(),
+    createdAt,
+    expiresAt: expiresAt(createdAt, ttlMinutes),
+    ttlMinutes,
+    indicatorCount,
+    severityReasonFa: severityReasonFa({
+      type: params.type,
+      priority: quality.priority,
+      confidence: quality.confidence,
+      indicatorCount,
+      dataCoveragePercent: quality.dataCoveragePercent,
+      alertQualityScore: quality.alertQualityScore,
+      confidenceCapReason,
+      isOperational: operational,
+    }),
+    isOperational: operational,
     scenarioFa: params.reasoningFa,
   };
 }
@@ -306,13 +512,13 @@ function macroPressureProxyAlert(): SmartAlert | null {
     affectedAssets: ["BTC", "ETH", "SOL", "Nasdaq"],
     titleFa: "پروکسی فشار کلان روی کریپتو فعال شد",
     reasoningFa: signal.explanationFa,
-    triggerCondition: "macro_pressure_proxy <= -30 + DXY rising + US10Y rising + BTC not showing independent strength",
+    triggerCondition: "فشار کلان مشتق‌شده منفی است، DXY و US10Y هم‌زمان بالا رفته‌اند و BTC قدرت مستقل نشان نداده است.",
     evidence: [`macro proxy ${signal.score}`, `DXY ${dxy.toFixed(2)}٪`, `US10Y ${us10y.toFixed(2)}`, `BTC ${btc.toFixed(2)}٪`],
     causalChain: "DXY ↑ + US10Y ↑ + نبود قدرت مستقل BTC → فشار نرخ/دلار روی ریسک‌پذیری کریپتو.",
     confidence: signal.confidence,
     importance: clampPercent(signal.confidence + Math.abs(signal.score) * 0.25),
     invalidationCondition: "اگر DXY زیر ۰٫۱۵٪ برگردد، US10Y آرام شود و BTC با حجم اسپات مثبت بماند، این پروکسی ضعیف می‌شود.",
-    suggestedTraderAction: "تیترهای مثبت کریپتو را تا وقتی دلار و نرخ فشار می‌آورند با احتیاط بخوانید؛ این هشدار سیگنال معامله نیست.",
+    suggestedTraderAction: "تیترهای مثبت کریپتو را تا وقتی دلار و نرخ فشار می‌آورند با احتیاط بخوانید؛ این هشدار فقط زمینه ریسک را توضیح می‌دهد و توصیه اجرایی ارائه نمی‌کند.",
     whyItMattersFa: "کانال دلار و نرخ می‌تواند اثر خبرهای مثبت کریپتو را خنثی کند.",
     monitoringFa: [...signal.usedInputs, "cpi_latest", "fed_funds_rate", "unemployment_rate"],
     dataQuality: signal.quality,
@@ -322,6 +528,7 @@ function macroPressureProxyAlert(): SmartAlert | null {
 function liquidityProxyAlert(): SmartAlert | null {
   const liquidity = derivedSignalByKey("crypto_liquidity_proxy");
   const stablecoin = derivedSignalByKey("stablecoin_liquidity_signal");
+  const stack = getLiquidityIntelligenceStack();
   if (!liquidity || !stablecoin || liquidity.score === null || stablecoin.score === null || liquidity.confidence === null) return null;
   if (!(liquidity.score >= 25 && stablecoin.score >= 20)) return null;
   return alertBase({
@@ -333,14 +540,14 @@ function liquidityProxyAlert(): SmartAlert | null {
     affectedAssets: ["BTC", "ETH", "SOL", "USDT"],
     titleFa: "پروکسی نقدینگی کریپتو حمایتی شده است",
     reasoningFa: "رشد استیبل‌کوین و حجم/مومنتوم بازار از داده‌های رایگان هم‌جهت شده‌اند. چون ETF و ذخایر صرافی کامل نیستند، این هشدار proxy-based است.",
-    triggerCondition: "crypto_liquidity_proxy >= +25 AND stablecoin_liquidity_signal >= +20",
-    evidence: [`liquidity proxy ${liquidity.score}`, `stablecoin signal ${stablecoin.score}`, ...liquidity.usedInputs.slice(0, 3)],
-    causalChain: "استیبل‌کوین ↑ + حجم/مومنتوم ↑ → حمایت نقدینگی نقدی/عمومی → بهبود کوتاه‌مدت ریسک‌پذیری.",
-    confidence: Math.min(liquidity.confidence, stablecoin.confidence ?? liquidity.confidence),
+    triggerCondition: "نقدینگی مشتق‌شده کریپتو و روند استیبل‌کوین‌ها هم‌زمان بهبود یافته‌اند.",
+    evidence: [`liquidity proxy ${liquidity.score}`, `stablecoin signal ${stablecoin.score}`, `Fusion score ${stack.finalLiquidityScore ?? "ناموجود"}/100`, `تأییدکننده‌ها: ${stack.confirmingEngines.join("، ") || "ندارد"}`, `ناموجودها: ${stack.unavailableEngines.join("، ") || "ندارد"}`],
+    causalChain: `استیبل‌کوین ↑ + حجم/مومنتوم ↑ → حمایت نقدینگی نقدی/عمومی → بهبود کوتاه‌مدت ریسک‌پذیری. Fusion Engine: ${stack.narrativeFa}`,
+    confidence: Math.min(liquidity.confidence, stablecoin.confidence ?? liquidity.confidence, stack.finalConfidence),
     importance: clampPercent(liquidity.confidence + liquidity.score * 0.15),
     invalidationCondition: "اگر رشد استیبل‌کوین به زیر آستانه ۰٫۳۵٪ هفتگی برگردد یا حجم اسپات افت کند، هشدار تضعیف می‌شود.",
     suggestedTraderAction: "این خروجی فقط نشان می‌دهد زمینه نقدینگی بهتر شده؛ برای تصمیم معامله باید با قیمت و ریسک کلان هم‌سنجی شود.",
-    whyItMattersFa: "نقدینگی واقعی شرط دوام رالی است.",
+    whyItMattersFa: `نقدینگی واقعی شرط دوام رالی است. موتورهای مخالف/ضعیف: ${stack.disagreeingEngines.join("، ") || "ثبت نشده"}.`,
     monitoringFa: [...liquidity.usedInputs, ...stablecoin.usedInputs, "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows"],
     dataQuality: liquidity.quality,
   });
@@ -349,8 +556,11 @@ function liquidityProxyAlert(): SmartAlert | null {
 function stablecoinPressureAlert(): SmartAlert | null {
   const stablecoin = derivedSignalByKey("stablecoin_liquidity_signal");
   const liquidity = derivedSignalByKey("crypto_liquidity_proxy");
+  const stack = getLiquidityIntelligenceStack();
   if (!stablecoin || stablecoin.score === null || stablecoin.confidence === null) return null;
   if (!(stablecoin.score <= -25 && (liquidity?.score ?? 0) <= 5)) return null;
+  const correlationConfirmation = correlationDataForAlert(["BTC ↔ Stablecoin Market Cap", "BTC ↔ DXY"]);
+  const adjustedConfidence = clampPercent(stablecoin.confidence + correlationConfirmation.confidenceBoost);
   return alertBase({
     id: "stablecoin-pressure-proxy-alert",
     type: "stablecoin_pressure_alert",
@@ -360,15 +570,16 @@ function stablecoinPressureAlert(): SmartAlert | null {
     affectedAssets: ["USDT", "BTC", "ETH", "SOL"],
     titleFa: "فشار نقدینگی استیبل‌کوین در داده‌های رایگان دیده می‌شود",
     reasoningFa: stablecoin.explanationFa,
-    triggerCondition: "stablecoin_liquidity_signal <= -25 AND crypto_liquidity_proxy not supportive",
-    evidence: [`stablecoin signal ${stablecoin.score}`, `liquidity proxy ${liquidity?.score ?? "unavailable"}`],
-    causalChain: "عرضه/رشد استیبل‌کوین ضعیف → ظرفیت خرید نقدی کمتر → ریسک تداوم حرکت صعودی پایین‌تر.",
-    confidence: stablecoin.confidence,
-    importance: clampPercent(stablecoin.confidence + Math.abs(stablecoin.score) * 0.2),
+    triggerCondition: "روند استیبل‌کوین‌ها ضعیف شده و پروکسی نقدینگی کریپتو حمایت کافی نشان نمی‌دهد.",
+    evidence: [`stablecoin signal ${stablecoin.score}`, `liquidity proxy ${liquidity?.score ?? "unavailable"}`, `Fusion score ${stack.finalLiquidityScore ?? "ناموجود"}/100`, `ناموجودها: ${stack.unavailableEngines.join("، ") || "ندارد"}`, correlationConfirmation.explanation],
+    causalChain: `عرضه/رشد استیبل‌کوین ضعیف → ظرفیت خرید نقدی کمتر → ریسک تداوم حرکت صعودی پایین‌تر. ${correlationConfirmation.explanation} Fusion Engine: ${stack.narrativeFa}`,
+    confidence: Math.min(adjustedConfidence, stack.finalConfidence || adjustedConfidence),
+    importance: clampPercent(adjustedConfidence + Math.abs(stablecoin.score) * 0.2),
     invalidationCondition: "اگر DefiLlama رشد مثبت پایدار در عرضه استیبل‌کوین‌ها نشان دهد و حجم اسپات بالا برود، هشدار ضعیف می‌شود.",
     suggestedTraderAction: "رشد قیمت را بدون تأیید استیبل‌کوین به‌عنوان expansion قطعی نخوانید.",
     whyItMattersFa: "استیبل‌کوین‌ها یکی از سوخت‌های اصلی نقدینگی در بازار کریپتو هستند.",
     monitoringFa: [...stablecoin.usedInputs, "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows"],
+    dataUsed: [...alertDataFromKeys([...stablecoin.usedInputs, "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows"]), ...correlationConfirmation.dataUsed],
     dataQuality: stablecoin.quality,
   });
 }
@@ -387,7 +598,7 @@ function volatilityExpansionAlert(): SmartAlert | null {
     affectedAssets: ["BTC", "ETH", "SOL"],
     titleFa: "رژیم نوسان در حال گسترش است",
     reasoningFa: volatility.explanationFa,
-    triggerCondition: "volatility_regime_proxy <= -38 AND leverage_stress_proxy confirms or does not oppose",
+    triggerCondition: "نوسان مشتق‌شده گسترش یافته و فشار اهرمی با آن مخالفت معنادار ندارد.",
     evidence: [`volatility proxy ${volatility.score}`, `leverage proxy ${leverage?.score ?? "unavailable"}`],
     causalChain: "دامنه حرکت/حجم/نوسان ↑ → کاهش قابلیت اتکای جهت‌گیری کوتاه‌مدت → افزایش ریسک stop cascade.",
     confidence: volatility.confidence,
@@ -415,7 +626,7 @@ function riskTransitionProxyAlert(): SmartAlert | null {
       affectedAssets: ["BTC", "ETH", "SOL", "Nasdaq"],
       titleFa: "ریسک گذار به حالت دفاعی افزایش یافته است",
       reasoningFa: "فشار کلان، نقدینگی ضعیف و اشتهای ریسک نهادی/شبه‌نهادی هم‌زمان منفی شده‌اند؛ این نتیجه proxy-based است.",
-      triggerCondition: "macro_pressure_proxy <= -20 + crypto_liquidity_proxy <= +5 + institutional_risk_appetite_proxy <= -20",
+      triggerCondition: "فشار کلان، نقدینگی کریپتو و اشتهای ریسک نهادی/شبه‌نهادی هم‌زمان ضعیف شده‌اند.",
       evidence: [`macro ${macro.score}`, `liquidity ${liquidity.score}`, `risk appetite ${appetite.score}`],
       causalChain: "فشار کلان + نقدینگی ضعیف + اشتهای ریسک پایین → احتمال گذار به risk-off.",
       confidence: Math.min(appetite.confidence, macro.confidence ?? appetite.confidence, liquidity.confidence ?? appetite.confidence),
@@ -437,19 +648,58 @@ function riskTransitionProxyAlert(): SmartAlert | null {
       affectedAssets: ["BTC", "ETH", "SOL", "Nasdaq"],
       titleFa: "نشانه‌های اولیه بازیابی ریسک‌پذیری دیده می‌شود",
       reasoningFa: "فشار کلان شدید نیست، نقدینگی proxy بهتر شده و اشتهای ریسک نهادی/شبه‌نهادی مثبت است. این خروجی هنوز مستقیم یا نهادی نیست.",
-      triggerCondition: "macro_pressure_proxy >= -5 + crypto_liquidity_proxy >= +25 + institutional_risk_appetite_proxy >= +20",
+      triggerCondition: "فشار کلان آرام‌تر شده و نقدینگی و اشتهای ریسک مشتق‌شده بهبود نشان می‌دهند.",
       evidence: [`macro ${macro.score}`, `liquidity ${liquidity.score}`, `risk appetite ${appetite.score}`],
       causalChain: "فشار کلان کمتر + نقدینگی بهتر + اشتهای ریسک مثبت → احتمال بهبود ریسک‌پذیری.",
       confidence: Math.min(appetite.confidence, macro.confidence ?? appetite.confidence, liquidity.confidence ?? appetite.confidence),
       importance: clampPercent(appetite.confidence + 2),
       invalidationCondition: "اگر DXY و US10Y دوباره بالا بروند یا stablecoin signal منفی شود، این سناریو لغو می‌شود.",
-      suggestedTraderAction: "این فقط تغییر زمینه است، نه سیگنال خرید؛ تأیید قیمت و حجم لازم است.",
+      suggestedTraderAction: "این فقط تغییر زمینه ریسک‌پذیری است؛ برای هر تصمیم اجرایی، تأیید قیمت و حجم لازم است.",
       whyItMattersFa: "بازیابی ریسک‌پذیری می‌تواند حساسیت SOL و ETH را بیشتر از BTC تغییر دهد.",
       monitoringFa: ["DXY", "US10Y", "stablecoin_liquidity_signal", "spot_volume_btc_24h"],
       dataQuality: "partial_live",
     });
   }
   return null;
+}
+
+function geopoliticalShockAlert(): SmartAlert | null {
+  const geopolitical = value("geopolitical_event_score");
+  const gold = value("gold_trend_24h");
+  const dxy = value("dxy_trend_24h");
+  const vix = value("vix_trend_24h");
+  const btc = value("btc_trend_24h");
+  if (geopolitical === null || gold === null || dxy === null || vix === null || btc === null) return null;
+
+  const defensiveConfirmation = (gold > 0.35 ? 1 : 0) + (dxy > 0.15 ? 1 : 0) + (vix > 2 ? 1 : 0) + (btc < -0.4 ? 1 : 0);
+  if (!(geopolitical >= 58 && defensiveConfirmation >= 2)) return null;
+
+  const confidence = confidenceFor(["geopolitical_event_score", "gold_trend_24h", "dxy_trend_24h", "vix_trend_24h", "btc_trend_24h"], 70, getIntelligenceReliabilityReportSync().confidenceCaps.alerts);
+  if (confidence === null) return null;
+  const correlationConfirmation = correlationDataForAlert(["BTC ↔ Gold", "BTC ↔ DXY"]);
+  const adjustedConfidence = clampPercent(confidence + Math.min(4, correlationConfirmation.confidenceBoost));
+
+  return alertBase({
+    id: "geopolitical-shock-cross-asset",
+    type: "Geopolitical Shock Alert",
+    priority: geopolitical >= 72 && vix > 4 ? "high" : "medium",
+    direction: "mixed",
+    timeframe: "24h",
+    affectedAssets: ["BTC", "ETH", "SOL", "USDT", "Gold", "DXY"],
+    titleFa: "ریسک ژئوپلیتیک روی نقشه دارایی‌ها فعال شده است",
+    reasoningFa: `امتیاز ریسک ژئوپلیتیک ${geopolitical.toFixed(0)}/100 است و هم‌زمان Gold ${gold.toFixed(2)}٪، DXY ${dxy.toFixed(2)}٪ و VIX ${vix.toFixed(2)}٪ تغییر کرده‌اند. این ترکیب معمولاً دارایی‌های دفاعی را تقویت و دارایی‌های پرریسک مثل SOL و ETH را حساس‌تر می‌کند؛ نقش BTC فقط وقتی شبیه hedge خوانده می‌شود که همبستگی BTC/Gold آن را تأیید کند.`,
+    triggerCondition: "geopolitical_event_score >= 58 + at least two defensive confirmations from Gold/DXY/VIX/BTC",
+    evidence: [`geopolitical score ${geopolitical.toFixed(0)}/100`, `Gold ${gold.toFixed(2)}٪`, `DXY ${dxy.toFixed(2)}٪`, `VIX ${vix.toFixed(2)}٪`, correlationConfirmation.explanation],
+    causalChain: `خبر/ریسک ژئوپلیتیک ↑ → تقاضای دفاعی برای Gold/DXY یا نوسان ↑ → کاهش اشتهای ریسک در ETH/SOL و ابهام در روایت BTC. ${correlationConfirmation.explanation}`,
+    confidence: adjustedConfidence,
+    importance: clampPercent(adjustedConfidence + geopolitical * 0.12 + defensiveConfirmation * 3),
+    invalidationCondition: "اگر امتیاز ژئوپلیتیک زیر ۵۰ برگردد، VIX آرام شود و Gold/DXY تأیید دفاعی ندهند، این هشدار از حالت فعال خارج می‌شود.",
+    suggestedTraderAction: "در این وضعیت BTC را خودکار safe haven فرض نکنید؛ رفتار آن را با Gold و DXY مقایسه کنید و روی دارایی‌های پرریسک‌تر حساسیت بیشتری لحاظ کنید.",
+    whyItMattersFa: "ریسک ژئوپلیتیک می‌تواند کانال انتقال بازار را از نقدینگی عادی به دفاعی/نوسانی تغییر دهد.",
+    monitoringFa: ["geopolitical_event_score", "gold_trend_24h", "dxy_trend_24h", "vix_trend_24h", "btc_trend_24h"],
+    dataUsed: [...alertDataFromKeys(["geopolitical_event_score", "gold_trend_24h", "dxy_trend_24h", "vix_trend_24h", "btc_trend_24h"]), ...correlationConfirmation.dataUsed],
+    dataQuality: "partial_live",
+  });
 }
 
 function macroPressureAlert(): SmartAlert | null {
@@ -463,6 +713,8 @@ function macroPressureAlert(): SmartAlert | null {
   const reliability = getIntelligenceReliabilityReportSync();
   const confidence = confidenceFor(keys, 82, reliability.confidenceCaps.alerts);
   if (confidence === null) return null;
+  const correlationConfirmation = correlationDataForAlert(["BTC ↔ DXY", "BTC ↔ Nasdaq"]);
+  const adjustedConfidence = clampPercent(confidence + correlationConfirmation.confidenceBoost);
   return alertBase({
     id: "macro-pressure-dxy-us10y-nasdaq",
     type: "Dollar Pressure Alert",
@@ -473,20 +725,22 @@ function macroPressureAlert(): SmartAlert | null {
     titleFa: "فشار کلان کوتاه‌مدت روی دارایی‌های پرریسک",
     reasoningFa: `DXY ${dxy.toFixed(2)}٪ و US10Y ${us10y.toFixed(2)} واحد بالا رفته‌اند، در حالی که Nasdaq ${nasdaq.toFixed(2)}٪ ضعیف شده است. این ترکیب معمولاً نقدینگی کوتاه‌مدت را از دارایی‌های پرریسک دور می‌کند و تا وقتی جریان‌های کریپتویی آن را خنثی نکنند، BTC، ETH و SOL زیر فشار می‌مانند.`,
     triggerCondition: "DXY > +0.15%, US10Y > +0.03, Nasdaq < -0.5%, BTC not confirming strength",
-    evidence: [`DXY ${dxy.toFixed(2)}٪`, `US10Y ${us10y.toFixed(2)}`, `Nasdaq ${nasdaq.toFixed(2)}٪`, `BTC ${btc.toFixed(2)}٪`],
-    causalChain: "DXY ↑ + US10Y ↑ + Nasdaq ↓ → فشار risk-off و نرخ تنزیل → کاهش اشتهای ریسک در BTC/ETH/SOL.",
-    confidence,
-    importance: clampPercent(confidence + 12),
+    evidence: [`DXY ${dxy.toFixed(2)}٪`, `US10Y ${us10y.toFixed(2)}`, `Nasdaq ${nasdaq.toFixed(2)}٪`, `BTC ${btc.toFixed(2)}٪`, correlationConfirmation.explanation],
+    causalChain: `DXY ↑ + US10Y ↑ + Nasdaq ↓ → فشار risk-off و نرخ تنزیل → کاهش اشتهای ریسک در BTC/ETH/SOL. ${correlationConfirmation.explanation}`,
+    confidence: adjustedConfidence,
+    importance: clampPercent(adjustedConfidence + 12),
     invalidationCondition: "این سناریو ضعیف می‌شود اگر DXY زیر تغییر ۷ روزه خود برگردد، US10Y در بروزرسانی بعدی آرام شود و BTC با حجم اسپات بالاتر از میانگین ۷ روزه مثبت بماند.",
     suggestedTraderAction: "خبر خنثی کریپتو را به‌تنهایی bullish تفسیر نکنید؛ در این وضعیت کانال دلار و نرخ، محرک غالب‌تر است.",
     whyItMattersFa: "هم‌زمانی دلار قوی، نرخ بالاتر و ضعف Nasdaq معمولاً هزینه نگهداری دارایی‌های پرریسک را بالا می‌برد.",
     monitoringFa: ["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "spot_volume_btc_24h", "cpi_latest", "fed_funds_rate", "unemployment_rate"],
+    dataUsed: [...alertDataFromKeys(["dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "btc_trend_24h", "cpi_latest", "fed_funds_rate", "unemployment_rate"]), ...correlationConfirmation.dataUsed],
     dataQuality: "partial_live",
   });
 }
 
 function liquidityPressureAlert(): SmartAlert | null {
   const liquidity = getLiquidityReport();
+  const stack = getLiquidityIntelligenceStack();
   const stablecoins = value("stablecoin_market_cap_7d");
   const dxy = value("dxy_trend_24h");
   const us10y = value("us10y_trend_24h");
@@ -495,6 +749,8 @@ function liquidityPressureAlert(): SmartAlert | null {
   if (!(liquidity.liquidityScoreSigned <= -25 && (stablecoins <= -0.35 || realSpotLiquidity <= 0) && (dxy > 0.15 || us10y > 0.03))) return null;
   const confidence = confidenceFor(["stablecoin_market_cap_7d", "dxy_trend_24h", "us10y_trend_24h", "spot_volume_btc_24h"], 76, getIntelligenceReliabilityReportSync().confidenceCaps.liquidity);
   if (confidence === null) return null;
+  const correlationConfirmation = correlationDataForAlert(["BTC ↔ Stablecoin Market Cap", "BTC ↔ DXY"]);
+  const adjustedConfidence = clampPercent(confidence + correlationConfirmation.confidenceBoost);
   return alertBase({
     id: "liquidity-pressure-spot-macro",
     type: "Liquidity Alert",
@@ -505,14 +761,18 @@ function liquidityPressureAlert(): SmartAlert | null {
     titleFa: "نقدینگی کریپتو زیر فشار ماکرو قرار گرفته است",
     reasoningFa: `امتیاز نقدینگی ${liquidity.liquidityScoreSigned}/100 است و رشد استیبل‌کوین‌ها ${stablecoins.toFixed(2)}٪ گزارش شده. وقتی نقدینگی واقعی اسپات ضعیف است و DXY یا US10Y فشار می‌آورند، رشد قیمت اگر رخ دهد بیشتر شکننده تلقی می‌شود.`,
     triggerCondition: "liquidityScore <= -25 + stablecoin/spot weakness + DXY or US10Y pressure",
-    evidence: [`liquidity ${liquidity.liquidityScoreSigned}/100`, `stablecoins ${stablecoins.toFixed(2)}٪`, `real spot ${realSpotLiquidity}/100`, `sustainability ${liquidity.liquiditySustainabilityScore}/100`],
-    causalChain: "نقدینگی اسپات ضعیف + فشار دلار/نرخ → کاهش پایداری حرکت → افزایش حساسیت BTC و SOL به برگشت سریع.",
-    confidence,
-    importance: clampPercent(confidence + Math.abs(liquidity.liquidityScoreSigned) * 0.35),
+    evidence: [`fusion liquidity ${stack.finalLiquidityScore ?? "ناموجود"}/100`, `legacy liquidity ${liquidity.liquidityScoreSigned}/100`, `stablecoins ${stablecoins.toFixed(2)}٪`, `real spot ${realSpotLiquidity}/100`, `تأییدکننده‌ها: ${stack.confirmingEngines.join("، ") || "ندارد"}`, `ناموجودها: ${stack.unavailableEngines.join("، ") || "ندارد"}`, correlationConfirmation.explanation],
+    causalChain: `نقدینگی اسپات ضعیف + فشار دلار/نرخ → کاهش پایداری حرکت → افزایش حساسیت BTC و SOL به برگشت سریع. ${correlationConfirmation.explanation} Fusion Engine: ${stack.narrativeFa}`,
+    confidence: Math.min(adjustedConfidence, stack.finalConfidence || adjustedConfidence),
+    importance: clampPercent(adjustedConfidence + Math.abs(liquidity.liquidityScoreSigned) * 0.35),
     invalidationCondition: "اگر stablecoin market cap بالای ۰٫۳۵٪ هفتگی رشد کند و DXY/US10Y هم‌زمان آرام شوند، سناریوی فشار نقدینگی ضعیف می‌شود.",
     suggestedTraderAction: "حرکت‌های مثبت کوتاه‌مدت را با پشتوانه نقدینگی بررسی کنید؛ بدون رشد استیبل‌کوین یا حجم اسپات، رالی می‌تواند کم‌عمق باشد.",
-    whyItMattersFa: "کریپتو برای تداوم حرکت به نقدینگی واقعی نیاز دارد؛ اهرم به‌تنهایی پایداری نمی‌سازد.",
+    whyItMattersFa: `کریپتو برای تداوم حرکت به نقدینگی واقعی نیاز دارد؛ اهرم به‌تنهایی پایداری نمی‌سازد. موتورهای مخالف/ضعیف: ${stack.disagreeingEngines.join("، ") || "ثبت نشده"}.`,
     monitoringFa: ["stablecoin_market_cap_7d", "spot_volume_btc_24h", "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows", "dxy_trend_24h"],
+    dataUsed: [
+      ...alertDataFromKeys(["stablecoin_market_cap_7d", "spot_volume_btc_24h", "btc_etf_flow_24h", "eth_etf_flow_24h", "exchange_inflows", "exchange_outflows", "dxy_trend_24h"]),
+      ...correlationConfirmation.dataUsed,
+    ],
     dataQuality: liquidity.dataQuality,
   });
 }
@@ -632,17 +892,18 @@ function regimeShiftAlert(): SmartAlert | null {
     confidence,
     importance: clampPercent(confidence + 10),
     invalidationCondition: regime.invalidationFa,
-    suggestedTraderAction: "نقشه اثر دارایی‌ها را بر اساس رژیم جدید بخوانید؛ این هشدار سیگنال ورود/خروج نیست.",
+    suggestedTraderAction: "نقشه اثر دارایی‌ها را بر اساس رژیم جدید بخوانید؛ این هشدار برای بازخوانی سناریو است و توصیه اجرایی ارائه نمی‌کند.",
     whyItMattersFa: "رژیم بازار مشخص می‌کند کدام محرک فعلاً وزن بیشتری دارد.",
     monitoringFa: regime.invalidationSignals ?? ["DXY", "US10Y", "stablecoins", "funding"],
     dataQuality: regime.engine.dataQuality,
   });
 }
 
-function dedupeAlerts(alerts: SmartAlert[]) {
+export function dedupeAlerts(alerts: SmartAlert[]) {
   const byCause = new Map<string, SmartAlert>();
-  for (const alert of alerts) {
-    const key = `${alert.type}:${alert.causalChain}`;
+  const now = Date.now();
+  for (const alert of alerts.filter((item) => Date.parse(item.expiresAt) > now)) {
+    const key = `${alert.type}:${alert.affectedAssets.join(",")}:${alert.triggerCondition ?? alert.causalChain}`;
     const existing = byCause.get(key);
     if (!existing || alert.importance > existing.importance) byCause.set(key, alert);
   }
@@ -658,6 +919,7 @@ export function generateSmartAlerts(): SmartAlert[] {
     stablecoinPressureAlert(),
     volatilityExpansionAlert(),
     riskTransitionProxyAlert(),
+    geopoliticalShockAlert(),
     macroPressureAlert(),
     liquidityPressureAlert(),
     leverageTrapAlert(),
@@ -666,7 +928,28 @@ export function generateSmartAlerts(): SmartAlert[] {
     regimeShiftAlert(),
   ].filter((alert): alert is SmartAlert => Boolean(alert));
 
-  return dedupeAlerts(alerts);
+  return applyAlertSuppression(validateAndCorrectAlerts(dedupeAlerts(alerts))).visible;
+}
+
+export function generateSmartAlertAudit() {
+  const alerts = [
+    dataQualityAlert(),
+    premiumMissingNotice(),
+    macroPressureProxyAlert(),
+    liquidityProxyAlert(),
+    stablecoinPressureAlert(),
+    volatilityExpansionAlert(),
+    riskTransitionProxyAlert(),
+    geopoliticalShockAlert(),
+    macroPressureAlert(),
+    liquidityPressureAlert(),
+    leverageTrapAlert(),
+    correlationBreakdownAlert(),
+    weakRallyAlert(),
+    regimeShiftAlert(),
+  ].filter((alert): alert is SmartAlert => Boolean(alert));
+
+  return applyAlertSuppression(validateAndCorrectAlerts(dedupeAlerts(alerts)));
 }
 
 export function filterAlerts(params: { asset?: AssetSymbol; minLevel?: AlertLevel } = {}) {

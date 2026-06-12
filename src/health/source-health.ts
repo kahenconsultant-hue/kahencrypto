@@ -1,4 +1,5 @@
 import { productionSources } from "@/collectors/registry";
+import { minutesSince, resolveSourceFreshness } from "@/health/freshnessResolver";
 import {
   getLatestRawEvents,
   getLatestRawEventsSync,
@@ -9,13 +10,6 @@ import {
   getLatestSourceHealthSync,
 } from "@/storage/ingestion-store";
 import type { CollectorOutput, IngestionFoundationStatus, IngestionLogEntry, IngestionStorageMode, SourceHealthSnapshot } from "@/types/ingestion";
-
-function minutesSince(timestamp: string | null | undefined) {
-  if (!timestamp) return null;
-  const parsed = Date.parse(timestamp);
-  if (!Number.isFinite(parsed)) return null;
-  return Math.max(0, Math.round((Date.now() - parsed) / 60_000));
-}
 
 export function healthFromCollectorOutput(output: CollectorOutput, previous?: SourceHealthSnapshot): SourceHealthSnapshot {
   const success = output.status === "success" || output.status === "degraded";
@@ -44,6 +38,15 @@ export function healthFromCollectorOutput(output: CollectorOutput, previous?: So
   };
 }
 
+function sourceIsOperationallyOnline(sourceId: string, health: SourceHealthSnapshot | undefined) {
+  const source = productionSources.find((item) => item.id === sourceId);
+  if (!source || !source.enabled || !health) return false;
+  const statusOk = health.status === "success" || health.status === "degraded";
+  if (!statusOk) return false;
+  const freshness = resolveSourceFreshness(source, health);
+  return freshness.state !== "stale" && freshness.state !== "obsolete";
+}
+
 export function buildIngestionLog(params: {
   runId: string;
   output: CollectorOutput;
@@ -59,7 +62,7 @@ export function buildIngestionLog(params: {
       params.output.status === "success"
         ? "Collector completed successfully."
         : params.output.status === "degraded"
-          ? "Collector completed with partial or low-quality data."
+          ? params.output.error ?? "Collector completed with partial or low-quality data."
           : params.output.status === "api_key_missing"
             ? "Collector disabled because a required API key is missing."
             : params.output.error ?? "Collector failed.",
@@ -79,10 +82,7 @@ export function getIngestionFoundationStatusSync(): IngestionFoundationStatus {
   const latestMetrics = getLatestRawMetricsSync(40);
   const byId = new Map(sourceHealth.map((source) => [source.sourceId, source]));
   const criticalSources = productionSources.filter((source) => source.tier === 1);
-  const criticalOnline = criticalSources.filter((source) => {
-    const health = byId.get(source.id);
-    return health?.status === "success" || health?.status === "degraded";
-  }).length;
+  const criticalOnline = criticalSources.filter((source) => sourceIsOperationallyOnline(source.id, byId.get(source.id))).length;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -106,10 +106,7 @@ export async function getIngestionFoundationStatus(): Promise<IngestionFoundatio
   const latestRun = await getLatestIngestionRun();
   const byId = new Map(sourceHealth.map((source) => [source.sourceId, source]));
   const criticalSources = productionSources.filter((source) => source.tier === 1);
-  const criticalOnline = criticalSources.filter((source) => {
-    const health = byId.get(source.id);
-    return health?.status === "success" || health?.status === "degraded";
-  }).length;
+  const criticalOnline = criticalSources.filter((source) => sourceIsOperationallyOnline(source.id, byId.get(source.id))).length;
 
   return {
     generatedAt: new Date().toISOString(),

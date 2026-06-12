@@ -25,7 +25,7 @@ export interface SourceDefinition {
   pollingIntervalSeconds: number;
   timeoutMs: number;
   priorityScore: number;
-  parser: "rss" | "html_listing" | "market_signals" | "exchange_market" | "json" | "none";
+  parser: "rss" | "html_listing" | "market_signals" | "exchange_market" | "farside_etf_flows" | "json" | "none";
   signalKeys?: string[];
   assetRelevance: Array<AssetSymbol | "VIX" | "Stablecoins">;
   requiredEnvKeys?: string[];
@@ -131,6 +131,19 @@ export interface RawMetricInput {
   rawPayload?: unknown;
 }
 
+export interface ETFDailyFlowInput {
+  id?: string;
+  asset: "BTC" | "ETH";
+  date: string;
+  provider: string;
+  netFlowUsdMillion: number | null;
+  source: string;
+  sourceUrl: string;
+  fetchedAt: string;
+  quality: DataQuality;
+  rawPayload?: unknown;
+}
+
 export interface SourceHealthSnapshot {
   sourceId: string;
   sourceName: string;
@@ -232,6 +245,55 @@ export interface RegimeInputSnapshotInput {
   generatedAt: string;
 }
 
+export type ForecastPredictionHorizon = "24H" | "7D" | "30D";
+export type ForecastDirection = "up" | "down" | "neutral" | "mixed";
+export type ForecastValidationResult = "accurate" | "acceptable" | "inconclusive" | "incorrect";
+
+export interface ForecastSnapshotInput {
+  id?: string;
+  snapshotId: string;
+  timestamp: string;
+  asset: string;
+  assetType: string;
+  predictionHorizon: ForecastPredictionHorizon;
+  predictedDirection: ForecastDirection;
+  predictedBias: string;
+  predictedConfidence: number | null;
+  riskScore: number | null;
+  liquidityScore: number | null;
+  regime: string;
+  mainDrivers: string[];
+  priceAtPrediction: number;
+  validationDate: string;
+  runId: string;
+  engineContributions?: Record<string, number | null>;
+}
+
+export interface ForecastValidationInput {
+  id?: string;
+  validationId: string;
+  snapshotId: string;
+  asset: string;
+  assetType: string;
+  predictionHorizon: ForecastPredictionHorizon;
+  predictionTimestamp: string;
+  validationDate: string;
+  validatedAt: string;
+  predictedDirection: ForecastDirection;
+  predictedConfidence: number | null;
+  priceAtPrediction: number;
+  actualPrice: number | null;
+  realizedChangePct: number | null;
+  realizedDirection: ForecastDirection | "insufficient_data";
+  result: ForecastValidationResult;
+  internalScore: number | null;
+  mainDrivers: string[];
+  engineContributions?: Record<string, number | null>;
+  outcomeSummaryFa: string;
+  explanationFa: string;
+  quality: "direct" | "insufficient_data";
+}
+
 export interface MarketSnapshotInput {
   runId?: string;
   snapshotKey: string;
@@ -288,6 +350,8 @@ export interface CollectorOutput {
   latencyMs: number;
   rawEvents: RawEventInput[];
   rawMetrics: RawMetricInput[];
+  etfDailyFlows?: ETFDailyFlowInput[];
+  diagnostics?: Record<string, unknown>;
   error?: string;
 }
 
@@ -299,6 +363,11 @@ export interface Collector {
 export interface IngestionJobResult {
   output: CollectorOutput;
   attempts: number;
+}
+
+export interface IngestionFoundationOptions {
+  sourceIds?: string[];
+  stageId?: string;
 }
 
 export interface IngestionRunSummary {
@@ -324,6 +393,51 @@ export interface IngestionRunSummary {
   logs: IngestionLogEntry[];
   deadLetterEntries: IngestionDeadLetterEntry[];
   writeReports?: StorageWriteReport[];
+  diagnostics?: Array<{
+    sourceId: string;
+    sourceName: string;
+    diagnostics: Record<string, unknown>;
+  }>;
+}
+
+export type SchedulerStageStatus = "success" | "success_with_limited_confidence" | "degraded" | "failed" | "skipped";
+
+export interface SchedulerStageRun {
+  stageId: string;
+  label: string;
+  status: SchedulerStageStatus;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  sourceIds: string[];
+  runId?: string;
+  pulledEvents: number;
+  pulledMetrics: number;
+  persistedEvents: number;
+  persistedMetrics: number;
+  failedSources: number;
+  degradedSources: number;
+  deadLetters: number;
+  retryCount: number;
+  details?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface SchedulerRunRecord {
+  runId: string;
+  trigger: "cron_http" | "manual_http" | "local_scheduler" | "ui_refresh_catchup" | "simulation";
+  status: SchedulerStageStatus;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  refreshEveryMinutes: number;
+  nextRunAt: string;
+  stages: SchedulerStageRun[];
+  failedStage: string | null;
+  retryCount: number;
+  successRate: number;
+  staleSignals: number;
+  rootCause?: string;
 }
 
 export interface IngestionFoundationStatus {

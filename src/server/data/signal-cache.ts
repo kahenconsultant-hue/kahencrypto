@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DataPoint, SignalGroup } from "@/lib/types";
 import { fetchCurrentDataPoints, requiredSignalKeys } from "@/server/data/adapters";
@@ -13,6 +13,7 @@ type CachePayload = {
 };
 
 let memoryPayload: CachePayload | null = null;
+let memoryPayloadMtimeMs = 0;
 
 function unavailablePoint(key: string, group: SignalGroup): DataPoint {
   return {
@@ -54,19 +55,26 @@ const groupByKey: Record<string, SignalGroup> = {
   gold_trend_24h: "macro",
   vix_trend_24h: "volatility",
   usdt_supply_7d: "stablecoins",
+  usdt_supply_30d: "stablecoins",
   usdc_supply_7d: "stablecoins",
+  usdc_supply_30d: "stablecoins",
   stablecoin_market_cap_7d: "liquidity",
   stablecoin_market_cap_30d: "liquidity",
   total_stablecoin_market_cap_usd: "stablecoins",
   stablecoin_dominance: "stablecoins",
   btc_etf_flow_24h: "flows",
+  btc_etf_flow_7d: "flows",
+  btc_etf_flow_30d: "flows",
   eth_etf_flow_24h: "flows",
+  eth_etf_flow_7d: "flows",
+  eth_etf_flow_30d: "flows",
   funding_btc: "leverage",
   funding_eth: "leverage",
   funding_sol: "leverage",
   open_interest_btc_24h: "leverage",
   open_interest_eth_24h: "leverage",
   open_interest_sol_24h: "leverage",
+  liquidation_btc_24h: "leverage",
   spot_volume_btc_24h: "liquidity",
   spot_volume_eth_24h: "liquidity",
   spot_volume_sol_24h: "liquidity",
@@ -86,9 +94,11 @@ export function buildUnavailableDataPoints(keys = requiredSignalKeys): DataPoint
 
 function readPayload(): CachePayload | null {
   try {
-    if (memoryPayload) return memoryPayload;
     if (!existsSync(SIGNAL_CACHE_PATH)) return null;
+    const fileMtimeMs = statSync(SIGNAL_CACHE_PATH).mtimeMs;
+    if (memoryPayload && memoryPayloadMtimeMs === fileMtimeMs) return memoryPayload;
     memoryPayload = JSON.parse(readFileSync(SIGNAL_CACHE_PATH, "utf8")) as CachePayload;
+    memoryPayloadMtimeMs = fileMtimeMs;
     return memoryPayload;
   } catch {
     return null;
@@ -134,10 +144,12 @@ export async function refreshSignalCache() {
   mkdirSync(dirname(SIGNAL_CACHE_PATH), { recursive: true });
   writeFileSync(SIGNAL_CACHE_PATH, JSON.stringify(payload, null, 2));
   memoryPayload = payload;
+  memoryPayloadMtimeMs = statSync(SIGNAL_CACHE_PATH).mtimeMs;
 
   const liveCount = points.filter((point) => point.quality === "live").length;
   const delayedCount = points.filter((point) => point.quality === "delayed").length;
   const unavailableCount = points.filter((point) => point.quality === "unavailable").length;
+  const proxyCount = points.filter((point) => point.quality === "proxy").length;
   const estimatedCount = points.filter((point) => point.quality === "estimated").length;
 
   return {
@@ -149,6 +161,7 @@ export async function refreshSignalCache() {
       total: points.length,
       live: liveCount,
       delayed: delayedCount,
+      proxy: proxyCount,
       unavailable: unavailableCount,
       estimated: estimatedCount,
     },

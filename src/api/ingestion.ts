@@ -4,6 +4,7 @@ import { exchangeMarketCollector } from "@/collectors/api/exchange-market-collec
 import { marketSignalCollector } from "@/collectors/api/market-signal-collector";
 import { tradingEconomicsCollector } from "@/collectors/api/trading-economics-collector";
 import { rssCollector } from "@/collectors/rss/rss-collector";
+import { farsideEtfCollector } from "@/collectors/scraper/farside-etf-collector";
 import { htmlListingCollector } from "@/collectors/scraper/html-listing-collector";
 import { dedupeRawEvents } from "@/processors/deduplication";
 import { auditRawEventDedup, normalizeAndClusterRawEvents } from "@/processors/event-normalization";
@@ -17,6 +18,7 @@ import {
   persistEventClusters,
   persistIngestionLogs,
   persistIngestionRun,
+  persistEtfDailyFlows,
   persistNormalizedEvents,
   persistReliabilitySnapshot,
   persistRawEvents,
@@ -27,11 +29,24 @@ import {
   persistTelemetryLogs,
   getLatestStorageWriteReportsSync,
 } from "@/storage/ingestion-store";
-import type { Collector, FreshnessStatus, IngestionDeadLetterEntry, IngestionRunSummary, IngestionStorageMode, MarketSnapshotInput, RawMetricInput, SourceDefinition, TelemetryLogInput } from "@/types/ingestion";
+import type {
+  Collector,
+  FreshnessStatus,
+  IngestionDeadLetterEntry,
+  IngestionFoundationOptions,
+  IngestionRunSummary,
+  IngestionStorageMode,
+  MarketSnapshotInput,
+  RawMetricInput,
+  SourceDefinition,
+  SourceHealthSnapshot,
+  TelemetryLogInput,
+} from "@/types/ingestion";
 
 function collectorFor(source: SourceDefinition): Collector {
   if (source.parser === "market_signals") return marketSignalCollector;
   if (source.parser === "exchange_market") return exchangeMarketCollector;
+  if (source.parser === "farside_etf_flows") return farsideEtfCollector;
   if (source.id === "trading-economics-api") return tradingEconomicsCollector;
   if (source.parser === "rss") return rssCollector;
   if (source.parser === "html_listing") return htmlListingCollector;
@@ -129,10 +144,16 @@ function buildMarketSnapshotsFromMetrics(runId: string, metrics: RawMetricInput[
   });
 }
 
-export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
+function mergeStageHealth(previousHealth: Map<string, SourceHealthSnapshot>, currentHealth: SourceHealthSnapshot[]) {
+  const currentIds = new Set(currentHealth.map((source) => source.sourceId));
+  return [...currentHealth, ...Array.from(previousHealth.values()).filter((source) => !currentIds.has(source.sourceId))];
+}
+
+export async function runIngestionFoundation(options: IngestionFoundationOptions = {}): Promise<IngestionRunSummary> {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
-  const sources = getEnabledSources();
+  const selectedSourceIds = new Set(options.sourceIds ?? []);
+  const sources = getEnabledSources().filter((source) => !selectedSourceIds.size || selectedSourceIds.has(source.id));
   const sourceDefinitionStore = await persistSourceDefinitions(getAllSources());
   const previousHealth = new Map(getLatestSourceHealthSync().map((source) => [source.sourceId, source]));
   const results = await Promise.all(
@@ -158,8 +179,10 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
   const rawEvents = dedupeRawEvents(results.flatMap((result) => result.output.rawEvents));
   const dedupAudit = auditRawEventDedup(results.flatMap((result) => result.output.rawEvents));
   const rawMetrics = results.flatMap((result) => result.output.rawMetrics);
+  const etfDailyFlows = results.flatMap((result) => result.output.etfDailyFlows ?? []);
   const eventStore = await persistRawEvents(rawEvents);
   const metricStore = await persistRawMetrics(rawMetrics);
+  const etfDailyFlowStore = await persistEtfDailyFlows(etfDailyFlows);
   const observedAt = new Date().toISOString();
   const marketSnapshots = buildMarketSnapshotsFromMetrics(runId, rawMetrics, observedAt);
   const marketSnapshotStore = await persistMarketSnapshots(marketSnapshots);
@@ -167,9 +190,11 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
   const normalization = normalizeAndClusterRawEvents(recentRawEvents);
   const normalizedStore = await persistNormalizedEvents(normalization.normalizedEvents);
   const clusterStore = await persistEventClusters(normalization.eventClusters);
-  const storageMode: IngestionStorageMode = eventStore.storageMode === "supabase" || metricStore.storageMode === "supabase" ? "supabase" : "local_fallback";
+  const storageMode: IngestionStorageMode =
+    eventStore.storageMode === "supabase" || metricStore.storageMode === "supabase" || etfDailyFlowStore.storageMode === "supabase" ? "supabase" : "local_fallback";
   const sourceHealth = results.map((result) => healthFromCollectorOutput(result.output, previousHealth.get(result.output.source.id)));
-  const healthStore = await persistSourceHealth(sourceHealth);
+  const healthToPersist = selectedSourceIds.size ? mergeStageHealth(previousHealth, sourceHealth) : sourceHealth;
+  const healthStore = await persistSourceHealth(healthToPersist);
   const logs = results.map((result) =>
     buildIngestionLog({
       runId,
@@ -194,9 +219,17 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
         requiredEnvKeys: result.output.source.requiredEnvKeys ?? [],
         rawEvents: result.output.rawEvents.length,
         rawMetrics: result.output.rawMetrics.length,
+        etfDailyFlows: result.output.etfDailyFlows?.length ?? 0,
       },
       failedAt: result.output.fetchedAt,
       nextRetryAt: sourceHealth.find((source) => source.sourceId === result.output.source.id)?.nextRetryAt ?? null,
+    }));
+  const diagnostics = results
+    .filter((result) => result.output.diagnostics)
+    .map((result) => ({
+      sourceId: result.output.source.id,
+      sourceName: result.output.source.name,
+      diagnostics: result.output.diagnostics ?? {},
     }));
   const logStore = await persistIngestionLogs(logs);
   const deadLetterStore = await persistDeadLetters(deadLetterEntries);
@@ -204,6 +237,7 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
   const finalStorageMode: IngestionStorageMode =
     eventStore.storageMode === "supabase" ||
     metricStore.storageMode === "supabase" ||
+    etfDailyFlowStore.storageMode === "supabase" ||
     sourceDefinitionStore === "supabase" ||
     healthStore === "supabase" ||
     logStore === "supabase" ||
@@ -236,6 +270,7 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
     sourceHealth,
     logs,
     deadLetterEntries,
+    diagnostics,
   };
   await persistIngestionRun(summary);
   const envReport = await getEnvironmentValidationReport();
@@ -249,6 +284,7 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
       durationMs: Math.max(0, Date.parse(summary.finishedAt) - Date.parse(summary.startedAt)),
       tableName: "ingestion_runs",
       payload: {
+        stageId: options.stageId ?? "full",
         storageMode: summary.storageMode,
         rawEventsInserted: summary.rawEventsInserted,
         rawEventsUpdated: summary.rawEventsUpdated,
@@ -257,6 +293,7 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
         marketSnapshotsCreated: marketSnapshotStore.persisted,
         deadLetters: summary.deadLetters,
         failedSources: summary.failedSources,
+        diagnostics,
       },
       observedAt: summary.finishedAt,
     },
@@ -274,6 +311,7 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
       successfulSources: summary.successfulSources,
       degradedSources: summary.degradedSources,
       failedSources: summary.failedSources,
+      stageId: options.stageId ?? "full",
       pulledEvents: summary.pulledEvents,
       pulledMetrics: summary.pulledMetrics,
       rawEventsInserted: summary.rawEventsInserted,
@@ -281,6 +319,7 @@ export async function runIngestionFoundation(): Promise<IngestionRunSummary> {
       normalizedEventsCreated: summary.normalizedEventsCreated,
       eventClustersCreated: summary.eventClustersCreated,
       marketSnapshotsCreated: marketSnapshotStore.persisted,
+      etfDailyFlowsCreated: etfDailyFlowStore.persisted,
       telemetryLogsCreated: telemetryStore === "supabase" ? telemetryLogs.length : 0,
       duplicatesDetected: summary.duplicatesDetected,
       dedupAudit,

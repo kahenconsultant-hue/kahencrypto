@@ -4,7 +4,7 @@
   "private": true,
   "description": "C.M.I.P data-driven crypto macro intelligence platform.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/clean-next-dev-cache.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "ingest:once": "node scripts/local-ingestion-scheduler.mjs --once",

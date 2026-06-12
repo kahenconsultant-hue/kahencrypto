@@ -68,6 +68,15 @@ const riskSignals = [
   "geopolitical_event_score",
 ];
 
+const RISK_REPORT_CACHE_TTL_MS = 30_000;
+
+let riskReportCache:
+  | {
+      expiresAt: number;
+      value: BasicRiskEngineOutput;
+    }
+  | null = null;
+
 function usableSignal(signal: NormalizedSignal | undefined) {
   return Boolean(signal && signal.value !== null && signal.quality !== "unavailable" && signal.quality !== "estimated");
 }
@@ -97,6 +106,65 @@ function riskLevel(score: number | null): RiskLevel {
   return "low";
 }
 
+export const classifyRiskLevel = riskLevel;
+
+function scoreToHealth(score: number | null) {
+  return score === null ? null : clampPercent(50 + score / 2);
+}
+
+function etfHealthFromSignals(snapshot: ReturnType<typeof getSignalSnapshot>) {
+  const signal = snapshot.byKey.btc_etf_flow_7d ?? snapshot.byKey.btc_etf_flow_24h;
+  return scoreToHealth(signalScore(signal));
+}
+
+function stablecoinHealthFromSignals(snapshot: ReturnType<typeof getSignalSnapshot>) {
+  const signal = snapshot.byKey.stablecoin_market_cap_7d ?? snapshot.byKey.usdt_supply_7d;
+  return scoreToHealth(signalScore(signal));
+}
+
+export function applyRiskFloors(params: {
+  riskScore: number | null;
+  liquidityScore: number | null;
+  etfScore: number | null;
+  stablecoinScore: number | null;
+}) {
+  if (params.riskScore === null) {
+    return {
+      score: null,
+      appliedFloor: null,
+      reasons: [] as string[],
+    };
+  }
+
+  let floor: number | null = null;
+  const reasons: string[] = [];
+  if (params.liquidityScore !== null && params.liquidityScore < 25) {
+    floor = Math.max(floor ?? 0, 40);
+    reasons.push("Liquidity Score زیر ۲۵ است؛ ریسک نمی‌تواند Low بماند.");
+  }
+  if (params.liquidityScore !== null && params.liquidityScore < 25 && params.etfScore !== null && params.etfScore < 30) {
+    floor = Math.max(floor ?? 0, 45);
+    reasons.push("Liquidity زیر ۲۵ و ETF Score زیر ۳۰ است؛ کف ریسک به ۴۵ افزایش یافت.");
+  }
+  if (
+    params.liquidityScore !== null &&
+    params.liquidityScore < 25 &&
+    params.etfScore !== null &&
+    params.etfScore < 30 &&
+    params.stablecoinScore !== null &&
+    params.stablecoinScore < 40
+  ) {
+    floor = Math.max(floor ?? 0, 50);
+    reasons.push("Liquidity، ETF و Stablecoin هم‌زمان ضعیف‌اند؛ کف ریسک به ۵۰ افزایش یافت.");
+  }
+
+  return {
+    score: floor === null ? params.riskScore : clampPercent(Math.max(params.riskScore, floor)),
+    appliedFloor: floor,
+    reasons,
+  };
+}
+
 function uncertaintyLevel(confidence: ConfidenceResult, pressureBreakdown: RiskPressureBreakdown): UncertaintyLevel {
   if (!confidence.available || confidence.score === null) return "unavailable";
   const availablePressures = Object.values(pressureBreakdown).filter((value): value is number => typeof value === "number");
@@ -105,6 +173,15 @@ function uncertaintyLevel(confidence: ConfidenceResult, pressureBreakdown: RiskP
   if (confidence.score < 40 || spread < 12) return "high";
   if (confidence.score < 58 || spread < 24) return "moderate";
   return "low";
+}
+
+function applyMissingInputUncertaintyFloor(level: UncertaintyLevel, snapshot: ReturnType<typeof getSignalSnapshot>): UncertaintyLevel {
+  if (level === "unavailable") return level;
+  const exchangeFlowMissing =
+    !usableSignal(snapshot.byKey.exchange_inflows) || !usableSignal(snapshot.byKey.exchange_outflows);
+  if (!exchangeFlowMissing) return level;
+  if (level === "low") return "moderate";
+  return level;
 }
 
 function dominantPressure(pressureBreakdown: RiskPressureBreakdown): DominantPressure {
@@ -221,8 +298,11 @@ function assetRiskFromImpact(asset: IntelligenceAssetSymbol, bias: DirectionalBi
 }
 
 function buildDrivers(pressure: RiskPressureBreakdown, dominant: DominantPressure, riskScore: number | null) {
+  const snapshot = getSignalSnapshot();
   const liquidity = getLiquidityReport();
   const regime = getMarketRegimeReport();
+  const exchangeFlowMissing =
+    !usableSignal(snapshot.byKey.exchange_inflows) || !usableSignal(snapshot.byKey.exchange_outflows);
   const drivers = [
     riskScore === null ? "داده کافی برای محاسبه ریسک پایه وجود ندارد." : `ریسک کلی ${riskScore}/100 است و فشار غالب ${pressureLabelFa(dominant)} تشخیص داده شده است.`,
     `رژیم بازار: ${regime.regimeLabel ?? regime.active} با اطمینان ${regime.confidenceDetail?.available ? `${regime.confidence}%` : "ناموجود"}.`,
@@ -230,6 +310,7 @@ function buildDrivers(pressure: RiskPressureBreakdown, dominant: DominantPressur
       ? "لایه نقدینگی ناموجود است و ریسک نقدینگی به‌صورت جهت‌دار محاسبه نمی‌شود."
       : `نقدینگی: امتیاز ${liquidity.liquidityScoreSigned}/100، پایداری ${liquidity.liquiditySustainabilityScore ?? "ناموجود"}/100 و اهرم ${liquidity.leverageStress}/100.`,
     pressure.macro !== null ? `فشار کلان ${pressure.macro}/100 است؛ این بخش از DXY، US10Y، Nasdaq و VIX ساخته می‌شود.` : "فشار کلان ناموجود است.",
+    exchangeFlowMissing ? "Exchange inflow/outflow ناموجود است؛ این نبود داده uncertainty را بالا می‌برد و برای کاهش ریسک استفاده نمی‌شود." : "",
     pressure.dataQuality !== null && pressure.dataQuality > 30 ? `ریسک کیفیت داده ${pressure.dataQuality}/100 است؛ confidence باید محافظه‌کارانه خوانده شود.` : "",
   ];
   return drivers.filter(Boolean);
@@ -239,7 +320,17 @@ export function calculateBasicRiskEngine(): BasicRiskEngineOutput {
   const snapshot = getSignalSnapshot();
   const selectedSignals = riskSignals.map((key) => snapshot.byKey[key]).filter((signal): signal is NormalizedSignal => Boolean(signal));
   const pressureBreakdown = buildPressureBreakdown();
-  const score = calculateRiskScore(pressureBreakdown);
+  const rawScore = calculateRiskScore(pressureBreakdown);
+  const liquidity = getLiquidityReport();
+  const etfScore = etfHealthFromSignals(snapshot);
+  const stablecoinScore = stablecoinHealthFromSignals(snapshot);
+  const riskFloor = applyRiskFloors({
+    riskScore: rawScore,
+    liquidityScore: liquidity.liquidityHealthScore ?? liquidity.liquidityScore ?? null,
+    etfScore,
+    stablecoinScore,
+  });
+  const score = riskFloor.score;
   const dominant = dominantPressure(pressureBreakdown);
   const validation = validationReason(selectedSignals, ["btc_trend_24h", "dxy_trend_24h", "us10y_trend_24h", "stablecoin_market_cap_7d"]);
   const correlations = getDynamicCorrelationReport();
@@ -256,7 +347,7 @@ export function calculateBasicRiskEngine(): BasicRiskEngineOutput {
   });
   const usableScore = validation && !confidence.available ? null : score;
   const level = riskLevel(usableScore);
-  const uncertainty = uncertaintyLevel(confidence, pressureBreakdown);
+  const uncertainty = applyMissingInputUncertaintyFloor(uncertaintyLevel(confidence, pressureBreakdown), snapshot);
   const assetRisks = getAssetImpactProfiles().map((profile) =>
     assetRiskFromImpact(profile.asset, profile.directionalBias, profile.impactScore, profile.confidence.score, dominant),
   );
@@ -292,11 +383,21 @@ export function calculateBasicRiskEngine(): BasicRiskEngineOutput {
     explanationFa:
       usableScore === null
         ? `داده کافی برای محاسبه ریسک پایه وجود ندارد. ${validation ?? confidence.explanation}`
-        : `ریسک پایه C.M.I.P در سطح «${level}» قرار دارد. فشار غالب ${pressureLabelFa(dominant)} است و سطح عدم‌قطعیت «${uncertainty}» محاسبه شده؛ این خروجی سناریومحور است و سیگنال خرید/فروش نیست.`,
+        : `ریسک پایه C.M.I.P در سطح «${level}» قرار دارد. فشار غالب ${pressureLabelFa(dominant)} است و سطح عدم‌قطعیت «${uncertainty}» محاسبه شده.${riskFloor.reasons.length ? ` ${riskFloor.reasons.join(" ")}` : ""} این خروجی سناریومحور است و سیگنال خرید/فروش نیست.`,
     lastUpdatedAt: getEngineLastUpdatedAt(),
   };
 }
 
 export function getRiskReport() {
-  return calculateBasicRiskEngine();
+  const now = Date.now();
+  if (riskReportCache && riskReportCache.expiresAt > now) {
+    return riskReportCache.value;
+  }
+
+  const value = calculateBasicRiskEngine();
+  riskReportCache = {
+    expiresAt: now + RISK_REPORT_CACHE_TTL_MS,
+    value,
+  };
+  return value;
 }

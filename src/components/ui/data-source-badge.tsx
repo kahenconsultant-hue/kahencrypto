@@ -7,7 +7,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export function DataSourceBadge({ status }: { status: DataSourceStatus }) {
-  const variant = status === "live" ? "success" : status === "partial_live" || status === "delayed" ? "warning" : status === "unavailable" ? "danger" : "muted";
+  const variant = status === "live" ? "success" : status === "partial_live" || status === "delayed" || status === "proxy" ? "warning" : status === "unavailable" ? "danger" : "muted";
 
   return (
     <Badge variant={variant} title={dataSourceStatusDescriptions[status]} className="gap-1">

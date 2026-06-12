@@ -2,12 +2,12 @@ import { type NextRequest } from "next/server";
 import { apiJson } from "@/lib/api-response";
 import { moduleDataSourceStatus } from "@/lib/data-source-status";
 import { REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
-import { runDerivedSignalProcessing } from "@/server/analytics/derived-signal-engine";
-import { refreshSignalCache } from "@/server/data/signal-cache";
-import { runProductionIngestion } from "@/server/ingestion/pipeline";
+import { runStagedScheduledIngestion } from "@/server/ingestion/scheduler";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 300;
+export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const secret = process.env.INGESTION_CRON_SECRET ?? process.env.CRON_SECRET;
@@ -17,59 +17,62 @@ export async function GET(request: NextRequest) {
     return apiJson({ error: "unauthorized" }, { status: 401 });
   }
 
-  const ingestion = await runProductionIngestion();
-  const refresh = await refreshSignalCache();
-  const derived = await runDerivedSignalProcessing(ingestion.runId);
+  const sync = request.nextUrl.searchParams.get("sync") === "1";
+
+  if (!sync) {
+    const acceptedAt = new Date().toISOString();
+    const scheduleBackgroundRun = () => {
+      setTimeout(() => {
+        void runStagedScheduledIngestion("cron_http").catch((error) => {
+          console.error("[cmip-cron] staged ingestion failed", error);
+        });
+      }, 0);
+    };
+    scheduleBackgroundRun();
+    return apiJson(
+      {
+        generatedAt: acceptedAt,
+        dataSourceStatus: moduleDataSourceStatus.ingestionHealth,
+        mode: "staged_scheduled_ingestion",
+        accepted: true,
+        refreshEveryMinutes: REFRESH_INTERVAL_MINUTES,
+        message: "Cron ingestion accepted. Stage-isolated execution continues in the scheduler background task.",
+        rootCauseFix:
+          "cron route no longer keeps the HTTP response open while ingestion, Supabase persistence and fusion stages run. Use ?sync=1 only for local diagnostics.",
+      },
+      { status: 202 },
+    );
+  }
+
+  const schedulerRun = await runStagedScheduledIngestion("manual_http");
 
   return apiJson({
     generatedAt: new Date().toISOString(),
     dataSourceStatus: moduleDataSourceStatus.ingestionHealth,
-    mode: "scheduled_ingestion_foundation",
+    mode: "staged_scheduled_ingestion",
     refreshEveryMinutes: REFRESH_INTERVAL_MINUTES,
-    ingestion,
-    cacheLayer: {
-      provider: "C.M.I.P signal cache",
-      ttlSeconds: REFRESH_INTERVAL_MINUTES * 60,
-      strategy: "adapterهای واقعی ابتدا snapshot می‌سازند؛ موتورهای کمی فقط از همین snapshot محاسبه می‌کنند.",
-      refresh,
-    },
-    derivedSignals: {
-      generated: derived.derivedSignals.length,
-      persisted: derived.persisted.derivedSignals,
-      liquidityProxyScore: derived.liquidity.cryptoLiquidityProxyScore,
-      regimeProxy: derived.regimeInput.regime,
-    },
-    sourceRefreshJobs: [
-      "binance_spot_and_futures_public",
-      "yahoo_finance_macro_delayed",
-      "defillama_stablecoins",
-      "official_rss_macro_and_geopolitics",
-      "configured_etf_flow_feed",
-      "configured_onchain_reserves_feed",
-    ],
+    rootCauseFix:
+      "cron route is now stage-isolated and returns a compact scheduler summary instead of a large monolithic ingestion/cache/derived payload.",
+    schedulerRun,
     result: {
-      pulledEvents: ingestion.pulledEvents,
-      pulledMetrics: ingestion.pulledMetrics,
-      persistedEvents: ingestion.persistedEvents,
-      persistedMetrics: ingestion.persistedMetrics,
-      pulledSignals: refresh.counts.total,
-      derivedSignals: derived.derivedSignals.length,
-      liquidityProxyGenerated: derived.liquidity.cryptoLiquidityProxyScore !== null,
-      regimeProxyGenerated: derived.regimeInput.regime !== "insufficient_core_data",
-      liveSignals: refresh.counts.live,
-      delayedSignals: refresh.counts.delayed,
-      unavailableSignals: refresh.counts.unavailable,
-      estimatedSignals: refresh.counts.estimated,
-      failed: ingestion.failedSources + refresh.failedSources.length,
-      deadLetters: ingestion.deadLetters,
-      sourceHealth: ingestion.sourceHealth,
+      status: schedulerRun.status,
+      stages: schedulerRun.stages.map((stage) => ({
+        stageId: stage.stageId,
+        status: stage.status,
+        durationMs: stage.durationMs,
+        pulledEvents: stage.pulledEvents,
+        pulledMetrics: stage.pulledMetrics,
+        failedSources: stage.failedSources,
+        degradedSources: stage.degradedSources,
+        deadLetters: stage.deadLetters,
+        error: stage.error ?? null,
+      })),
+      successRate: schedulerRun.successRate,
+      failedStage: schedulerRun.failedStage,
+      retryCount: schedulerRun.retryCount,
+      staleSignals: schedulerRun.staleSignals,
+      nextRunAt: schedulerRun.nextRunAt,
     },
-    nextSteps: [
-      "ذخیره raw event و raw metric در Supabase یا local fallback",
-      "ثبت source health و ingestion log برای هر منبع",
-      "نمایش ناموجود برای منابعی که اتصال معتبر ندارند",
-      "جلوگیری از تولید تحلیل، هشدار یا امتیاز ساختگی در نبود داده",
-    ],
   });
 }
 

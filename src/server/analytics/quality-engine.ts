@@ -55,6 +55,7 @@ export function sourceReliabilityScore(sourceType: SourceType | undefined, sourc
   if (normalized.includes("fred") || normalized.includes("federal reserve") || normalized.includes("treasury") || normalized.includes("cme") || normalized.includes("nasdaq") || normalized.includes("issuer")) return Math.max(reliability, 95);
   if (normalized.includes("reuters") || normalized.includes("bloomberg") || normalized.includes("financial times") || normalized.includes("wall street journal") || normalized.includes("cnbc")) return Math.max(reliability, 85);
   if (normalized.includes("binance") || normalized.includes("defillama") || normalized.includes("glassnode") || normalized.includes("cryptoquant") || normalized.includes("coinglass")) return Math.max(reliability, 80);
+  if (normalized.includes("coinank") || normalized.includes("macromicro")) return Math.min(Math.max(reliability, 50), 64);
   if (sourceType === "RSS" || normalized.includes("rss")) return Math.max(reliability, 45);
   if (sourceType === "manual") return Math.min(reliability, 45);
   return reliability;
@@ -92,9 +93,10 @@ export function calculateDataQualityScore(params: {
   const samples = availableSignals.length ? availableSignals.reduce((sum, signal) => sum + sampleSizeScore(signal.sampleSize), 0) / availableSignals.length : 0;
   const crossSourceConfirmation = params.crossSourceConfirmation ?? Math.min(100, availableGroups(params.signals as NormalizedSignal[]).length * 16);
   const delayPenalty = availableSignals.reduce((sum, signal) => sum + Math.max(0, minutesSince(signal.timestamp) - 45) * 0.08, 0);
+  const proxyPenalty = availableSignals.filter((signal) => signal.quality === "proxy").length * 4;
   const errorPenalty = params.signals.filter((signal) => signal.error || signal.quality === "unavailable").length * 5;
 
-  return clampPercent(availabilityScore * 0.3 + freshness * 0.25 + reliability * 0.2 + samples * 0.15 + crossSourceConfirmation * 0.1 - delayPenalty - errorPenalty);
+  return clampPercent(availabilityScore * 0.3 + freshness * 0.25 + reliability * 0.2 + samples * 0.15 + crossSourceConfirmation * 0.1 - delayPenalty - proxyPenalty - errorPenalty);
 }
 
 export function dataQualityLabel(score: number): DataQuality {

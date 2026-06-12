@@ -36,7 +36,7 @@ export type MarketRegime =
 export type TimeHorizon = "short" | "medium" | "long";
 
 export type SourceType = "API" | "RSS" | "crawler" | "manual" | "premium";
-export type DataSourceStatus = "live" | "partial_live" | "delayed" | "estimated" | "unavailable";
+export type DataSourceStatus = "live" | "partial_live" | "delayed" | "proxy" | "estimated" | "unavailable";
 export type DataFreshnessStatus = "live" | "fresh" | "delayed" | "stale" | "invalid_stale_critical";
 export type CorrelationState = "strongly_correlated" | "weakening" | "decoupling" | "inverse_correlation" | "unstable";
 export type LiquidityState = "expansion" | "contraction" | "overheating" | "fragile" | "neutral";
@@ -48,6 +48,7 @@ export type LiquidityV2State =
   | "weak_participation_rally"
   | "defensive_positioning"
   | "neutral_mixed";
+export type LiquidityRegimeV2 = "supportive" | "tightening" | "stressed" | "fragmented" | "insufficient_data";
 export type DirectionalBias = "bullish" | "bearish" | "neutral" | "mixed";
 export type RegimeNuance = "strong" | "moderate" | "fragile" | "conflicting";
 export type IntelligenceTimeframe = "intraday" | "24h" | "3d" | "7d";
@@ -92,6 +93,18 @@ export type EngineRegimeState =
   | "distribution"
   | "euphoric"
   | "defensive";
+
+export type ProbabilisticRegimeState =
+  | "risk_on"
+  | "risk_off"
+  | "neutral"
+  | "panic"
+  | "squeeze"
+  | "expansion"
+  | "contraction"
+  | "speculative_mania"
+  | "deleveraging"
+  | "unstable";
 
 export type MacroRegimeLabel =
   | "Risk-On Expansion"
@@ -285,8 +298,28 @@ export interface SmartAlert {
   }>;
   missingCriticalInputs?: string[];
   confidenceCapReason?: string | null;
+  dataCoveragePercent?: number;
+  supportingSignals?: string[];
+  missingSignals?: string[];
+  freshnessPenalty?: number;
+  crossConfirmationCount?: number;
+  alertQualityScore?: number;
+  alertQualityLabel?: "HIGH" | "MEDIUM" | "LOW" | "REJECTED";
+  alertQualityBreakdown?: {
+    signalQuality: number;
+    dataCoverage: number;
+    sourceReliability: number;
+    freshness: number;
+  };
+  status?: "active" | "suppressed";
+  suppressionReason?: string;
   dataQuality: DataSourceStatus;
   createdAt: string;
+  expiresAt: string;
+  ttlMinutes: number;
+  indicatorCount: number;
+  severityReasonFa: string;
+  isOperational?: boolean;
   scenarioFa: string;
 }
 
@@ -294,7 +327,7 @@ export interface CorrelationPair {
   id: string;
   pair: string;
   left: AssetSymbol;
-  right: AssetSymbol | "VIX" | "Stablecoin dominance" | "Liquidity" | "ETF flows" | "Tech Beta" | "Retail Risk Appetite";
+  right: AssetSymbol | "VIX" | "Stablecoin dominance" | "Stablecoin Market Cap" | "Liquidity" | "ETF flows" | "Tech Beta" | "Retail Risk Appetite";
   rolling24h?: number | null;
   rolling7d: number | null;
   rolling30d: number | null;
@@ -302,17 +335,44 @@ export interface CorrelationPair {
   change7d: number | null;
   sampleSize?: number;
   sampleWarning?: string;
+  windowIntegrity?: Record<"24h" | "7d" | "30d" | "90d", {
+    window: "24h" | "7d" | "30d" | "90d";
+    frequency: "hourly" | "daily";
+    observationsUsed: number;
+    missingObservations: number;
+    minimumObservations: number;
+    lastAlignedTimestamp: string | null;
+    sourcePair: string;
+    status: "available" | "insufficient_data" | "missing_series";
+  }>;
   regimeState: CorrelationState;
   interpretationFa: string;
   regimeImpact?: string;
+  volatilityAdjusted30D?: number | null;
+  beta30D?: number | null;
+  stabilityScore?: number | null;
+  structuralBreak?: boolean;
+  regimeChannel?: string;
+  narrativeAllowed?: boolean;
+  statisticalStrength?: "insufficient" | "weak" | "moderate" | "strong";
+  leadLag?: {
+    leader: "left" | "right" | "none" | "insufficient";
+    lag: "1h" | "1d" | null;
+    correlation: number | null;
+    confidence: number | null;
+    interpretationFa: string;
+  };
   confidence?: number | null;
+  coveragePercent?: number;
   dataQuality?: DataSourceStatus;
+  status?: "available" | "insufficient_data" | "missing_series";
+  source?: string;
 }
 
 export interface CorrelationSignal {
   assetPair: string;
-  left: AssetSymbol | "VIX" | "Stablecoin dominance";
-  right: AssetSymbol | "VIX" | "Stablecoin dominance" | "Liquidity" | "ETF flows" | "Tech Beta" | "Retail Risk Appetite";
+  left: AssetSymbol | "VIX" | "Stablecoin dominance" | "Stablecoin Market Cap";
+  right: AssetSymbol | "VIX" | "Stablecoin dominance" | "Stablecoin Market Cap" | "Liquidity" | "ETF flows" | "Tech Beta" | "Retail Risk Appetite";
   correlation24H: number | null;
   previous24H: number | null;
   correlation7D: number | null;
@@ -321,11 +381,38 @@ export interface CorrelationSignal {
   previous90D: number | null;
   correlationChange: number | null;
   sampleSizes?: Record<"24h" | "7d" | "30d" | "90d", number>;
+  windowIntegrity?: Record<"24h" | "7d" | "30d" | "90d", {
+    window: "24h" | "7d" | "30d" | "90d";
+    frequency: "hourly" | "daily";
+    observationsUsed: number;
+    missingObservations: number;
+    minimumObservations: number;
+    lastAlignedTimestamp: string | null;
+    sourcePair: string;
+    status: "available" | "insufficient_data" | "missing_series";
+  }>;
   state: CorrelationState;
+  volatilityAdjusted30D: number | null;
+  beta30D: number | null;
+  stabilityScore: number | null;
+  structuralBreak: boolean;
+  regimeChannel: string;
+  narrativeAllowed: boolean;
+  statisticalStrength: "insufficient" | "weak" | "moderate" | "strong";
+  leadLag: {
+    leader: "left" | "right" | "none" | "insufficient";
+    lag: "1h" | "1d" | null;
+    correlation: number | null;
+    confidence: number | null;
+    interpretationFa: string;
+  };
   confidence: number | null;
+  coveragePercent?: number;
   interpretation: string;
   regimeImpact: string;
   dataQuality: DataSourceStatus;
+  status?: "available" | "insufficient_data" | "missing_series";
+  source?: string;
   lastUpdatedAt: string;
 }
 
@@ -443,11 +530,86 @@ export interface CausalInsight {
   traderInterpretation: string;
 }
 
+export type CausalNodeType = "macro" | "liquidity" | "flow" | "leverage" | "risk" | "sentiment" | "asset" | "regime";
+export type CausalRelationship = "supports" | "pressures" | "amplifies" | "dampens" | "uncertain";
+
+export interface CausalMarketNode {
+  id: string;
+  labelFa: string;
+  type: CausalNodeType;
+  status: DataSourceStatus;
+  score: number | null;
+}
+
+export interface CausalMarketEdge {
+  id: string;
+  source: string;
+  target: string;
+  channel: TransmissionChannel;
+  relationship: CausalRelationship;
+  directionalBias: DirectionalBias;
+  probability: number | null;
+  confidence: number | null;
+  strength: "weak" | "moderate" | "strong" | "insufficient";
+  status: "active" | "suppressed" | "insufficient_data";
+  dataQuality: DataSourceStatus;
+  sourceSignals: string[];
+  missingInputs: string[];
+  regimeSensitivity: string[];
+  explanationFa: string;
+}
+
+export interface CausalMarketPath {
+  id: string;
+  chain: string[];
+  affectedAssets: AssetSymbol[];
+  probability: number | null;
+  confidence: number | null;
+  directionalBias: DirectionalBias;
+  narrativeFa: string;
+  invalidationFa: string;
+  evidence: string[];
+}
+
+export interface CausalMarketGraphOutput {
+  moduleName: "causal_market_graph";
+  status: DataSourceStatus;
+  graphHealthScore: number;
+  confidence: ConfidenceResult;
+  dataQuality: DataSourceStatus;
+  nodes: CausalMarketNode[];
+  edges: CausalMarketEdge[];
+  activeEdges: CausalMarketEdge[];
+  suppressedEdges: CausalMarketEdge[];
+  dominantPaths: CausalMarketPath[];
+  missingInputs: string[];
+  consistencyWarnings: string[];
+  narrativeFa: string;
+  lastUpdatedAt: string;
+}
+
 export interface LiquidityEngineOutput extends SignalScores {
   liquidityState: LiquidityState;
   v2State?: LiquidityV2State;
+  liquidityRegimeV2?: LiquidityRegimeV2;
+  liquidityRegimeLabelFa?: string;
+  liquidityRegimeConfidence?: number;
+  liquidityBottlenecks?: string[];
+  liquidityConfirmations?: string[];
+  liquidityRegimeNarrativeFa?: string;
+  liquidityLayerScores?: {
+    macro: number | null;
+    realSpot: number | null;
+    leveraged: number | null;
+    stablecoin: number | null;
+    etf: number | null;
+    exchangeFlows: number | null;
+  };
+  strictLiquidityClass?: "stress" | "weak" | "neutral" | "supportive" | "expansion";
+  strictLiquidityLabelFa?: string;
   condition: "Expanding" | "Contracting" | "Neutral" | "Stress" | "Unclear";
   liquidityScoreSigned: number;
+  liquidityHealthScore?: number;
   macroLiquidityScore: number;
   cryptoLiquidityScore: number;
   realSpotLiquidityScore?: number;
@@ -462,8 +624,16 @@ export interface LiquidityEngineOutput extends SignalScores {
   riskCompression: number;
   confidence: number;
   confidenceDetail?: ConfidenceResult;
+  dataCoveragePercent?: number;
+  confidenceCalibrationReason?: string;
   formula?: string;
   decomposition?: string[];
+  liquidityContributionBreakdown?: Array<{
+    layer: "macro" | "stablecoin" | "etf" | "spot" | "derivatives" | "sentiment";
+    labelFa: string;
+    contribution: number | null;
+    source: string;
+  }>;
   warnings?: string[];
   explanation: string;
   historicalComparison: string;
@@ -479,6 +649,28 @@ export interface MarketRegimeEngineOutput extends SignalScores {
   regime: EngineRegimeState;
   regimeLabel?: MacroRegimeLabel;
   regimeNuance?: RegimeNuance;
+  probabilisticRegime?: ProbabilisticRegimeState;
+  regimeProbabilities?: Array<{
+    state: ProbabilisticRegimeState;
+    label: MacroRegimeLabel;
+    probability: number;
+    score: number;
+    confidence: number;
+    sourceType: IntelligenceOutputSourceType;
+    drivers: string[];
+  }>;
+  regimePersistence?: {
+    score: number;
+    label: "low" | "moderate" | "high";
+    previousLabel: MacroRegimeLabel | null;
+    previousAgeMinutes: number | null;
+    evidence: string[];
+  };
+  regimeInstability?: {
+    score: number;
+    label: "stable" | "watch" | "unstable";
+    drivers: string[];
+  };
   confidence: number;
   confidenceDetail?: ConfidenceResult;
   previousRegime: EngineRegimeState;
@@ -498,6 +690,9 @@ export interface MarketRegimeEngineOutput extends SignalScores {
     probability: number;
     targetRegime: MacroRegimeLabel;
     explanation: string;
+    fromRegime?: MacroRegimeLabel;
+    instabilityScore?: number;
+    drivers?: string[];
   };
   transitionProbability: number;
   keyDrivers: string[];

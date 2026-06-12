@@ -8,6 +8,7 @@ import type {
   MarketRegime,
   MarketRegimeEngineOutput,
   NormalizedSignal,
+  ProbabilisticRegimeState,
   RegimeNuance,
 } from "@/lib/types";
 import { calculateAdaptiveModuleConfidence } from "@/server/analytics/adaptive-confidence-engine";
@@ -17,7 +18,9 @@ import { getLiquidityReport } from "@/server/analytics/liquidity-engine";
 import { deriveBaseScores, getEngineLastUpdatedAt, getSignalSnapshot, weightedAverage } from "@/server/analytics/market-signals";
 import { confidenceLabel } from "@/server/analytics/quality-engine";
 import { clampPercent } from "@/server/analytics/scoring-engine";
+import { calibrateConfidenceByCoverage, signalAgeMinutes } from "@/server/analytics/intelligence-quality";
 import { getIntelligenceReliabilityReportSync } from "@/server/intelligence/reliability-engine";
+import { getLatestRegimeInputSync } from "@/storage/ingestion-store";
 
 export interface RegimeInputVector {
   btcTrend: number | null;
@@ -55,8 +58,8 @@ export function buildRegimeInput(): RegimeInputVector {
     goldTrend: value(byKey, "gold_trend_24h"),
     vixTrend: value(byKey, "vix_trend_24h"),
     stablecoinTrend: value(byKey, "stablecoin_market_cap_7d"),
-    btcEtfFlow: value(byKey, "btc_etf_flow_24h"),
-    ethEtfFlow: value(byKey, "eth_etf_flow_24h"),
+    btcEtfFlow: value(byKey, "btc_etf_flow_7d") ?? value(byKey, "btc_etf_flow_24h"),
+    ethEtfFlow: value(byKey, "eth_etf_flow_7d") ?? value(byKey, "eth_etf_flow_24h"),
     fundingRate: value(byKey, "funding_btc"),
     openInterest: value(byKey, "open_interest_btc_24h"),
     newsSentiment: value(byKey, "news_sentiment_macro"),
@@ -101,6 +104,60 @@ function labelToEngine(label: MacroRegimeLabel): EngineRegimeState {
   return map[label];
 }
 
+function labelToProbabilisticState(label: MacroRegimeLabel, input: RegimeInputVector, liquidity: LiquidityEngineOutput): ProbabilisticRegimeState {
+  const momentum = cryptoMomentum(input);
+  if (label === "Risk-On Expansion") return "expansion";
+  if (label === "Weak Risk-On") return "risk_on";
+  if (label === "Fragile Risk-On") {
+    if (liquidity.leverageStress >= 75 && momentum !== null && momentum > 0.25) return "speculative_mania";
+    return "unstable";
+  }
+  if (label === "Liquidity-Constrained Risk-On") return "unstable";
+  if (label === "Risk-Off Defensive") return "risk_off";
+  if (label === "Liquidity Squeeze") return "squeeze";
+  if (label === "Dollar Strength Pressure" || label === "Rates Shock") return "contraction";
+  if (label === "Crypto-Specific Bullish") return liquidity.liquiditySustainabilityScore !== undefined && liquidity.liquiditySustainabilityScore >= 62 ? "expansion" : "risk_on";
+  if (label === "Crypto-Specific Stress") return liquidity.leverageStress >= 70 ? "deleveraging" : "risk_off";
+  if (label === "Geopolitical Shock") return "panic";
+  if (label === "High Volatility Unclear Regime") return "unstable";
+  return "neutral";
+}
+
+function snapshotRegimeToMacroLabel(regime: string | undefined): MacroRegimeLabel | null {
+  const map: Record<string, MacroRegimeLabel> = {
+    risk_on: "Weak Risk-On",
+    risk_off: "Risk-Off Defensive",
+    liquidity_expansion_proxy: "Risk-On Expansion",
+    liquidity_contraction_proxy: "Liquidity Squeeze",
+    macro_pressure: "Dollar Strength Pressure",
+    volatility_expansion: "High Volatility Unclear Regime",
+    leverage_stress_proxy: "Crypto-Specific Stress",
+    neutral_mixed: "Neutral / Transition",
+    insufficient_core_data: "Neutral / Transition",
+  };
+  return regime ? (map[regime] ?? null) : null;
+}
+
+function ageMinutes(timestamp: string | undefined | null) {
+  if (!timestamp) return null;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((Date.now() - parsed) / 60_000));
+}
+
+function probabilityDrivers(label: MacroRegimeLabel, input: RegimeInputVector, liquidity: LiquidityEngineOutput) {
+  const drivers: string[] = [];
+  const momentum = cryptoMomentum(input);
+  if (input.dxyTrend !== null && Math.abs(input.dxyTrend) >= 0.15) drivers.push(input.dxyTrend > 0 ? "DXY strengthening" : "DXY weakening");
+  if (input.us10yTrend !== null && Math.abs(input.us10yTrend) >= 0.03) drivers.push(input.us10yTrend > 0 ? "US10Y rising" : "US10Y easing");
+  if (input.nasdaqTrend !== null && Math.abs(input.nasdaqTrend) >= 0.2) drivers.push(input.nasdaqTrend > 0 ? "Nasdaq risk appetite" : "Nasdaq pressure");
+  if (momentum !== null && Math.abs(momentum) >= 0.2) drivers.push(momentum > 0 ? "crypto momentum aligned" : "crypto momentum weakening");
+  if (liquidity.dataQuality !== "unavailable") drivers.push(`liquidity ${liquidity.liquidityScoreSigned}/100`);
+  if (liquidity.leverageStress >= 70) drivers.push("elevated leverage stress");
+  if (input.btcEtfFlow === null && (label.includes("Risk-On") || label.includes("Bullish"))) drivers.push("ETF confirmation missing");
+  return drivers.slice(0, 4);
+}
+
 const regimeLabelFa: Record<MacroRegimeLabel, string> = {
   "Risk-On Expansion": "گسترش ریسک‌پذیری",
   "Weak Risk-On": "ریسک‌پذیری ضعیف",
@@ -125,6 +182,7 @@ function regimeDataQuality(signals: NormalizedSignal[]) {
   const relevant = signals.filter((signal) => signal.value !== null);
   if (!relevant.length || signals.every((signal) => signal.quality === "unavailable")) return "unavailable" as const;
   if (signals.some((signal) => signal.quality === "estimated")) return "estimated" as const;
+  if (signals.some((signal) => signal.quality === "proxy")) return "proxy" as const;
   if (signals.some((signal) => signal.quality === "unavailable")) return "partial_live" as const;
   if (signals.some((signal) => signal.quality === "delayed")) return "delayed" as const;
   return "live" as const;
@@ -214,7 +272,14 @@ export function applyRegimePenalties(params: {
   const contradictionPenalty = riskOnLike && dxyRising && liquidityNegative ? 18 : dxyRising && liquidityNegative ? 8 : 0;
   const liquidityPenalty = riskOnLike && liquidityAvailable ? (params.liquidity.liquidityScoreSigned <= -25 ? 24 : params.liquidity.liquidityScoreSigned <= 0 ? 14 : 0) : 0;
   const leveragePenalty = params.liquidity.leverageStress > 70 ? Math.min(24, 8 + (params.liquidity.leverageStress - 70) * 0.55) : 0;
-  const dataQualityPenalty = (params.input.btcEtfFlow === null ? 10 : 0) + (params.liquidity.dataQuality === "unavailable" ? 14 : params.liquidity.dataQuality === "partial_live" ? 5 : 0);
+  const snapshot = getSignalSnapshot();
+  const stalePenalty = Math.min(
+    16,
+    ["btc_trend_24h", "eth_trend_24h", "sol_trend_24h", "dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "stablecoin_market_cap_7d"]
+      .map((key) => snapshot.byKey[key])
+      .filter((signal) => signal?.value !== null && signal?.timestamp && (signalAgeMinutes(signal) ?? 0) > 90).length * 4,
+  );
+  const dataQualityPenalty = (params.input.btcEtfFlow === null ? 10 : 0) + (params.liquidity.dataQuality === "unavailable" ? 14 : params.liquidity.dataQuality === "partial_live" ? 5 : 0) + stalePenalty;
   const correlationPenalty = Math.min(14, correlationUnstable * 3);
   const totalPenalty = contradictionPenalty + liquidityPenalty + leveragePenalty + dataQualityPenalty + correlationPenalty;
   return {
@@ -273,18 +338,186 @@ function transitionAnalysis(params: {
   };
 }
 
+type ScoredRegimeCandidate = {
+  label: MacroRegimeLabel;
+  rawScore: number;
+  penalties: ReturnType<typeof applyRegimePenalties>["penalties"];
+  totalPenalty: number;
+  finalScore: number;
+};
+
+function adjustedCandidateSet(params: {
+  candidates: ScoredRegimeCandidate[];
+  selected: ScoredRegimeCandidate;
+  riskOnPassed: boolean;
+}) {
+  return params.candidates
+    .map((candidate) => {
+      if (candidate.label === params.selected.label) return params.selected;
+      if (candidate.label === "Risk-On Expansion" && !params.riskOnPassed) {
+        return {
+          ...candidate,
+          finalScore: Math.min(candidate.finalScore, Math.max(24, params.selected.finalScore - 8)),
+        };
+      }
+      return candidate;
+    })
+    .sort((left, right) => right.finalScore - left.finalScore);
+}
+
+function calculateRegimeInstability(params: {
+  candidates: ScoredRegimeCandidate[];
+  selected: ScoredRegimeCandidate;
+  input: RegimeInputVector;
+  liquidity: LiquidityEngineOutput;
+  missingInputs: string[];
+}) {
+  const secondScore = params.candidates[1]?.finalScore ?? 0;
+  const scoreGap = Math.max(0, params.selected.finalScore - secondScore);
+  const closeRacePenalty = clampPercent(44 - scoreGap * 1.8);
+  const contradiction = params.selected.penalties.contradictionPenalty + params.selected.penalties.liquidityPenalty + params.selected.penalties.correlationPenalty;
+  const leverage = params.liquidity.leverageStress >= 70 ? Math.min(24, (params.liquidity.leverageStress - 62) * 0.75) : 0;
+  const missingPenalty = Math.min(18, params.missingInputs.length * 2.2);
+  const macroConflict =
+    params.input.nasdaqTrend !== null &&
+    params.input.nasdaqTrend > 0.2 &&
+    ((params.input.dxyTrend !== null && params.input.dxyTrend > 0.15) || (params.input.us10yTrend !== null && params.input.us10yTrend > 0.03))
+      ? 14
+      : 0;
+  const score = clampPercent(closeRacePenalty + contradiction * 0.65 + leverage + missingPenalty + macroConflict);
+  const drivers = [
+    scoreGap < 12 ? "فاصله امتیاز دو رژیم اول کم است." : null,
+    contradiction > 12 ? "سیگنال‌های ماکرو/نقدینگی با رژیم برنده تضاد دارند." : null,
+    leverage > 0 ? "اهرم معاملاتی ریسک پایداری رژیم را بالا برده است." : null,
+    missingPenalty > 0 ? "ورودی‌های ناقص سقف اطمینان رژیم را پایین می‌آورند." : null,
+    macroConflict > 0 ? "Nasdaq مثبت است اما دلار یا نرخ بهره همچنان فشارزا است." : null,
+  ].filter((item): item is string => Boolean(item));
+  return {
+    score,
+    label: score >= 68 ? ("unstable" as const) : score >= 42 ? ("watch" as const) : ("stable" as const),
+    drivers: drivers.length ? drivers : ["رژیم فعلی از نظر رقابت سیگنال‌ها نسبتاً پایدار است."],
+  };
+}
+
+function buildRegimeProbabilities(params: {
+  candidates: ScoredRegimeCandidate[];
+  input: RegimeInputVector;
+  liquidity: LiquidityEngineOutput;
+  confidence: number;
+  sourceType: MarketRegimeEngineOutput["sourceType"];
+}) {
+  const top = params.candidates[0]?.finalScore ?? 0;
+  const temperature = params.liquidity.leverageStress >= 75 ? 23 : 18;
+  const weighted = params.candidates.map((candidate) => ({
+    candidate,
+    weight: Math.exp((candidate.finalScore - top) / temperature),
+  }));
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0) || 1;
+  const rawDistribution = weighted.map(({ candidate, weight }) => {
+    const rawProbability = (weight / total) * 100;
+    return {
+      candidate,
+      rawProbability,
+      floorProbability: Math.floor(rawProbability),
+      remainder: rawProbability - Math.floor(rawProbability),
+    };
+  });
+  const floorTotal = rawDistribution.reduce((sum, item) => sum + item.floorProbability, 0);
+  let remainingPoints = Math.max(0, 100 - floorTotal);
+  const withAllocatedRemainder = [...rawDistribution]
+    .sort((left, right) => right.remainder - left.remainder)
+    .map((item) => {
+      const addPoint = remainingPoints > 0 ? 1 : 0;
+      remainingPoints -= addPoint;
+      return {
+        ...item,
+        probability: item.floorProbability + addPoint,
+      };
+    });
+  const probabilityByLabel = new Map(withAllocatedRemainder.map((item) => [item.candidate.label, item.probability]));
+  return weighted
+    .map(({ candidate }) => {
+      const probability = probabilityByLabel.get(candidate.label) ?? 0;
+      return {
+        state: labelToProbabilisticState(candidate.label, params.input, params.liquidity),
+        label: candidate.label,
+        probability,
+        score: Math.round(candidate.finalScore),
+        confidence: clampPercent(Math.min(params.confidence, probability + 28, 100 - candidate.totalPenalty * 0.35)),
+        sourceType: params.sourceType ?? "proxy",
+        drivers: probabilityDrivers(candidate.label, params.input, params.liquidity),
+      };
+    })
+    .sort((left, right) => right.probability - left.probability);
+}
+
+function calculateRegimePersistence(params: {
+  currentLabel: MacroRegimeLabel;
+  previousLabel: MacroRegimeLabel | null;
+  previousAgeMinutes: number | null;
+  probabilities: ReturnType<typeof buildRegimeProbabilities>;
+  instabilityScore: number;
+}) {
+  const topProbability = params.probabilities[0]?.probability ?? 0;
+  const secondProbability = params.probabilities[1]?.probability ?? 0;
+  const probabilityGap = Math.max(0, topProbability - secondProbability);
+  const previousUsable = params.previousLabel !== null && params.previousAgeMinutes !== null && params.previousAgeMinutes <= 48 * 60;
+  const sameLabel = previousUsable && params.previousLabel === params.currentLabel;
+  const sameFamily = previousUsable && params.previousLabel !== null && labelToEngine(params.previousLabel) === labelToEngine(params.currentLabel);
+  const agePenalty = params.previousAgeMinutes === null ? 10 : params.previousAgeMinutes > 24 * 60 ? 14 : params.previousAgeMinutes > 12 * 60 ? 8 : 0;
+  const base = sameLabel ? 72 : sameFamily ? 60 : previousUsable ? 42 : 38;
+  const score = clampPercent(base + probabilityGap * 0.55 - params.instabilityScore * 0.28 - agePenalty);
+  const evidence = [
+    previousUsable && params.previousLabel ? `رژیم قبلی ذخیره‌شده: ${regimeLabelFa[params.previousLabel]}` : "history معتبر کوتاه‌مدت برای رژیم قبلی محدود است.",
+    `فاصله احتمال رژیم اول و دوم: ${probabilityGap.toFixed(1)}٪.`,
+    `امتیاز ناپایداری رژیم: ${params.instabilityScore}/100.`,
+    agePenalty > 0 ? "سن snapshot قبلی persistence را کاهش داده است." : "snapshot قبلی برای سنجش persistence قابل استفاده است.",
+  ];
+  return {
+    score,
+    label: score >= 70 ? ("high" as const) : score >= 48 ? ("moderate" as const) : ("low" as const),
+    previousLabel: previousUsable ? params.previousLabel : null,
+    previousAgeMinutes: params.previousAgeMinutes,
+    evidence,
+  };
+}
+
+function applyProbabilisticTransitionContext(params: {
+  transition: ReturnType<typeof transitionAnalysis>;
+  currentLabel: MacroRegimeLabel;
+  probabilities: ReturnType<typeof buildRegimeProbabilities>;
+  instability: ReturnType<typeof calculateRegimeInstability>;
+}) {
+  const nextCandidate = params.probabilities.find((item) => item.label !== params.currentLabel);
+  const targetRegime = nextCandidate?.label ?? params.transition.targetRegime;
+  const elevatedTransition = params.instability.score >= 68 ? clampPercent(Math.max(params.transition.probability, 58 + params.instability.score * 0.28)) : params.transition.probability;
+  return {
+    ...params.transition,
+    probability: elevatedTransition,
+    targetRegime,
+    fromRegime: params.currentLabel,
+    instabilityScore: params.instability.score,
+    drivers: params.instability.drivers,
+    explanation:
+      params.instability.score >= 68
+        ? `${params.transition.explanation} ناپایداری احتمالی هم بالا است، چون ${params.instability.drivers.join(" ")}`
+        : params.transition.explanation,
+  };
+}
+
 export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInput()): MarketRegimeEngineOutput {
   const snapshot = getSignalSnapshot();
   const liquidity = getLiquidityReport();
   const reliability = getIntelligenceReliabilityReportSync();
   const regimeInputSnapshot = buildRegimeInputSnapshot();
+  const previousStoredRegimeInput = getLatestRegimeInputSync();
   const correlations = getDynamicCorrelationReport().signals;
   const candidateScores = scoreRegimeCandidates(input, liquidity.liquidityScoreSigned);
-  const scoredCandidates = (Object.entries(candidateScores) as Array<[MacroRegimeLabel, number]>)
+  const scoredCandidates: ScoredRegimeCandidate[] = (Object.entries(candidateScores) as Array<[MacroRegimeLabel, number]>)
     .map(([label, rawScore]) => ({ label, rawScore, ...applyRegimePenalties({ label, rawScore, input, liquidity, correlations }) }))
     .sort((left, right) => right.finalScore - left.finalScore);
   const riskOnConfirmation = evaluateRiskOnConfirmation(input, liquidity);
-  let selected = scoredCandidates[0];
+  let selected: ScoredRegimeCandidate = scoredCandidates[0];
 
   if (selected.label === "Risk-On Expansion" && !riskOnConfirmation.passed) {
     const constrainedLabel: MacroRegimeLabel =
@@ -306,11 +539,33 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
   const topScore = selected.finalScore;
   const rawRegimeScore = selected.rawScore;
   const regimeNuance = chooseRegimeNuance(regimeLabel, topScore, selected.totalPenalty, riskOnConfirmation.confirmationCount);
-  const transition = transitionAnalysis({ label: regimeLabel, nuance: regimeNuance, finalScore: topScore, penalties: selected.penalties, input, liquidity });
+  const adjustedCandidates = adjustedCandidateSet({ candidates: scoredCandidates, selected, riskOnPassed: riskOnConfirmation.passed });
+  const preliminaryInstability = calculateRegimeInstability({
+    candidates: adjustedCandidates,
+    selected,
+    input,
+    liquidity,
+    missingInputs: regimeInputSnapshot.missingInputs,
+  });
+  const preliminaryProbabilities = buildRegimeProbabilities({
+    candidates: adjustedCandidates,
+    input,
+    liquidity,
+    confidence: 65,
+    sourceType: regimeInputSnapshot.sourceType,
+  });
   const regime = labelToEngine(regimeLabel);
-  const previousRegimeLabel: MacroRegimeLabel = regimeLabel;
-  const previousRegime = labelToEngine(previousRegimeLabel);
-  const changedLast24h = regimeLabel !== previousRegimeLabel;
+  const previousRegimeLabel = snapshotRegimeToMacroLabel(previousStoredRegimeInput?.regime) ?? undefined;
+  const previousRegimeAgeMinutes = ageMinutes(previousStoredRegimeInput?.generatedAt);
+  const previousRegime = previousRegimeLabel ? labelToEngine(previousRegimeLabel) : regime;
+  const changedLast24h = previousRegimeLabel !== undefined && previousRegimeAgeMinutes !== null && previousRegimeAgeMinutes <= 24 * 60 && regimeLabel !== previousRegimeLabel;
+  const preliminaryPersistence = calculateRegimePersistence({
+    currentLabel: regimeLabel,
+    previousLabel: previousRegimeLabel ?? null,
+    previousAgeMinutes: previousRegimeAgeMinutes,
+    probabilities: preliminaryProbabilities,
+    instabilityScore: preliminaryInstability.score,
+  });
   const confirmingSignals = snapshot.signals.filter((signal) => signal.value !== null && signal.quality !== "unavailable");
   const confidenceDetail = calculateAdaptiveModuleConfidence({
     moduleName: "Free-data Market Regime Proxy Engine",
@@ -318,14 +573,22 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
     requiredGroups: ["price", "macro", "liquidity", "stablecoins", "volatility"],
     criticalKeys: ["btc_trend_24h", "dxy_trend_24h", "us10y_trend_24h"],
     signalAgreement: clampPercent(topScore - selected.totalPenalty * 0.35),
-    historicalConsistency: changedLast24h ? 58 : 72,
+    historicalConsistency: preliminaryPersistence.score,
     marketConfirmation: input.btcTrend === null || input.nasdaqTrend === null ? 35 : clampPercent(100 - Math.abs(input.btcTrend - input.nasdaqTrend) * 8),
   });
   const adaptiveConfidence = confidenceDetail.score === null ? 0 : Math.min(confidenceDetail.score, reliability.confidenceCaps.regime);
   const proxyConfidence =
     regimeInputSnapshot.sourceType !== "unavailable" && regimeInputSnapshot.confidence !== null ? Math.min(regimeInputSnapshot.confidence, reliability.confidenceCaps.regime) : null;
-  const cappedConfidence =
+  const preCoverageConfidence =
     proxyConfidence !== null ? clampPercent(adaptiveConfidence * 0.4 + proxyConfidence * 0.6 - Math.min(8, regimeInputSnapshot.missingInputs.length * 2)) : adaptiveConfidence;
+  const regimeConfidenceCalibration = calibrateConfidenceByCoverage({
+    rawConfidence: preCoverageConfidence,
+    signals: snapshot.signals,
+    requiredKeys: ["btc_trend_24h", "eth_trend_24h", "sol_trend_24h", "dxy_trend_24h", "us10y_trend_24h", "nasdaq_trend_24h", "stablecoin_market_cap_7d", "vix_trend_24h"],
+    missingPenaltyKeys: ["btc_etf_flow_24h", "stablecoin_market_cap_7d", "open_interest_btc_24h", "funding_btc"],
+    proxyDerived: regimeInputSnapshot.sourceType === "proxy" || regimeInputSnapshot.sourceType === "derived",
+  });
+  const cappedConfidence = regimeConfidenceCalibration.score;
   const outputConfidenceDetail =
     proxyConfidence !== null
       ? {
@@ -333,10 +596,43 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
           available: true,
           score: cappedConfidence,
           label: confidenceLabel(cappedConfidence),
-          formula: `${confidenceDetail.formula} برای regime proxy، confidence نهایی با confidence سیگنال‌های مشتق‌شده و سقف reliability ترکیب می‌شود.`,
-          explanation: "اطمینان رژیم از هم‌راستایی سیگنال‌های رایگان/پروکسی، کیفیت core data و جریمه داده‌های ناموجود ساخته شده است.",
+          formula: `${confidenceDetail.formula} برای regime proxy، confidence نهایی با confidence سیگنال‌های مشتق‌شده، سقف reliability، coverage و تازگی داده ترکیب می‌شود.`,
+          explanation: regimeConfidenceCalibration.reason || "اطمینان رژیم از هم‌راستایی سیگنال‌های رایگان/پروکسی، کیفیت core data و جریمه داده‌های ناموجود ساخته شده است.",
         }
-      : confidenceDetail;
+      : {
+          ...confidenceDetail,
+          score: cappedConfidence,
+          label: confidenceLabel(cappedConfidence),
+          formula: `${confidenceDetail.formula} سپس با coverage، تازگی داده و نبود ورودی‌های حساس سقف‌گذاری می‌شود.`,
+          explanation: regimeConfidenceCalibration.reason || confidenceDetail.explanation,
+        };
+  const regimeProbabilities = buildRegimeProbabilities({
+    candidates: adjustedCandidates,
+    input,
+    liquidity,
+    confidence: cappedConfidence,
+    sourceType: regimeInputSnapshot.sourceType,
+  });
+  const regimeInstability = calculateRegimeInstability({
+    candidates: adjustedCandidates,
+    selected,
+    input,
+    liquidity,
+    missingInputs: regimeInputSnapshot.missingInputs,
+  });
+  const regimePersistence = calculateRegimePersistence({
+    currentLabel: regimeLabel,
+    previousLabel: previousRegimeLabel ?? null,
+    previousAgeMinutes: previousRegimeAgeMinutes,
+    probabilities: regimeProbabilities,
+    instabilityScore: regimeInstability.score,
+  });
+  const transition = applyProbabilisticTransitionContext({
+    transition: transitionAnalysis({ label: regimeLabel, nuance: regimeNuance, finalScore: topScore, penalties: selected.penalties, input, liquidity }),
+    currentLabel: regimeLabel,
+    probabilities: regimeProbabilities,
+    instability: regimeInstability,
+  });
   const scores = deriveBaseScores();
   const btcNasdaq = correlations.find((signal) => signal.assetPair === "BTC ↔ Nasdaq");
   const btcDxy = correlations.find((signal) => signal.assetPair === "BTC ↔ DXY");
@@ -367,6 +663,10 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
     regime,
     regimeLabel,
     regimeNuance,
+    probabilisticRegime: regimeProbabilities[0]?.state ?? labelToProbabilisticState(regimeLabel, input, liquidity),
+    regimeProbabilities,
+    regimePersistence,
+    regimeInstability,
     confidence: cappedConfidence,
     confidenceDetail: outputConfidenceDetail,
     previousRegime,

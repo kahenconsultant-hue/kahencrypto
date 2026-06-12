@@ -11,6 +11,7 @@ import {
   getLatestRawEventsSync,
   getLatestRawMetrics,
   getLatestRawMetricsSync,
+  getLatestSchedulerRunsSync,
   getLatestSourceHealth,
   getLatestSourceHealthSync,
 } from "@/storage/ingestion-store";
@@ -127,12 +128,13 @@ const requiredSignalKeys: Record<CoverageDimension, string[]> = {
     "total_stablecoin_market_cap_usd",
     "stablecoin_dominance",
     "usdt_supply_7d",
+    "usdt_supply_30d",
     "usdc_supply_7d",
+    "usdc_supply_30d",
     "spot_volume_btc_24h",
     "btc_etf_flow_24h",
     "eth_etf_flow_24h",
-    "exchange_inflows",
-    "exchange_outflows",
+    "exchange_reserves_btc_7d",
   ],
   derivatives: [
     "funding_btc",
@@ -193,6 +195,7 @@ function reliabilityByQuality(quality: DataQuality) {
   if (quality === "live") return 1;
   if (quality === "partial_live") return 0.75;
   if (quality === "delayed") return 0.58;
+  if (quality === "proxy") return 0.46;
   if (quality === "estimated") return 0;
   return 0;
 }
@@ -312,6 +315,7 @@ function buildReliabilityReport(params: {
   rawMetrics: RawMetricInput[];
   rawEvents: RawEventInput[];
   lastRun: IngestionRunSummary | null;
+  schedulerLastRunAt?: string | null;
 }): IntelligenceReliabilityReport {
   const snapshot = getSignalSnapshot();
   const dimensions: CoverageDimension[] = ["macro", "crypto", "liquidity", "derivatives", "sentiment", "geopolitical"];
@@ -321,6 +325,7 @@ function buildReliabilityReport(params: {
     rawEvents: params.rawEvents,
     signals: snapshot.signals,
     lastRun: params.lastRun,
+    schedulerLastRunAt: params.schedulerLastRunAt,
   });
   const coverageEntries = dimensions.map((dimension) =>
     buildDimensionCoverage({
@@ -480,11 +485,13 @@ function buildReliabilityReport(params: {
 }
 
 export function getIntelligenceReliabilityReportSync(): IntelligenceReliabilityReport {
+  const latestSchedulerRun = getLatestSchedulerRunsSync(1)[0] ?? null;
   return buildReliabilityReport({
     sourceHealth: getLatestSourceHealthSync(),
     rawMetrics: getLatestRawMetricsSync(200),
     rawEvents: getLatestRawEventsSync(200),
     lastRun: getLatestIngestionRunSync(),
+    schedulerLastRunAt: latestSchedulerRun?.finishedAt ?? null,
   });
 }
 

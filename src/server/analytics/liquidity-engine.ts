@@ -1,9 +1,16 @@
-import type { DirectionalBias, LiquidityEngineOutput, LiquidityState, LiquidityV2State, NormalizedSignal } from "@/lib/types";
+import type { DirectionalBias, LiquidityEngineOutput, LiquidityRegimeV2, LiquidityState, LiquidityV2State, NormalizedSignal } from "@/lib/types";
 import { calculateAdaptiveModuleConfidence } from "@/server/analytics/adaptive-confidence-engine";
 import { buildLiquidityProxySnapshot } from "@/server/analytics/derived-signal-engine";
 import { deriveBaseScores, getEngineLastUpdatedAt, getSignalSnapshot, weightedAverage } from "@/server/analytics/market-signals";
 import { clampPercent, clampSigned } from "@/server/analytics/scoring-engine";
 import { calculateDataQualityScore, confidenceLabel, dataQualityLabel, normalizeSignalScore, validationReason } from "@/server/analytics/quality-engine";
+import {
+  calibrateConfidenceByCoverage,
+  classifyLiquidityHealth,
+  enforceLiquidityNarrativeConsistency,
+  liquidityHealthFromSigned,
+  strictLiquidityNarrative,
+} from "@/server/analytics/intelligence-quality";
 
 export interface LiquidityInputVector {
   dxyTrend: number | null;
@@ -36,8 +43,8 @@ export function buildLiquidityInput(): LiquidityInputVector {
     stablecoinMarketCapTrend: signalValue(byKey, "stablecoin_market_cap_7d"),
     usdtSupplyTrend: signalValue(byKey, "usdt_supply_7d"),
     usdcSupplyTrend: signalValue(byKey, "usdc_supply_7d"),
-    btcEtfFlow: signalValue(byKey, "btc_etf_flow_24h"),
-    ethEtfFlow: signalValue(byKey, "eth_etf_flow_24h"),
+    btcEtfFlow: signalValue(byKey, "btc_etf_flow_7d") ?? signalValue(byKey, "btc_etf_flow_24h"),
+    ethEtfFlow: signalValue(byKey, "eth_etf_flow_7d") ?? signalValue(byKey, "eth_etf_flow_24h"),
     exchangeReserveTrend: signalValue(byKey, "exchange_reserves_btc_7d"),
     exchangeInflows: signalValue(byKey, "exchange_inflows"),
     exchangeOutflows: signalValue(byKey, "exchange_outflows"),
@@ -179,6 +186,13 @@ function conditionFromState(state: LiquidityState): LiquidityEngineOutput["condi
   return "Unclear";
 }
 
+function liquidityStateFromStrict(classification: ReturnType<typeof classifyLiquidityHealth>["class"], leverageStress: number | null): LiquidityState {
+  if (classification === "stress") return "contraction";
+  if (classification === "weak") return leverageStress !== null && leverageStress >= 70 ? "overheating" : "fragile";
+  if (classification === "supportive" || classification === "expansion") return leverageStress !== null && leverageStress >= 76 ? "overheating" : "expansion";
+  return leverageStress !== null && leverageStress >= 66 ? "fragile" : "neutral";
+}
+
 function liquidityDataQuality(signals: NormalizedSignal[]) {
   const relevantKeys = new Set([
     "dxy_trend_24h",
@@ -199,6 +213,7 @@ function liquidityDataQuality(signals: NormalizedSignal[]) {
   const relevant = signals.filter((signal) => relevantKeys.has(signal.key));
   if (!relevant.length || relevant.every((signal) => signal.quality === "unavailable")) return "unavailable" as const;
   if (relevant.some((signal) => signal.quality === "estimated")) return "estimated" as const;
+  if (relevant.some((signal) => signal.quality === "proxy")) return "proxy" as const;
   if (relevant.some((signal) => signal.quality === "unavailable")) return "partial_live" as const;
   if (relevant.some((signal) => signal.quality === "delayed")) return "delayed" as const;
   return "live" as const;
@@ -222,6 +237,127 @@ function liquidityV2Label(state: LiquidityV2State) {
     neutral_mixed: "خنثی / ترکیبی",
   };
   return labels[state];
+}
+
+function liquidityRegimeV2Label(regime: LiquidityRegimeV2) {
+  const labels: Record<LiquidityRegimeV2, string> = {
+    supportive: "نقدینگی حمایتی",
+    tightening: "انقباض نقدینگی",
+    stressed: "نقدینگی تحت فشار",
+    fragmented: "نقدینگی تکه‌تکه",
+    insufficient_data: "داده ناکافی",
+  };
+  return labels[regime];
+}
+
+function signedToHealthScore(score: number | null) {
+  return score === null ? null : clampPercent(50 + score / 2);
+}
+
+function describeLayer(label: string, score: number | null, supportiveAt = 58, weakAt = 45) {
+  if (score === null) return `${label}: ناموجود`;
+  if (score >= supportiveAt) return `${label}: حمایتی (${Math.round(score)}/100)`;
+  if (score < weakAt) return `${label}: فشارزا (${Math.round(score)}/100)`;
+  return `${label}: خنثی/مرزی (${Math.round(score)}/100)`;
+}
+
+export function deriveLiquidityRegimeV2(params: {
+  macroHealth: number | null;
+  realSpotHealth: number | null;
+  leveragedHealth: number | null;
+  stablecoinHealth: number | null;
+  etfHealth: number | null;
+  exchangeFlowHealth: number | null;
+  sustainability: number | null;
+  leverageStress: number | null;
+  coverage: number;
+  missingSignals: string[];
+}): {
+  regime: LiquidityRegimeV2;
+  confidence: number;
+  bottlenecks: string[];
+  confirmations: string[];
+  narrativeFa: string;
+} {
+  const structuralScores = [params.macroHealth, params.realSpotHealth, params.stablecoinHealth, params.etfHealth, params.exchangeFlowHealth].filter(
+    (score): score is number => score !== null,
+  );
+  if (structuralScores.length < 2 || params.coverage < 25) {
+    return {
+      regime: "insufficient_data",
+      confidence: clampPercent(Math.min(params.coverage, 35)),
+      bottlenecks: ["پوشش داده ساختاری نقدینگی کافی نیست."],
+      confirmations: [],
+      narrativeFa: "داده ساختاری کافی برای رژیم نقدینگی V2 وجود ندارد؛ موتور ترجیح می‌دهد خروجی را نامشخص نگه دارد تا نتیجه مطمئن اما غلط نسازد.",
+    };
+  }
+
+  const bottlenecks = [
+    params.macroHealth !== null && params.macroHealth < 45 ? "فشار دلار/نرخ، نقدینگی کلان را محدود کرده است." : "",
+    params.realSpotHealth !== null && params.realSpotHealth < 45 ? "نقدینگی واقعی اسپات ضعیف است." : "",
+    params.stablecoinHealth !== null && params.stablecoinHealth < 45 ? "رشد استیبل‌کوین‌ها برای expansion کافی نیست." : "",
+    params.etfHealth === null ? "جریان ETF برای تأیید نهادی ناموجود است." : params.etfHealth < 45 ? "جریان ETF فشار خروج یا ضعف ورود را نشان می‌دهد." : "",
+    params.exchangeFlowHealth === null ? "ورودی/خروجی صرافی‌ها ناموجود است و uncertainty نقدینگی را بالا نگه می‌دارد." : params.exchangeFlowHealth < 45 ? "جریان صرافی‌ها حمایتی نیست." : "",
+    params.leverageStress !== null && params.leverageStress >= 70 ? "اهرم معاملاتی بالا، پایداری نقدینگی را شکننده می‌کند." : "",
+    params.sustainability !== null && params.sustainability < 45 ? "پایداری نقدینگی زیر آستانه ۴۵ است." : "",
+  ].filter(Boolean);
+
+  const confirmations = [
+    params.macroHealth !== null && params.macroHealth >= 58 ? "فشار کلان فروکش کرده یا حمایتی است." : "",
+    params.realSpotHealth !== null && params.realSpotHealth >= 58 ? "نقدینگی اسپات واقعی تأیید حمایتی دارد." : "",
+    params.stablecoinHealth !== null && params.stablecoinHealth >= 58 ? "استیبل‌کوین‌ها پشتوانه نقدی بهتری نشان می‌دهند." : "",
+    params.etfHealth !== null && params.etfHealth >= 58 ? "ETF Flow تأیید نهادی مثبت می‌دهد." : "",
+    params.exchangeFlowHealth !== null && params.exchangeFlowHealth >= 58 ? "جریان صرافی‌ها با خروج/کاهش فشار فروش سازگار است." : "",
+    params.leverageStress !== null && params.leverageStress < 65 ? "اهرم معاملاتی هنوز در محدوده شکننده بحرانی نیست." : "",
+  ].filter(Boolean);
+
+  const weakStructuralCount = [params.macroHealth, params.realSpotHealth, params.stablecoinHealth, params.etfHealth, params.exchangeFlowHealth].filter(
+    (score) => score !== null && score < 45,
+  ).length;
+  const supportiveStructuralCount = [params.macroHealth, params.realSpotHealth, params.stablecoinHealth, params.etfHealth, params.exchangeFlowHealth].filter(
+    (score) => score !== null && score >= 58,
+  ).length;
+  const macroTight = params.macroHealth !== null && params.macroHealth < 45;
+  const spotWeak = params.realSpotHealth !== null && params.realSpotHealth < 45;
+  const stablecoinWeak = params.stablecoinHealth !== null && params.stablecoinHealth < 45;
+  const leverageHigh = params.leverageStress !== null && params.leverageStress >= 70;
+  const missingCriticalFlows = params.etfHealth === null || params.exchangeFlowHealth === null;
+
+  let regime: LiquidityRegimeV2 = "fragmented";
+  if ((weakStructuralCount >= 3 && (spotWeak || stablecoinWeak)) || (spotWeak && leverageHigh)) {
+    regime = "stressed";
+  } else if (macroTight && (spotWeak || stablecoinWeak || (params.sustainability !== null && params.sustainability < 50))) {
+    regime = "tightening";
+  } else if (supportiveStructuralCount >= 3 && !leverageHigh && (params.sustainability === null || params.sustainability >= 55)) {
+    regime = "supportive";
+  } else if (missingCriticalFlows || Math.abs(supportiveStructuralCount - weakStructuralCount) <= 1) {
+    regime = "fragmented";
+  }
+
+  const confidence = clampPercent(
+    Math.min(
+      params.coverage,
+      35 + structuralScores.length * 8 + confirmations.length * 4 - bottlenecks.length * 3 - (missingCriticalFlows ? 8 : 0),
+    ),
+  );
+  const label = liquidityRegimeV2Label(regime);
+  const layerSummary = [
+    describeLayer("ماکرو", params.macroHealth),
+    describeLayer("اسپات", params.realSpotHealth),
+    describeLayer("استیبل‌کوین", params.stablecoinHealth),
+    describeLayer("ETF", params.etfHealth),
+    describeLayer("جریان صرافی", params.exchangeFlowHealth),
+  ].join("؛ ");
+  const narrativeFa =
+    regime === "supportive"
+      ? `${label}: دست‌کم سه لایه ساختاری نقدینگی حمایتی هستند و اهرم در محدوده بحرانی نیست. ${layerSummary}. این وضعیت تا وقتی معتبر است که ETF یا استیبل‌کوین‌ها واژگون نشوند.`
+      : regime === "tightening"
+        ? `${label}: فشار دلار/نرخ با ضعف یکی از لایه‌های نقدینگی کریپتو هم‌زمان شده است. ${layerSummary}. این خروجی expansion نیست و confidence با پوشش داده سقف‌گذاری شده است.`
+        : regime === "stressed"
+          ? `${label}: چند لایه ساختاری ضعیف است یا حرکت بیشتر به leverage وابسته شده است. ${layerSummary}. تا وقتی اسپات، استیبل‌کوین یا ETF تأیید ندهند، هر رشد قیمت شکننده‌تر خوانده می‌شود.`
+          : `${label}: سیگنال‌ها بین لایه‌های نقدینگی هم‌جهت نیستند یا ETF/Exchange Flow ناموجود است. ${layerSummary}. نتیجه directional قوی مجاز نیست مگر دو منبع مستقل دیگر هم‌سو شوند.`;
+
+  return { regime, confidence, bottlenecks, confirmations, narrativeFa };
 }
 
 export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiquidityInput()): LiquidityEngineOutput {
@@ -268,7 +404,7 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
   ]);
   const speculativeHeat = speculativeHeatRaw === null ? 0 : clampPercent(50 + speculativeHeatRaw * 0.42);
   const riskCompression = liquidityScoreSignedRaw === null || leverageStressRaw === null ? 0 : clampPercent(50 + liquidityScoreSignedRaw * 0.28 - leverageStressRaw * 0.18);
-  const liquidityState = detectLiquidityStateFromSigned(liquidityScoreSignedRaw, leverageStressRaw);
+  const rawLiquidityHealthScore = liquidityHealthFromSigned(liquidityScoreSignedRaw);
   const v2State = detectLiquidityV2State({
     liquidityScoreSigned: liquidityScoreSignedRaw,
     macroLiquidityScore,
@@ -301,8 +437,67 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
       : confidenceDetail.score ?? 0;
   const etfMissing = input.btcEtfFlow === null && input.ethEtfFlow === null;
   const exchangeFlowsMissing = input.exchangeInflows === null || input.exchangeOutflows === null;
-  const confidenceCap = etfMissing && exchangeFlowsMissing ? 55 : exchangeFlowsMissing ? 65 : etfMissing ? 70 : 100;
-  const confidenceScore = clampPercent(Math.min(rawConfidenceScore, confidenceCap));
+  const stablecoinLayerMissing = input.stablecoinMarketCapTrend === null && input.usdtSupplyTrend === null && input.usdcSupplyTrend === null;
+  const confidenceCap = Math.min(
+    etfMissing && exchangeFlowsMissing ? 55 : exchangeFlowsMissing ? 65 : etfMissing ? 70 : 100,
+    stablecoinLayerMissing && exchangeFlowsMissing && etfMissing ? 40 : stablecoinLayerMissing && exchangeFlowsMissing ? 55 : stablecoinLayerMissing ? 70 : 100,
+  );
+  const liquidityRequiredKeys = [
+    "dxy_trend_24h",
+    "us10y_trend_24h",
+    "total_stablecoin_market_cap_usd",
+    "stablecoin_market_cap_7d",
+    "stablecoin_market_cap_30d",
+    "usdt_supply_7d",
+    "usdt_supply_30d",
+    "usdc_supply_7d",
+    "usdc_supply_30d",
+    "spot_volume_btc_24h",
+    "btc_etf_flow_7d",
+    "eth_etf_flow_7d",
+    "exchange_inflows",
+    "exchange_outflows",
+    "open_interest_btc_24h",
+    "funding_btc",
+  ];
+  const confidenceCalibration = calibrateConfidenceByCoverage({
+    rawConfidence: clampPercent(Math.min(rawConfidenceScore, confidenceCap)),
+    signals: snapshot.signals,
+    requiredKeys: liquidityRequiredKeys,
+    missingPenaltyKeys: ["btc_etf_flow_7d", "eth_etf_flow_7d", "exchange_inflows", "exchange_outflows", "open_interest_btc_24h", "funding_btc"],
+    maxAgeMinutesByKey: {
+      total_stablecoin_market_cap_usd: 3 * 24 * 60,
+      stablecoin_market_cap_7d: 3 * 24 * 60,
+      stablecoin_market_cap_30d: 3 * 24 * 60,
+      usdt_supply_7d: 3 * 24 * 60,
+      usdt_supply_30d: 3 * 24 * 60,
+      usdc_supply_7d: 3 * 24 * 60,
+      usdc_supply_30d: 3 * 24 * 60,
+      btc_etf_flow_7d: 7 * 24 * 60,
+      eth_etf_flow_7d: 7 * 24 * 60,
+    },
+    proxyDerived: proxySnapshot.sourceType === "proxy" || proxySnapshot.sourceType === "derived",
+  });
+  const missingStructuralLiquidityPenalty = [
+    input.btcEtfFlow,
+    input.ethEtfFlow,
+    input.exchangeInflows,
+    input.exchangeOutflows,
+    input.spotVolumeTrend,
+  ].filter((item) => item === null).length * 5;
+  const staleLiquidityPenalty = confidenceCalibration.staleSignals.length * 4;
+  const liquidityHealthScore = rawLiquidityHealthScore === null
+    ? null
+    : clampPercent(
+        Math.min(
+          rawLiquidityHealthScore,
+          liquiditySustainabilityScore ?? rawLiquidityHealthScore,
+          confidenceCalibration.independentSourceCount >= 2 ? confidenceCalibration.dataCoveragePercent + 12 : confidenceCalibration.dataCoveragePercent,
+        ) - missingStructuralLiquidityPenalty - staleLiquidityPenalty,
+      );
+  const strictClassification = classifyLiquidityHealth(liquidityHealthScore);
+  const liquidityState = liquidityStateFromStrict(strictClassification.class, leverageStressRaw);
+  const confidenceScore = confidenceCalibration.score;
   const outputConfidenceDetail =
     proxyConfidence !== null
       ? {
@@ -310,16 +505,84 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
           available: true,
           score: confidenceScore,
           label: confidenceLabel(confidenceScore),
-          formula: `${confidenceDetail.formula} برای حالت proxy، confidence نهایی از ترکیب adaptive confidence و confidence سیگنال‌های مشتق‌شده ساخته می‌شود و نبود premium inputs جریمه می‌گیرد.`,
+          formula: `${confidenceDetail.formula} برای حالت proxy، confidence نهایی از ترکیب adaptive confidence و confidence سیگنال‌های مشتق‌شده ساخته می‌شود، سپس با پوشش داده، تازگی و نبود premium inputs سقف‌گذاری می‌شود.`,
           explanation:
+            confidenceCalibration.reason ||
             "اطمینان نقدینگی از داده‌های رایگان، proxyهای مشتق‌شده، تازگی منابع و جریمه نبود ETF/exchange-reserve مستقیم محاسبه شده است؛ بنابراین نبود داده پریمیوم خروجی را قطع نمی‌کند.",
         }
-      : confidenceDetail;
+      : {
+          ...confidenceDetail,
+          score: confidenceScore,
+          label: confidenceLabel(confidenceScore),
+          formula: `${confidenceDetail.formula} سپس با پوشش داده، تازگی و نبود ETF/Exchange Flow سقف‌گذاری می‌شود.`,
+          explanation: confidenceCalibration.reason || confidenceDetail.explanation,
+        };
   const stablecoinBiasScore = scoreStablecoins(input.stablecoinMarketCapTrend);
   const etfBiasScore = scoreEtfFlow(input.btcEtfFlow);
+  const exchangeFlowScore = scoreExchangeFlows(input);
+  const spotContributionScore = input.spotVolumeTrend === null ? null : clampSigned(input.spotVolumeTrend * 2.2);
+  const derivativesContributionScore = leveragedLiquidityScore === null ? null : clampSigned((50 - leveragedLiquidityScore) * 0.8);
+  const sentimentSignalScore = signalValue(snapshot.byKey, "news_sentiment_macro");
+  const sentimentContributionScore = sentimentSignalScore === null ? null : clampSigned(sentimentSignalScore * 0.25);
+  const macroHealth = signedToHealthScore(macroLiquidityScore);
+  const realSpotHealth = signedToHealthScore(realSpotLiquidityScore);
+  const stablecoinHealth = signedToHealthScore(stablecoinBiasScore);
+  const etfHealth = signedToHealthScore(etfBiasScore);
+  const exchangeFlowHealth = signedToHealthScore(exchangeFlowScore);
+  const leveragedHealth = leveragedLiquidityScore;
+  const liquidityRegime = deriveLiquidityRegimeV2({
+    macroHealth,
+    realSpotHealth,
+    leveragedHealth,
+    stablecoinHealth,
+    etfHealth,
+    exchangeFlowHealth,
+    sustainability: liquiditySustainabilityScore,
+    leverageStress: leverageStressRaw,
+    coverage: confidenceCalibration.dataCoveragePercent,
+    missingSignals: confidenceCalibration.missingSignals,
+  });
   const stablecoinTrend = stablecoinBiasScore === null ? "mixed" : biasFromScore(stablecoinBiasScore);
   const etfFlowStatus = etfBiasScore === null ? "mixed" : biasFromScore(etfBiasScore);
   const qualityScore = calculateDataQualityScore({ signals: snapshot.signals, requiredSignals: 12 });
+  const liquidityContributionBreakdown = [
+    {
+      layer: "macro" as const,
+      labelFa: "Macro Contribution",
+      contribution: macroLiquidityScore === null ? null : Math.round(macroLiquidityScore * 0.42),
+      source: "DXY + US10Y",
+    },
+    {
+      layer: "stablecoin" as const,
+      labelFa: "Stablecoin Contribution",
+      contribution: stablecoinBiasScore === null ? null : Math.round(stablecoinBiasScore * 0.145),
+      source: "DefiLlama stablecoin trend",
+    },
+    {
+      layer: "etf" as const,
+      labelFa: "ETF Contribution",
+      contribution: etfBiasScore === null ? null : Math.round(etfBiasScore * 0.116),
+      source: "BTC/ETH ETF flow module",
+    },
+    {
+      layer: "spot" as const,
+      labelFa: "Spot Contribution",
+      contribution: spotContributionScore === null ? null : Math.round(spotContributionScore * 0.087),
+      source: "Spot volume trend",
+    },
+    {
+      layer: "derivatives" as const,
+      labelFa: "Derivative Contribution",
+      contribution: derivativesContributionScore === null ? null : Math.round(derivativesContributionScore * 0.116),
+      source: "Funding, open interest and futures/spot volume pressure",
+    },
+    {
+      layer: "sentiment" as const,
+      labelFa: "Sentiment Contribution",
+      contribution: sentimentContributionScore === null ? null : 0,
+      source: sentimentContributionScore === null ? "Market-relevant sentiment unavailable" : `Diagnostic only: sentiment pressure ${Math.round(sentimentContributionScore)}`,
+    },
+  ];
 
   const warnings = [
     leverageStressRaw !== null && realSpotLiquidityScore !== null && leverageStressRaw >= 72 && realSpotLiquidityScore <= 10
@@ -338,9 +601,19 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     `نقدینگی کلان: ${macroLiquidityScore ?? "ناموجود"}/100؛ DXY مثبت و رشد US10Y این بخش را منفی می‌کند.`,
     `پایداری نقدینگی: ${liquiditySustainabilityScore ?? "ناموجود"}/100؛ زیر ۴۵ یعنی ادامه حرکت بدون تأیید اسپات و استیبل‌کوین شکننده است.`,
     `سقف confidence نقدینگی: ${confidenceCap}/100؛ ETF یا exchange flow ناموجود، سقف را پایین می‌آورد.`,
+    `طبقه‌بندی سخت‌گیرانه: ${strictClassification.labelFa} با امتیاز سلامت ${liquidityHealthScore ?? "ناموجود"}/100؛ coverage ورودی ${confidenceCalibration.dataCoveragePercent}/100 است.`,
+    `رژیم نقدینگی V2: ${liquidityRegimeV2Label(liquidityRegime.regime)} با confidence ${liquidityRegime.confidence}/100؛ این رژیم از تفکیک ماکرو، اسپات واقعی، ETF، استیبل‌کوین، exchange flow و اهرم ساخته شده است.`,
+    `Liquidity Contribution Breakdown: ${liquidityContributionBreakdown.map((item) => `${item.labelFa}: ${item.contribution ?? "Missing"}`).join("؛ ")}؛ Final Score: ${liquidityHealthScore ?? "ناموجود"}/100.`,
   ];
 
-  const explanation =
+  const strictNarrative = strictLiquidityNarrative({
+    score: liquidityHealthScore,
+    labelFa: strictClassification.labelFa,
+    missingInputs: confidenceCalibration.missingSignals,
+    staleCount: confidenceCalibration.staleSignals.length,
+  });
+
+  const scenarioExplanation =
     effectiveInvalidReason
       ? `داده کافی برای تحلیل معتبر وجود ندارد. ${effectiveInvalidReason}`
       : v2State === "speculative_overheating"
@@ -352,14 +625,39 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
             : v2State === "healthy_expansion"
               ? `وضعیت نقدینگی «${liquidityV2Label(v2State)}» است: نقدینگی واقعی اسپات مثبت است، اهرم داغ نشده و فشار DXY/US10Y از حد بحرانی عبور نکرده است. اعتبار این سناریو با رشد پایدار استیبل‌کوین‌ها و تداوم ETF inflow تقویت می‌شود.`
               : `وضعیت نقدینگی «${liquidityV2Label(v2State)}» است. موتور بین نقدینگی اسپات، اهرمی و کلان تفکیک می‌کند؛ تا وقتی پایداری نقدینگی بالای ۵۸ نرود، خروجی به‌عنوان حمایت پایدار برای ریسک‌پذیری تفسیر نمی‌شود.`;
+  const explanation = effectiveInvalidReason
+    ? scenarioExplanation
+    : enforceLiquidityNarrativeConsistency({
+        healthScore: liquidityHealthScore,
+        labelFa: strictClassification.labelFa,
+        narrative: `${strictNarrative} ${scenarioExplanation}`,
+        fallback: strictNarrative,
+      });
 
   return {
     ...scores,
-    condition: conditionFromState(liquidityState),
+    condition: strictClassification.condition === "Unclear" ? conditionFromState(liquidityState) : strictClassification.condition,
     liquidityState,
     v2State,
+    liquidityRegimeV2: liquidityRegime.regime,
+    liquidityRegimeLabelFa: liquidityRegimeV2Label(liquidityRegime.regime),
+    liquidityRegimeConfidence: liquidityRegime.confidence,
+    liquidityBottlenecks: liquidityRegime.bottlenecks,
+    liquidityConfirmations: liquidityRegime.confirmations,
+    liquidityRegimeNarrativeFa: liquidityRegime.narrativeFa,
+    liquidityLayerScores: {
+      macro: macroHealth,
+      realSpot: realSpotHealth,
+      leveraged: leveragedHealth,
+      stablecoin: stablecoinHealth,
+      etf: etfHealth,
+      exchangeFlows: exchangeFlowHealth,
+    },
+    strictLiquidityClass: strictClassification.class,
+    strictLiquidityLabelFa: strictClassification.labelFa,
     liquidityScoreSigned,
-    liquidityScore: clampPercent(50 + liquidityScoreSigned / 2),
+    liquidityHealthScore: liquidityHealthScore ?? undefined,
+    liquidityScore: liquidityHealthScore ?? clampPercent(50 + liquidityScoreSigned / 2),
     macroLiquidityScore: macroLiquidityScore ?? 0,
     cryptoLiquidityScore: cryptoLiquidityScore ?? 0,
     realSpotLiquidityScore: realSpotLiquidityScore ?? undefined,
@@ -374,9 +672,12 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     riskCompression,
     confidence: confidenceScore,
     confidenceDetail: outputConfidenceDetail,
+    dataCoveragePercent: confidenceCalibration.dataCoveragePercent,
+    confidenceCalibrationReason: confidenceCalibration.reason,
     formula:
       "امتیاز نقدینگی = ۰٫۴۲ × نقدینگی کلان + ۰٫۵۸ × نقدینگی کریپتو؛ نقدینگی کلان از فشار معکوس DXY و US10Y ساخته می‌شود؛ نقدینگی کریپتو از استیبل‌کوین‌ها، جریان ETF، ذخایر صرافی و حجم اسپات وزن می‌گیرد.",
     decomposition,
+    liquidityContributionBreakdown,
     warnings,
     explanation,
     historicalComparison:
@@ -395,7 +696,10 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
           ) ?? liquidityDataQuality(snapshot.signals),
     sourceType: proxySnapshot.sourceType,
     unavailablePremiumInputs: proxySnapshot.unavailablePremiumInputs,
-    missingInputs: proxySnapshot.payload && Array.isArray(proxySnapshot.payload.missingInputs) ? proxySnapshot.payload.missingInputs as string[] : [],
+    missingInputs: Array.from(new Set([
+      ...(proxySnapshot.payload && Array.isArray(proxySnapshot.payload.missingInputs) ? proxySnapshot.payload.missingInputs as string[] : []),
+      ...confidenceCalibration.missingSignals,
+    ])),
     proxySignals: ["macro_pressure_proxy", "crypto_liquidity_proxy", "stablecoin_liquidity_signal"],
     lastUpdatedAt: getEngineLastUpdatedAt(),
   };

@@ -56,6 +56,7 @@ function qualityFor(signals: Record<string, NormalizedSignal>, keys: string[]): 
   const available = selected.filter(isAvailable);
   if (!available.length) return "unavailable";
   if (available.some((signal) => signal.quality === "live") && available.length === selected.length) return "partial_live";
+  if (available.some((signal) => signal.quality === "proxy")) return available.length < selected.length ? "partial_live" : "proxy";
   if (available.some((signal) => signal.quality === "delayed")) return available.length < selected.length ? "partial_live" : "delayed";
   return available.length < selected.length ? "partial_live" : "live";
 }

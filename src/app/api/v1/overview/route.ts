@@ -4,41 +4,61 @@ import {
   getNewsGroupedByCategory,
   pricingPlans,
   sourceHealth,
-  usdtRiskCenter,
 } from "@/lib/production-data";
-import { getAssetImpactProfiles } from "@/server/analytics/asset-impact-engine";
-import { getBasicIntelligenceReport } from "@/server/analytics/basic-intelligence-engine";
-import { getDynamicCorrelationReport } from "@/server/analytics/correlation-engine";
-import { getDerivedSignalReport } from "@/server/analytics/derived-signal-engine";
-import { getLiquidityReport } from "@/server/analytics/liquidity-engine";
-import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
-import { getRiskReport } from "@/server/analytics/risk-engine";
-import { getSentimentReport } from "@/server/analytics/sentiment-engine";
-import { getSignalSnapshot, REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
-import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
-import { getAiLayerStatus } from "@/server/ai/event-explanation-layer";
-import { getIntelligenceReliabilityReport } from "@/server/intelligence/reliability-engine";
-import { getDashboardModuleDataSourceStatus } from "@/server/dashboard/dashboard-service";
-import { getFreshnessReportSync } from "@/health/freshness-engine";
-import { getIngestionFoundationStatusSync } from "@/health/source-health";
+import {
+  DASHBOARD_REFRESH_INTERVAL_MINUTES,
+  getDashboardAiStatus,
+  getDashboardAlerts,
+  getDashboardAssetImpactProfiles,
+  getDashboardBasicIntelligence,
+  getDashboardCausalMarketGraph,
+  getDashboardCorrelationReport,
+  getDashboardDerivedSignals,
+  getDashboardForecastValidationCenter,
+  getDashboardFreshnessReport,
+  getDashboardIngestionFoundationStatus,
+  getDashboardIntegrityReport,
+  getDashboardLiquidityIntelligenceStack,
+  getDashboardLiquidityReport,
+  getDashboardMarketRegime,
+  getDashboardModuleDataSourceStatus,
+  getDashboardReliabilityReport,
+  getDashboardRiskReport,
+  getDashboardSentimentReport,
+  getDashboardSignalSnapshot,
+  getDashboardUsdtRiskCenter,
+  ensureDashboardSignalCacheFresh,
+} from "@/server/dashboard/dashboard-service";
+import { getEtfFlowSnapshotSync } from "@/server/data/etf-flow-module";
 
 export function OPTIONS() {
   return apiOptions();
 }
 
 export async function GET() {
-  const snapshot = getSignalSnapshot();
-  const ingestionFoundation = getIngestionFoundationStatusSync();
-  const freshnessReport = getFreshnessReportSync();
-  const reliability = await getIntelligenceReliabilityReport();
+  await ensureDashboardSignalCacheFresh();
+  const snapshot = getDashboardSignalSnapshot();
+  const ingestionFoundation = getDashboardIngestionFoundationStatus();
+  const freshnessReport = getDashboardFreshnessReport();
+  const reliability = getDashboardReliabilityReport();
   const dataSourceStatus = getDashboardModuleDataSourceStatus();
+  const alerts = getDashboardAlerts();
+  const integrity = getDashboardIntegrityReport();
   const etfFlows = [
-    { issuer: "BTC ETF basket", signal: snapshot.byKey.btc_etf_flow_24h },
-    { issuer: "ETH ETF basket", signal: snapshot.byKey.eth_etf_flow_24h },
+    { issuer: "BTC ETF basket", signal: snapshot.byKey.btc_etf_flow_24h, snapshot: getEtfFlowSnapshotSync("BTC") },
+    { issuer: "ETH ETF basket", signal: snapshot.byKey.eth_etf_flow_24h, snapshot: getEtfFlowSnapshotSync("ETH") },
   ].map((row) => ({
     issuer: row.issuer,
     netFlow: row.signal?.value ?? null,
+    netFlow7d: row.snapshot.netFlow7d,
+    netFlow30d: row.snapshot.netFlow30d,
+    providerBreakdown: row.snapshot.providerBreakdown,
+    providerBreakdown7d: row.snapshot.providerBreakdown7d,
+    providerBreakdown30d: row.snapshot.providerBreakdown30d,
     source: row.signal?.source ?? null,
+    sourceUrl: row.snapshot.sourceUrl ?? null,
+    latestDate: row.snapshot.latestDate ?? null,
+    freshness: row.snapshot.freshness,
     quality: row.signal?.quality ?? "unavailable",
     reliability: row.signal?.reliability ?? 0,
     timestamp: row.signal?.timestamp ?? null,
@@ -55,23 +75,27 @@ export async function GET() {
     freshnessReport,
     ingestionFoundation,
     intelligenceReliability: reliability,
-    aiLayer: getAiLayerStatus(),
-    basicIntelligence: getBasicIntelligenceReport(),
-    marketRegime: getMarketRegimeReport(),
-    risk: getRiskReport(),
-    derivedSignals: getDerivedSignalReport(),
-    alerts: generateSmartAlerts(),
-    liquidity: getLiquidityReport(),
-    correlations: getDynamicCorrelationReport(),
-    assetImpacts: getAssetImpactProfiles(),
+    aiLayer: getDashboardAiStatus(),
+    basicIntelligence: getDashboardBasicIntelligence(),
+    forecastValidation: getDashboardForecastValidationCenter(),
+    causalMarketGraph: getDashboardCausalMarketGraph(),
+    marketRegime: getDashboardMarketRegime(),
+    risk: getDashboardRiskReport(),
+    derivedSignals: getDashboardDerivedSignals(),
+    alerts,
+    integrity,
+    liquidity: getDashboardLiquidityReport(),
+    liquidityIntelligence: getDashboardLiquidityIntelligenceStack(),
+    correlations: getDashboardCorrelationReport(),
+    assetImpacts: getDashboardAssetImpactProfiles(),
     assets: assetIntelligence,
     etfFlows,
-    sentiment: getSentimentReport(),
+    sentiment: getDashboardSentimentReport(),
     dataQuality: {
-      refreshIntervalMinutes: REFRESH_INTERVAL_MINUTES,
+      refreshIntervalMinutes: DASHBOARD_REFRESH_INTERVAL_MINUTES,
       ...snapshot,
     },
-    usdtRiskCenter,
+    usdtRiskCenter: getDashboardUsdtRiskCenter(),
     newsByCategory: getNewsGroupedByCategory(),
     sourceHealth: ingestionFoundation.sourceHealth.length ? ingestionFoundation.sourceHealth : sourceHealth.slice(0, 36),
     pricingPlans,

@@ -29,6 +29,7 @@ const migrations = [
   "202605250006_normalized_events_conflict_key.sql",
   "202605250007_free_data_proxy_model.sql",
   "202605250008_data_foundation_contracts.sql",
+  "202605250010_etf_daily_flows.sql",
 ];
 
 function connectionConfig() {

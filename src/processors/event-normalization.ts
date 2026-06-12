@@ -3,6 +3,7 @@ import { buildPersianEventSummary, buildPersianEventTitle } from "@/lib/persian-
 import type { AssetSymbol, NewsCategory } from "@/lib/types";
 import type { EventClusterInput, FreshnessStatus, NormalizedEventInput, RawEventInput } from "@/types/ingestion";
 import { stableHash } from "@/processors/deduplication";
+import { classifyGeopoliticalEvent } from "@/server/analytics/geopolitical-classifier";
 
 const sourceById = new Map(productionSources.map((source) => [source.id, source]));
 
@@ -105,9 +106,10 @@ function unique<T>(values: T[]) {
 function classifyEventType(event: RawEventInput) {
   const text = textOf(event);
   const matched = eventTypeRules.find((rule) => rule.patterns.some((pattern) => pattern.test(text)));
+  if (matched?.eventType === "geopolitical_risk" && !classifyGeopoliticalEvent(event).accepted) return "financial_market_news";
   if (matched) return matched.eventType;
   if (event.category === "central_banks") return "central_bank_policy";
-  if (event.category === "geopolitics") return "geopolitical_risk";
+  if (event.category === "geopolitics") return classifyGeopoliticalEvent(event).accepted ? "geopolitical_risk" : "financial_market_news";
   if (event.category === "stablecoins") return "stablecoin_liquidity";
   if (event.category === "derivatives") return "liquidation_leverage";
   if (event.category === "economic_data") return "macro_news";

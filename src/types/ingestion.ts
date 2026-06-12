@@ -368,6 +368,8 @@ export interface IngestionJobResult {
 export interface IngestionFoundationOptions {
   sourceIds?: string[];
   stageId?: string;
+  maxAttemptsOverride?: number;
+  timeoutMsOverride?: number;
 }
 
 export interface IngestionRunSummary {

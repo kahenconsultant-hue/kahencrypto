@@ -290,10 +290,21 @@ function staleSignalCount() {
 
 type SchedulerRunOptions = Pick<SchedulerRunRecord, "schedulerSource" | "executionEnvironment">;
 
-async function runSchedulerStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number]) {
+function ingestionOptionsForStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number], options: SchedulerRunOptions) {
+  const externalCron = options.schedulerSource === "external_cron_job_org";
+  return {
+    sourceIds: [...stage.sourceIds],
+    stageId: stage.stageId,
+    maxAttemptsOverride: externalCron ? 1 : undefined,
+    timeoutMsOverride: externalCron ? ("timeoutMs" in stage ? stage.timeoutMs : 6_000) : undefined,
+  };
+}
+
+async function runSchedulerStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number], options: SchedulerRunOptions = {}) {
   const stageStartedAt = new Date().toISOString();
   try {
-    const summary = await withStageTimeout(runIngestionFoundation({ sourceIds: [...stage.sourceIds], stageId: stage.stageId }), stage.label, "timeoutMs" in stage ? stage.timeoutMs : DEFAULT_STAGE_TIMEOUT_MS);
+    const stageTimeoutMs = options.schedulerSource === "external_cron_job_org" ? ("timeoutMs" in stage ? stage.timeoutMs : 18_000) : "timeoutMs" in stage ? stage.timeoutMs : DEFAULT_STAGE_TIMEOUT_MS;
+    const summary = await withStageTimeout(runIngestionFoundation(ingestionOptionsForStage(stage, options)), stage.label, stageTimeoutMs);
     return { stageRun: stageFromSummary(stage, summary), summary };
   } catch (error) {
     return { stageRun: failedStage(stage, stageStartedAt, error), summary: null };
@@ -308,12 +319,12 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
 
   const runStagesInParallel = options.schedulerSource === "external_cron_job_org";
   if (runStagesInParallel) {
-    const stageResults = await Promise.all(INGESTION_SCHEDULER_STAGES.map((stage) => runSchedulerStage(stage)));
+    const stageResults = await Promise.all(INGESTION_SCHEDULER_STAGES.map((stage) => runSchedulerStage(stage, options)));
     stages.push(...stageResults.map((result) => result.stageRun));
     summaries.push(...stageResults.map((result) => result.summary).filter((summary): summary is IngestionRunSummary => Boolean(summary)));
   } else {
     for (const stage of INGESTION_SCHEDULER_STAGES) {
-      const result = await runSchedulerStage(stage);
+      const result = await runSchedulerStage(stage, options);
       if (result.summary) summaries.push(result.summary);
       stages.push(result.stageRun);
     }

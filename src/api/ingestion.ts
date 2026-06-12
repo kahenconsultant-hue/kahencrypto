@@ -149,11 +149,38 @@ function mergeStageHealth(previousHealth: Map<string, SourceHealthSnapshot>, cur
   return [...currentHealth, ...Array.from(previousHealth.values()).filter((source) => !currentIds.has(source.sourceId))];
 }
 
+function applyRuntimeOverrides(source: SourceDefinition, options: IngestionFoundationOptions): SourceDefinition {
+  const maxAttemptsOverride =
+    typeof options.maxAttemptsOverride === "number" && Number.isFinite(options.maxAttemptsOverride)
+      ? Math.max(1, Math.floor(options.maxAttemptsOverride))
+      : null;
+  const timeoutMsOverride =
+    typeof options.timeoutMsOverride === "number" && Number.isFinite(options.timeoutMsOverride)
+      ? Math.max(1_000, Math.floor(options.timeoutMsOverride))
+      : null;
+
+  if (maxAttemptsOverride === null && timeoutMsOverride === null) return source;
+
+  return {
+    ...source,
+    timeoutMs: timeoutMsOverride === null ? source.timeoutMs : Math.min(source.timeoutMs, timeoutMsOverride),
+    retryPolicy:
+      maxAttemptsOverride === null
+        ? source.retryPolicy
+        : {
+            ...source.retryPolicy,
+            maxAttempts: Math.min(source.retryPolicy.maxAttempts, maxAttemptsOverride),
+          },
+  };
+}
+
 export async function runIngestionFoundation(options: IngestionFoundationOptions = {}): Promise<IngestionRunSummary> {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const selectedSourceIds = new Set(options.sourceIds ?? []);
-  const sources = getEnabledSources().filter((source) => !selectedSourceIds.size || selectedSourceIds.has(source.id));
+  const sources = getEnabledSources()
+    .filter((source) => !selectedSourceIds.size || selectedSourceIds.has(source.id))
+    .map((source) => applyRuntimeOverrides(source, options));
   const sourceDefinitionStore = await persistSourceDefinitions(getAllSources());
   const previousHealth = new Map(getLatestSourceHealthSync().map((source) => [source.sourceId, source]));
   const results = await Promise.all(

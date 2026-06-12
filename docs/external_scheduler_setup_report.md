@@ -76,12 +76,22 @@ Scheduler dashboard data now prefers Supabase `telemetry_logs` when available, s
 
 ## Production Cron URL
 
-Pending production deploy.
+Production deploy completed successfully.
 
-Expected format:
+Production deployment:
 
 ```text
-https://<production-domain>/api/cron/ingest
+id: dpl_DjgxbAP7627fduqj1aE5GuW3S1Dt
+target: production
+status: READY
+deploymentUrl: https://kahencrypto-dni68l88j-kahenconsultant-hues-projects.vercel.app
+productionAlias: https://kahencrypto.vercel.app
+```
+
+Use this cron URL in cron-job.org:
+
+```text
+https://kahencrypto.vercel.app/api/cron/ingest
 ```
 
 ## Required Authorization Header
@@ -97,7 +107,7 @@ Do not put the secret in the URL query string.
 
 ## cron-job.org Recommended Configuration
 
-- URL: pending production deploy
+- URL: `https://kahencrypto.vercel.app/api/cron/ingest`
 - Method: `GET`
 - Schedule: every 30 minutes
 - Timeout: at least 300 seconds if available
@@ -137,6 +147,37 @@ Reason:
 
 - External scheduler path has not yet accumulated 24 hours of production run history.
 
+## Production Deployment Checks
+
+Completed:
+
+- Vercel production deploy succeeded.
+- `https://kahencrypto.vercel.app` returned HTTP `200`.
+- `https://kahencrypto.vercel.app/admin/data-health` returned HTTP `200`.
+- `https://kahencrypto.vercel.app/api/v1/environment` returned Supabase configured and connected.
+- Unauthenticated `https://kahencrypto.vercel.app/api/cron/ingest` returned HTTP `401`.
+
+Production environment API reported:
+
+```json
+{
+  "supabaseConfigured": true,
+  "supabaseConnected": true,
+  "serviceRoleAvailable": true,
+  "activeStorageMode": "supabase",
+  "lastIngestionRun": {
+    "storageMode": "supabase",
+    "failedSources": 0,
+    "deadLetters": 2
+  }
+}
+```
+
+DNS note:
+
+- During verification, one `curl` request to `/api/v1/news?grouped=true` hit a transient local DNS resolution error.
+- The production alias resolved immediately afterward and root/data-health checks succeeded.
+
 ## Local Validation
 
 Completed before deployment:
@@ -147,7 +188,14 @@ Completed before deployment:
 
 ## Deployment Verification
 
-Pending:
+Completed:
 
 - production deploy
-- production endpoint verification
+- production root endpoint verification
+- production Data Health endpoint verification
+- production cron unauthorized guard verification
+
+Still pending:
+
+- first real cron-job.org execution
+- 24 hours of external production scheduler observations

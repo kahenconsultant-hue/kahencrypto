@@ -290,6 +290,32 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
               <div className="mt-1 text-xs leading-6">Retry {dashboard.scheduler.retryCount} / Stale {dashboard.scheduler.staleSignals}</div>
             </div>
           </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Latest Trigger</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.scheduler.trigger ?? "ناموجود"}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Scheduler Source</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.scheduler.schedulerSource ?? "ناموجود"}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Environment</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.scheduler.executionEnvironment ?? "ناموجود"}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Scheduler Storage</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.scheduler.storageMode ?? "ناموجود"}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">External Production Runs</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.scheduler.externalProductionRuns}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Failed Production Runs</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.scheduler.failedProductionRuns} / Local manual {dashboard.scheduler.localManualRuns}</div>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] border-separate border-spacing-y-2 text-right text-xs">
               <thead className="text-muted-foreground">

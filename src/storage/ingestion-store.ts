@@ -20,6 +20,7 @@ import type {
   RawEventInput,
   RawMetricInput,
   SchedulerRunRecord,
+  SchedulerStageRun,
   SourceHealthSnapshot,
   SourceDefinition,
   StorageWriteReport,
@@ -748,7 +749,7 @@ export async function persistSchedulerRun(run: SchedulerRunRecord): Promise<Inge
   const next = [run, ...previous.filter((item) => item.runId !== run.runId)].slice(0, 50);
   writeLatest("latest-scheduler-runs.json", next);
   appendJsonl("scheduler-runs.jsonl", [run]);
-  await persistTelemetryLogs([
+  return persistTelemetryLogs([
     {
       runId: run.runId,
       scope: "scheduler",
@@ -757,7 +758,15 @@ export async function persistSchedulerRun(run: SchedulerRunRecord): Promise<Inge
       message: `Scheduler ${run.status}: ${run.stages.filter((stage) => stage.status === "success" || stage.status === "success_with_limited_confidence").length}/${run.stages.length} stages completed without blocking failure.`,
       durationMs: run.durationMs,
       payload: {
+        runId: run.runId,
         trigger: run.trigger,
+        schedulerSource: run.schedulerSource ?? null,
+        executionEnvironment: run.executionEnvironment ?? null,
+        status: run.status,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        refreshEveryMinutes: run.refreshEveryMinutes,
+        nextRunAt: run.nextRunAt,
         failedStage: run.failedStage,
         retryCount: run.retryCount,
         successRate: run.successRate,
@@ -776,7 +785,6 @@ export async function persistSchedulerRun(run: SchedulerRunRecord): Promise<Inge
       observedAt: run.finishedAt,
     },
   ]);
-  return "local_fallback";
 }
 
 export function getLatestRawEventsSync(limit = 40) {
@@ -853,6 +861,91 @@ export function getLatestTelemetryLogsSync(limit = 100) {
 
 export function getLatestSchedulerRunsSync(limit = 20) {
   return readLatest<SchedulerRunRecord[]>("latest-scheduler-runs.json", []).slice(0, limit);
+}
+
+function schedulerRunFromTelemetryLog(log: TelemetryLogInput): SchedulerRunRecord | null {
+  if (log.scope !== "scheduler" || log.eventType !== "scheduler_run_completed") return null;
+  const payload = log.payload ?? {};
+  const runId = typeof payload.runId === "string" ? payload.runId : log.runId;
+  if (!runId) return null;
+  const stagesPayload = Array.isArray(payload.stages) ? payload.stages : [];
+  const observedAt = log.observedAt;
+  const durationMs = typeof log.durationMs === "number" ? log.durationMs : 0;
+  const startedAt = typeof payload.startedAt === "string" ? payload.startedAt : new Date(Math.max(0, Date.parse(observedAt) - durationMs)).toISOString();
+  const finishedAt = typeof payload.finishedAt === "string" ? payload.finishedAt : observedAt;
+  return {
+    runId,
+    trigger: payload.trigger === "manual_http" || payload.trigger === "local_scheduler" || payload.trigger === "ui_refresh_catchup" || payload.trigger === "simulation" ? payload.trigger : "cron_http",
+    schedulerSource:
+      payload.schedulerSource === "external_cron_job_org" ||
+      payload.schedulerSource === "vercel_cron" ||
+      payload.schedulerSource === "manual_http" ||
+      payload.schedulerSource === "local_scheduler" ||
+      payload.schedulerSource === "ui_refresh_catchup" ||
+      payload.schedulerSource === "simulation" ||
+      payload.schedulerSource === "unknown_http"
+        ? payload.schedulerSource
+        : undefined,
+    executionEnvironment: typeof payload.executionEnvironment === "string" ? payload.executionEnvironment : undefined,
+    storageMode: "supabase",
+    schedulerStorageMode: "supabase",
+    status:
+      payload.status === "success" ||
+      payload.status === "success_with_limited_confidence" ||
+      payload.status === "degraded" ||
+      payload.status === "failed" ||
+      payload.status === "skipped"
+        ? payload.status
+        : log.level === "error"
+          ? "failed"
+          : log.level === "warning"
+            ? "degraded"
+            : "success",
+    startedAt,
+    finishedAt,
+    durationMs,
+    refreshEveryMinutes: typeof payload.refreshEveryMinutes === "number" ? payload.refreshEveryMinutes : 30,
+    nextRunAt: typeof payload.nextRunAt === "string" ? payload.nextRunAt : new Date(Date.parse(finishedAt) + 30 * 60_000).toISOString(),
+    stages: stagesPayload.map((stage): SchedulerStageRun => {
+      const stageRecord = stage as Record<string, unknown>;
+      return {
+        stageId: typeof stageRecord.stageId === "string" ? stageRecord.stageId : "unknown",
+        label: typeof stageRecord.stageId === "string" ? stageRecord.stageId : "unknown",
+        status:
+          stageRecord.status === "success" ||
+          stageRecord.status === "success_with_limited_confidence" ||
+          stageRecord.status === "degraded" ||
+          stageRecord.status === "failed" ||
+          stageRecord.status === "skipped"
+            ? stageRecord.status
+            : "skipped",
+        startedAt,
+        finishedAt,
+        durationMs: typeof stageRecord.durationMs === "number" ? stageRecord.durationMs : 0,
+        sourceIds: [],
+        pulledEvents: 0,
+        pulledMetrics: 0,
+        persistedEvents: 0,
+        persistedMetrics: 0,
+        failedSources: typeof stageRecord.failedSources === "number" ? stageRecord.failedSources : 0,
+        degradedSources: typeof stageRecord.degradedSources === "number" ? stageRecord.degradedSources : 0,
+        deadLetters: typeof stageRecord.deadLetters === "number" ? stageRecord.deadLetters : 0,
+        retryCount: 0,
+        details: typeof stageRecord.details === "object" && stageRecord.details !== null ? (stageRecord.details as Record<string, unknown>) : undefined,
+        error: typeof stageRecord.error === "string" ? stageRecord.error : undefined,
+      };
+    }),
+    failedStage: typeof payload.failedStage === "string" ? payload.failedStage : null,
+    retryCount: typeof payload.retryCount === "number" ? payload.retryCount : 0,
+    successRate: typeof payload.successRate === "number" ? payload.successRate : 0,
+    staleSignals: typeof payload.staleSignals === "number" ? payload.staleSignals : 0,
+  };
+}
+
+export async function getLatestSchedulerRuns(limit = 48) {
+  const logs = await getLatestTelemetryLogs(Math.max(100, limit * 4));
+  const runs = logs.map(schedulerRunFromTelemetryLog).filter((run): run is SchedulerRunRecord => Boolean(run));
+  return runs.length ? runs.slice(0, limit) : getLatestSchedulerRunsSync(limit);
 }
 
 async function selectSupabaseRows<T>(table: string, orderBy: string, limit: number): Promise<T[]> {

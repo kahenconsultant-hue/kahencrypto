@@ -426,6 +426,11 @@ export interface SchedulerStageRun {
 export interface SchedulerRunRecord {
   runId: string;
   trigger: "cron_http" | "manual_http" | "local_scheduler" | "ui_refresh_catchup" | "simulation";
+  schedulerSource?: "external_cron_job_org" | "vercel_cron" | "manual_http" | "local_scheduler" | "ui_refresh_catchup" | "simulation" | "unknown_http";
+  executionEnvironment?: string;
+  storageMode?: IngestionStorageMode;
+  schedulerStorageMode?: IngestionStorageMode;
+  ingestionStorageMode?: IngestionStorageMode;
   status: SchedulerStageStatus;
   startedAt: string;
   finishedAt: string;

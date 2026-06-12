@@ -20,7 +20,7 @@ import {
   getLatestIngestionRun,
   getLatestRawEvents,
   getLatestRawMetrics,
-  getLatestSchedulerRunsSync,
+  getLatestSchedulerRuns,
   getLatestSourceHealth,
   getLatestStorageWriteReportsSync,
 } from "@/storage/ingestion-store";
@@ -252,6 +252,13 @@ export interface SchedulerDashboardRow {
 export interface SchedulerDashboard {
   lastRun: string | null;
   nextRun: string | null;
+  trigger: string | null;
+  schedulerSource: string | null;
+  executionEnvironment: string | null;
+  storageMode: string | null;
+  externalProductionRuns: number;
+  localManualRuns: number;
+  failedProductionRuns: number;
   durationMs: number | null;
   successRate: number;
   failedStage: string | null;
@@ -1078,10 +1085,12 @@ function schedulerRecencyScore(timestamp: string | null) {
   return 20;
 }
 
-function buildSchedulerDashboard(): SchedulerDashboard {
-  const runs = getLatestSchedulerRunsSync(48);
+function buildSchedulerDashboard(runs: Awaited<ReturnType<typeof getLatestSchedulerRuns>>): SchedulerDashboard {
   const latest = runs[0] ?? null;
   const recentRuns = runs.slice(0, 48);
+  const externalProductionRuns = recentRuns.filter((run) => run.schedulerSource === "external_cron_job_org" && run.executionEnvironment === "production").length;
+  const localManualRuns = recentRuns.filter((run) => run.trigger === "manual_http" || run.schedulerSource === "manual_http" || run.executionEnvironment === "local" || run.executionEnvironment === "development").length;
+  const failedProductionRuns = recentRuns.filter((run) => run.executionEnvironment === "production" && (run.status === "failed" || Boolean(run.failedStage))).length;
   const historicalSuccessRate = recentRuns.length
     ? average(recentRuns.map((run) => (run.status === "success" ? 100 : run.status === "success_with_limited_confidence" ? 90 : run.status === "degraded" ? 70 : run.status === "skipped" ? 35 : 0)))
     : 0;
@@ -1097,6 +1106,13 @@ function buildSchedulerDashboard(): SchedulerDashboard {
   return {
     lastRun: latest?.finishedAt ?? null,
     nextRun: latest?.nextRunAt ?? null,
+    trigger: latest?.trigger ?? null,
+    schedulerSource: latest?.schedulerSource ?? null,
+    executionEnvironment: latest?.executionEnvironment ?? null,
+    storageMode: latest?.storageMode ?? null,
+    externalProductionRuns,
+    localManualRuns,
+    failedProductionRuns,
     durationMs: latest?.durationMs ?? null,
     successRate: clampScore(historicalSuccessRate),
     failedStage: latest?.failedStage ?? null,
@@ -1221,7 +1237,7 @@ function buildDebugPayload(params: {
 }
 
 export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
-  const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun] = await Promise.all([
+  const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun, schedulerRuns] = await Promise.all([
     getLatestSourceHealth(),
     getLatestRawEvents(500),
     getLatestRawMetrics(500),
@@ -1229,6 +1245,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     getLatestIngestionLogs(100),
     getLatestDeadLetters(100),
     getLatestIngestionRun(),
+    getLatestSchedulerRuns(48),
   ]);
 
   const signalSnapshot = getSignalSnapshot();
@@ -1246,7 +1263,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
   const integrity = getIntelligenceIntegrityReport({ alerts: generateSmartAlerts() });
   const apiLogs = buildApiLogs(logs);
   const correlationTable = buildCorrelationTable();
-  const scheduler = buildSchedulerDashboard();
+  const scheduler = buildSchedulerDashboard(schedulerRuns);
   const scores = buildScores({ dataSources, marketCoverage, engineHealth, scheduler, integrity });
   const storageWriteFailures = getLatestStorageWriteReportsSync(50).filter((report) => report.status === "failed");
   const latestRunDeadLetters = deadLetters.filter(

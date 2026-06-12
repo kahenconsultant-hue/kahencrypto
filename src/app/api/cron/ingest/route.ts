@@ -9,6 +9,23 @@ export const revalidate = 0;
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
+function executionEnvironment() {
+  if (process.env.VERCEL_ENV) return process.env.VERCEL_ENV;
+  if (process.env.VERCEL) return "vercel";
+  return process.env.NODE_ENV ?? "local";
+}
+
+function schedulerSourceForRequest(request: NextRequest, sync: boolean) {
+  if (sync) return "manual_http" as const;
+  const sourceHeader = request.headers.get("x-cmip-scheduler-source")?.toLowerCase() ?? "";
+  const userAgent = request.headers.get("user-agent")?.toLowerCase() ?? "";
+  const querySource = request.nextUrl.searchParams.get("scheduler")?.toLowerCase() ?? "";
+  if (sourceHeader.includes("cron-job.org") || userAgent.includes("cron-job.org") || querySource === "cron-job-org") {
+    return "external_cron_job_org" as const;
+  }
+  return "unknown_http" as const;
+}
+
 export async function GET(request: NextRequest) {
   const secret = process.env.INGESTION_CRON_SECRET ?? process.env.CRON_SECRET;
   const provided = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -18,41 +35,24 @@ export async function GET(request: NextRequest) {
   }
 
   const sync = request.nextUrl.searchParams.get("sync") === "1";
-
-  if (!sync) {
-    const acceptedAt = new Date().toISOString();
-    const scheduleBackgroundRun = () => {
-      setTimeout(() => {
-        void runStagedScheduledIngestion("cron_http").catch((error) => {
-          console.error("[cmip-cron] staged ingestion failed", error);
-        });
-      }, 0);
-    };
-    scheduleBackgroundRun();
-    return apiJson(
-      {
-        generatedAt: acceptedAt,
-        dataSourceStatus: moduleDataSourceStatus.ingestionHealth,
-        mode: "staged_scheduled_ingestion",
-        accepted: true,
-        refreshEveryMinutes: REFRESH_INTERVAL_MINUTES,
-        message: "Cron ingestion accepted. Stage-isolated execution continues in the scheduler background task.",
-        rootCauseFix:
-          "cron route no longer keeps the HTTP response open while ingestion, Supabase persistence and fusion stages run. Use ?sync=1 only for local diagnostics.",
-      },
-      { status: 202 },
-    );
-  }
-
-  const schedulerRun = await runStagedScheduledIngestion("manual_http");
+  const schedulerSource = schedulerSourceForRequest(request, sync);
+  const schedulerRun = await runStagedScheduledIngestion(sync ? "manual_http" : "cron_http", {
+    schedulerSource,
+    executionEnvironment: executionEnvironment(),
+  });
 
   return apiJson({
     generatedAt: new Date().toISOString(),
     dataSourceStatus: moduleDataSourceStatus.ingestionHealth,
-    mode: "staged_scheduled_ingestion",
+    mode: "staged_scheduled_ingestion_completed",
+    completed: true,
     refreshEveryMinutes: REFRESH_INTERVAL_MINUTES,
+    trigger: schedulerRun.trigger,
+    schedulerSource,
+    executionEnvironment: schedulerRun.executionEnvironment,
+    storageMode: schedulerRun.storageMode ?? "local_fallback",
     rootCauseFix:
-      "cron route is now stage-isolated and returns a compact scheduler summary instead of a large monolithic ingestion/cache/derived payload.",
+      "cron route now completes staged ingestion inside the request lifecycle. It no longer returns HTTP 202 before ingestion finishes and no longer depends on post-response setTimeout background execution.",
     schedulerRun,
     result: {
       status: schedulerRun.status,

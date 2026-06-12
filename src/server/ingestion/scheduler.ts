@@ -288,7 +288,9 @@ function staleSignalCount() {
   }).length;
 }
 
-export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["trigger"] = "cron_http") {
+type SchedulerRunOptions = Pick<SchedulerRunRecord, "schedulerSource" | "executionEnvironment">;
+
+export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["trigger"] = "cron_http", options: SchedulerRunOptions = {}) {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const stages: SchedulerStageRun[] = [];
@@ -327,6 +329,8 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
   const schedulerRun: SchedulerRunRecord = {
     runId,
     trigger,
+    schedulerSource: options.schedulerSource ?? (trigger === "manual_http" ? "manual_http" : trigger === "local_scheduler" ? "local_scheduler" : trigger === "ui_refresh_catchup" ? "ui_refresh_catchup" : trigger === "simulation" ? "simulation" : "unknown_http"),
+    executionEnvironment: options.executionEnvironment ?? process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "local",
     status,
     startedAt,
     finishedAt,
@@ -346,8 +350,11 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
   await persistForecastValidations(forecastValidations);
   await persistForecastSnapshots(forecastSnapshots);
 
-  await persistSchedulerRun(schedulerRun);
-  await persistIngestionRun(aggregateIngestionSummary(runId, startedAt, finishedAt, stages, summaries));
+  const schedulerStorageMode = await persistSchedulerRun(schedulerRun);
+  const ingestionStorageMode = await persistIngestionRun(aggregateIngestionSummary(runId, startedAt, finishedAt, stages, summaries));
+  schedulerRun.schedulerStorageMode = schedulerStorageMode;
+  schedulerRun.ingestionStorageMode = ingestionStorageMode;
+  schedulerRun.storageMode = schedulerStorageMode === "supabase" || ingestionStorageMode === "supabase" ? "supabase" : "local_fallback";
 
   return schedulerRun;
 }

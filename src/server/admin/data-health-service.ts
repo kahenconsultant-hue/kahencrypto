@@ -18,6 +18,7 @@ import {
   getLatestEtfDailyFlows,
   getLatestIngestionLogs,
   getLatestIngestionRun,
+  hydrateMarketSnapshotsFromSupabase,
   getLatestRawEvents,
   getLatestRawMetrics,
   getLatestSchedulerRuns,
@@ -1250,6 +1251,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     getLatestIngestionRun(),
     getLatestSchedulerRuns(48),
   ]);
+  await hydrateMarketSnapshotsFromSupabase();
 
   const signalSnapshot = getSignalSnapshot();
   const dataSources = buildDataSources({ health: sourceHealth, rawEvents, rawMetrics, signals: signalSnapshot.byKey });

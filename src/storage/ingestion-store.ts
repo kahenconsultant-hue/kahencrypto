@@ -1374,6 +1374,15 @@ export async function getLatestMarketSnapshots(limit = 100) {
   return rows.length ? rows.map(marketSnapshotFromRow) : getLatestMarketSnapshotsSync(limit);
 }
 
+export async function hydrateMarketSnapshotsFromSupabase(limit = 8_000) {
+  const marketSnapshots = await getLatestMarketSnapshots(limit);
+  if (marketSnapshots.length) tryWriteLatest("latest-market-snapshots.json", marketSnapshots);
+  return {
+    hydrated: Boolean(marketSnapshots.length),
+    marketSnapshots: marketSnapshots.length,
+  };
+}
+
 export async function getLatestIntelligenceOutputs(limit = 100) {
   const rows = await selectSupabaseRows<IntelligenceOutputRow>("intelligence_outputs", "generated_at", limit);
   return rows.length ? rows.map(intelligenceOutputFromRow) : getLatestIntelligenceOutputsSync(limit);

@@ -283,6 +283,11 @@ async function fetchCoinGeckoMarkets() {
   return coinGeckoMarketsCache;
 }
 
+async function fetchCoinGeckoMarketsRow(id: "bitcoin" | "ethereum" | "solana") {
+  const rows = await fetchCoinGeckoMarkets();
+  return rows?.find((item) => item.id === id) ?? null;
+}
+
 async function fetchCoinGeckoSimplePrices() {
   coinGeckoSimplePriceCache ??= fetchJson<CoinGeckoSimplePriceResponse>(
     "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true",
@@ -320,6 +325,41 @@ async function fetchCoinGeckoSimplePrice(id: "bitcoin" | "ethereum" | "solana") 
   });
 }
 
+async function fetchCoinGeckoMarketsPrice(id: "bitcoin" | "ethereum" | "solana") {
+  const row = await fetchCoinGeckoMarketsRow(id);
+  const price = Number(row?.current_price);
+  if (!Number.isFinite(price)) return null;
+  return live({
+    value: price,
+    previousValue: null,
+    timestamp: row?.last_updated ?? new Date().toISOString(),
+    source: `CoinGecko coins/markets fallback ${id} price_usd`,
+    reliability: 72,
+    sourceType: "API",
+    quality: "partial_live",
+  });
+}
+
+async function fetchCoinGeckoChartLatestPrice(id: "bitcoin" | "ethereum" | "solana") {
+  const data = await fetchCoinGeckoMarketChart(id, 1, "hourly");
+  const prices = data?.prices ?? [];
+  const latest = prices[prices.length - 1];
+  const previous = prices.length > 1 ? prices[prices.length - 2] : null;
+  const value = Number(latest?.[1]);
+  if (!latest || !Number.isFinite(value)) return null;
+  const previousValue = previous ? Number(previous[1]) : null;
+  return live({
+    value,
+    previousValue: Number.isFinite(previousValue) ? previousValue : null,
+    timestamp: new Date(latest[0]).toISOString(),
+    source: `CoinGecko market_chart latest fallback ${id} price_usd`,
+    reliability: 68,
+    sourceType: "API",
+    quality: "delayed",
+    intradayHistory: marketChartHistory(prices),
+  });
+}
+
 async function fetchCoinGeckoSimpleTrend(id: "bitcoin" | "ethereum" | "solana") {
   const row = await fetchCoinGeckoSimpleRow(id);
   const change = Number(row?.usd_24h_change);
@@ -347,6 +387,39 @@ async function fetchCoinGeckoSimpleVolumeLevel(id: "bitcoin" | "ethereum" | "sol
     reliability: 72,
     sourceType: "API",
     quality: "partial_live",
+  });
+}
+
+async function fetchCoinGeckoMarketsVolumeLevel(id: "bitcoin" | "ethereum" | "solana") {
+  const row = await fetchCoinGeckoMarketsRow(id);
+  const volume = Number(row?.total_volume);
+  if (!Number.isFinite(volume)) return null;
+  return live({
+    value: volume,
+    previousValue: null,
+    timestamp: row?.last_updated ?? new Date().toISOString(),
+    source: `CoinGecko coins/markets fallback ${id} 24h volume USD`,
+    reliability: 70,
+    sourceType: "API",
+    quality: "partial_live",
+  });
+}
+
+async function fetchCoinGeckoChartLatestVolumeLevel(id: "bitcoin" | "ethereum" | "solana") {
+  const data = await fetchCoinGeckoMarketChart(id, 1, "hourly");
+  const volumes = data?.total_volumes ?? [];
+  const latest = volumes[volumes.length - 1];
+  const value = Number(latest?.[1]);
+  if (!latest || !Number.isFinite(value)) return null;
+  return live({
+    value,
+    previousValue: null,
+    timestamp: new Date(latest[0]).toISOString(),
+    source: `CoinGecko market_chart latest fallback ${id} volume USD`,
+    reliability: 66,
+    sourceType: "API",
+    quality: "delayed",
+    history: marketChartHistory(volumes),
   });
 }
 
@@ -1228,21 +1301,21 @@ function fallbackPoint(key: string): AdapterResult {
 export const marketDataAdapter: DataAdapter = {
   id: "marketDataAdapter",
   async fetchPoint(key) {
-    if (key === "btc_price_usd") return (await fetchCoinGeckoSimplePrice("bitcoin")) ?? unavailable("CoinGecko Simple Price BTC", "BTC price unavailable from CoinGecko Simple Price.");
-    if (key === "eth_price_usd") return (await fetchCoinGeckoSimplePrice("ethereum")) ?? unavailable("CoinGecko Simple Price ETH", "ETH price unavailable from CoinGecko Simple Price.");
-    if (key === "sol_price_usd") return (await fetchCoinGeckoSimplePrice("solana")) ?? unavailable("CoinGecko Simple Price SOL", "SOL price unavailable from CoinGecko Simple Price.");
+    if (key === "btc_price_usd") return (await fetchCoinGeckoSimplePrice("bitcoin")) ?? (await fetchCoinGeckoMarketsPrice("bitcoin")) ?? (await fetchCoinGeckoChartLatestPrice("bitcoin")) ?? unavailable("CoinGecko BTC price", "BTC price unavailable from CoinGecko Simple Price, coins/markets and market_chart.");
+    if (key === "eth_price_usd") return (await fetchCoinGeckoSimplePrice("ethereum")) ?? (await fetchCoinGeckoMarketsPrice("ethereum")) ?? (await fetchCoinGeckoChartLatestPrice("ethereum")) ?? unavailable("CoinGecko ETH price", "ETH price unavailable from CoinGecko Simple Price, coins/markets and market_chart.");
+    if (key === "sol_price_usd") return (await fetchCoinGeckoSimplePrice("solana")) ?? (await fetchCoinGeckoMarketsPrice("solana")) ?? (await fetchCoinGeckoChartLatestPrice("solana")) ?? unavailable("CoinGecko SOL price", "SOL price unavailable from CoinGecko Simple Price, coins/markets and market_chart.");
     if (key === "btc_trend_24h") return (await fetchBinanceTrend("BTCUSDT")) ?? (await fetchBybitTrend("BTCUSDT")) ?? (await fetchCoinGeckoSimpleTrend("bitcoin")) ?? (await fetchCoinGeckoTrend("bitcoin")) ?? fallbackPoint(key);
     if (key === "eth_trend_24h") return (await fetchBinanceTrend("ETHUSDT")) ?? (await fetchBybitTrend("ETHUSDT")) ?? (await fetchCoinGeckoSimpleTrend("ethereum")) ?? (await fetchCoinGeckoTrend("ethereum")) ?? fallbackPoint(key);
     if (key === "sol_trend_24h") return (await fetchBinanceTrend("SOLUSDT")) ?? (await fetchBybitTrend("SOLUSDT")) ?? (await fetchCoinGeckoSimpleTrend("solana")) ?? (await fetchCoinGeckoTrend("solana")) ?? fallbackPoint(key);
-    if (key === "btc_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("bitcoin")) ?? unavailable("CoinGecko Simple Price BTC volume", "BTC 24h volume unavailable from CoinGecko Simple Price.");
-    if (key === "eth_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("ethereum")) ?? unavailable("CoinGecko Simple Price ETH volume", "ETH 24h volume unavailable from CoinGecko Simple Price.");
-    if (key === "sol_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("solana")) ?? unavailable("CoinGecko Simple Price SOL volume", "SOL 24h volume unavailable from CoinGecko Simple Price.");
+    if (key === "btc_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("bitcoin")) ?? (await fetchCoinGeckoMarketsVolumeLevel("bitcoin")) ?? (await fetchCoinGeckoChartLatestVolumeLevel("bitcoin")) ?? unavailable("CoinGecko BTC volume", "BTC 24h volume unavailable from CoinGecko Simple Price, coins/markets and market_chart.");
+    if (key === "eth_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("ethereum")) ?? (await fetchCoinGeckoMarketsVolumeLevel("ethereum")) ?? (await fetchCoinGeckoChartLatestVolumeLevel("ethereum")) ?? unavailable("CoinGecko ETH volume", "ETH 24h volume unavailable from CoinGecko Simple Price, coins/markets and market_chart.");
+    if (key === "sol_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("solana")) ?? (await fetchCoinGeckoMarketsVolumeLevel("solana")) ?? (await fetchCoinGeckoChartLatestVolumeLevel("solana")) ?? unavailable("CoinGecko SOL volume", "SOL 24h volume unavailable from CoinGecko Simple Price, coins/markets and market_chart.");
     if (key === "btc_market_cap") return (await fetchCoinGeckoMarketCap("bitcoin")) ?? unavailable("CoinGecko BTC market cap", "CoinGecko BTC market cap unavailable.");
     if (key === "eth_market_cap") return (await fetchCoinGeckoMarketCap("ethereum")) ?? unavailable("CoinGecko ETH market cap", "CoinGecko ETH market cap unavailable.");
     if (key === "sol_market_cap") return (await fetchCoinGeckoMarketCap("solana")) ?? unavailable("CoinGecko SOL market cap", "CoinGecko SOL market cap unavailable.");
-    if (key === "spot_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT")) ?? (await fetchBybitVolumeTrend("BTCUSDT")) ?? (await fetchCoinGeckoVolumeTrend("bitcoin")) ?? (await fetchCoinGeckoSimpleVolumeLevel("bitcoin")) ?? fallbackPoint(key);
-    if (key === "spot_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT")) ?? (await fetchBybitVolumeTrend("ETHUSDT")) ?? (await fetchCoinGeckoVolumeTrend("ethereum")) ?? (await fetchCoinGeckoSimpleVolumeLevel("ethereum")) ?? unavailable("Binance/Bybit/CoinGecko ETH spot volume", "ETH spot volume unavailable.");
-    if (key === "spot_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT")) ?? (await fetchBybitVolumeTrend("SOLUSDT")) ?? (await fetchCoinGeckoVolumeTrend("solana")) ?? (await fetchCoinGeckoSimpleVolumeLevel("solana")) ?? unavailable("Binance/Bybit/CoinGecko SOL spot volume", "SOL spot volume unavailable.");
+    if (key === "spot_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT")) ?? (await fetchBybitVolumeTrend("BTCUSDT")) ?? (await fetchCoinGeckoVolumeTrend("bitcoin")) ?? (await fetchCoinGeckoSimpleVolumeLevel("bitcoin")) ?? (await fetchCoinGeckoMarketsVolumeLevel("bitcoin")) ?? fallbackPoint(key);
+    if (key === "spot_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT")) ?? (await fetchBybitVolumeTrend("ETHUSDT")) ?? (await fetchCoinGeckoVolumeTrend("ethereum")) ?? (await fetchCoinGeckoSimpleVolumeLevel("ethereum")) ?? (await fetchCoinGeckoMarketsVolumeLevel("ethereum")) ?? unavailable("Binance/Bybit/CoinGecko ETH spot volume", "ETH spot volume unavailable.");
+    if (key === "spot_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT")) ?? (await fetchBybitVolumeTrend("SOLUSDT")) ?? (await fetchCoinGeckoVolumeTrend("solana")) ?? (await fetchCoinGeckoSimpleVolumeLevel("solana")) ?? (await fetchCoinGeckoMarketsVolumeLevel("solana")) ?? unavailable("Binance/Bybit/CoinGecko SOL spot volume", "SOL spot volume unavailable.");
     if (key === "futures_volume_btc_24h") return (await fetchBybitVolumeTrend("BTCUSDT", true)) ?? (await fetchBinanceVolumeTrend("BTCUSDT", true)) ?? unavailable("Bybit/Binance BTC futures volume", "BTC futures volume unavailable; no zero leverage value is generated.");
     if (key === "futures_volume_eth_24h") return (await fetchBybitVolumeTrend("ETHUSDT", true)) ?? (await fetchBinanceVolumeTrend("ETHUSDT", true)) ?? unavailable("Bybit/Binance ETH futures volume", "ETH futures volume unavailable.");
     if (key === "futures_volume_sol_24h") return (await fetchBybitVolumeTrend("SOLUSDT", true)) ?? (await fetchBinanceVolumeTrend("SOLUSDT", true)) ?? unavailable("Bybit/Binance SOL futures volume", "SOL futures volume unavailable.");

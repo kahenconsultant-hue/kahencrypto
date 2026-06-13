@@ -101,12 +101,13 @@ function matrixAssetLabel(asset: string) {
   return labels[asset] ?? asset;
 }
 
-function LastUpdated({ minutes = minutesSinceEngineUpdate() }: { minutes?: number }) {
+function LastUpdated({ minutes = minutesSinceEngineUpdate() }: { minutes?: number | null }) {
   const health = getRefreshHealth();
   const effectiveMinutes = health.ageMinutes ?? minutes;
+  const hasValidAge = typeof effectiveMinutes === "number" && Number.isFinite(effectiveMinutes);
   return (
     <span className={health.failedRefresh ? "text-[11px] text-red-200" : "text-[11px] text-muted-foreground"}>
-      آخرین بروزرسانی: {effectiveMinutes} دقیقه پیش · بروزرسانی هر {DASHBOARD_REFRESH_INTERVAL_MINUTES} دقیقه
+      آخرین بروزرسانی: {hasValidAge ? `${effectiveMinutes} دقیقه پیش` : "نامشخص"} · بروزرسانی هر {DASHBOARD_REFRESH_INTERVAL_MINUTES} دقیقه
       {health.warning ? ` · هشدار: ${health.warning}` : ""}
     </span>
   );
@@ -2205,7 +2206,8 @@ export function DataQualityPanel() {
   const freshness = getFreshnessReport();
   const freshnessBySignal = new Map(freshness.signalFreshness.map((signal) => [signal.key, signal]));
   const failedSources = snapshot.signals.filter((signal) => signal.quality === "unavailable" || signal.error);
-  const nextUpdate = Math.max(0, DASHBOARD_REFRESH_INTERVAL_MINUTES - minutesSinceEngineUpdate());
+  const ageMinutes = minutesSinceEngineUpdate();
+  const nextUpdate = typeof ageMinutes === "number" ? Math.max(0, DASHBOARD_REFRESH_INTERVAL_MINUTES - ageMinutes) : null;
 
   return (
     <Card>
@@ -2218,8 +2220,8 @@ export function DataQualityPanel() {
           <CardDescription>کیفیت داده، منبع، علت ناموجود بودن، زمان آخرین به‌روزرسانی و هشدار کهنگی برای هر سیگنال خام.</CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="success">آخرین اجرای موفق: {new Date(snapshot.lastUpdatedAt).toLocaleString("fa-IR")}</Badge>
-          <Badge variant="outline">آپدیت بعدی: {nextUpdate} دقیقه دیگر</Badge>
+          <Badge variant="success">آخرین اجرای موفق: {snapshot.lastUpdatedAt ? new Date(snapshot.lastUpdatedAt).toLocaleString("fa-IR") : "نامشخص"}</Badge>
+          <Badge variant="outline">آپدیت بعدی: {nextUpdate === null ? "نامشخص" : `${nextUpdate} دقیقه دیگر`}</Badge>
           <Badge variant={freshnessVariant(freshness.overallFreshnessState)}>تازگی کلی: {freshnessStateLabelsFa[freshness.overallFreshnessState]}</Badge>
           {freshness.summary.staleSources + freshness.summary.obsoleteSources ? <Badge variant="danger">{freshness.summary.staleSources + freshness.summary.obsoleteSources} منبع stale/obsolete</Badge> : null}
           {failedSources.length ? <Badge variant="danger">{failedSources.length} منبع ناموفق</Badge> : <Badge variant="success">منبع ناموفق ندارد</Badge>}

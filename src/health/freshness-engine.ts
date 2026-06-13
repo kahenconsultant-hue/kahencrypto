@@ -9,6 +9,7 @@ import {
   freshnessScoreFromState as resolverFreshnessScoreFromState,
   freshnessStateFromAge as resolverFreshnessStateFromAge,
   minutesSince,
+  isOperationalTimestamp,
   resolveGlobalFreshness,
   resolveSignalFreshness,
   resolveSourceFreshness,
@@ -107,8 +108,9 @@ export function dataQualityFromFreshness(quality: DataSourceStatus, timestamp: s
 }
 
 function latestTimestamp(values: Array<string | null | undefined>) {
+  const now = new Date();
   const latest = values
-    .map((value) => (value ? Date.parse(value) : NaN))
+    .map((value) => (isOperationalTimestamp(value, now) ? Date.parse(value as string) : NaN))
     .filter(Number.isFinite)
     .sort((left, right) => right - left)[0];
   return latest ? new Date(latest).toISOString() : null;

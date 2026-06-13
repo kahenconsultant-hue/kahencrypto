@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import type { DataPoint, SignalGroup } from "@/lib/types";
+import { isOperationalTimestamp } from "@/health/freshnessResolver";
 import { fetchCurrentDataPoints, requiredSignalKeys } from "@/server/data/adapters";
 import { getLatestSharedSignalCache, persistSharedSignalCache, type SharedSignalCachePayload } from "@/storage/ingestion-store";
 
@@ -175,7 +176,7 @@ function countByQuality(points: DataPoint[]) {
 function payloadQuality(payload: CachePayload | null) {
   const points = payload?.points ?? [];
   const byKey = new Map(points.map((point) => [point.key, point]));
-  const generatedAt = payload?.generatedAt ? Date.parse(payload.generatedAt) : NaN;
+  const generatedAt = isOperationalTimestamp(payload?.generatedAt) ? Date.parse(payload?.generatedAt as string) : NaN;
   const ageMinutes = Number.isFinite(generatedAt) ? Math.max(0, Math.round((Date.now() - generatedAt) / 60_000)) : Number.POSITIVE_INFINITY;
   const usableTotal = points.filter(hasUsableValue).length;
   const usableCritical = CRITICAL_SIGNAL_KEYS.filter((key) => hasUsableValue(byKey.get(key))).length;
@@ -235,13 +236,13 @@ export async function loadSharedSignalCache(force = false) {
 export function getSignalCacheStatusSync() {
   const payload = readPayload();
   const now = Date.now();
-  const expiresAt = payload?.expiresAt ? Date.parse(payload.expiresAt) : 0;
-  const generatedAt = payload?.generatedAt ? Date.parse(payload.generatedAt) : 0;
+  const expiresAt = isOperationalTimestamp(payload?.expiresAt) ? Date.parse(payload?.expiresAt as string) : 0;
+  const generatedAt = isOperationalTimestamp(payload?.generatedAt) ? Date.parse(payload?.generatedAt as string) : 0;
   return {
     path: SIGNAL_CACHE_PATH,
     exists: Boolean(payload),
-    generatedAt: payload?.generatedAt ?? null,
-    expiresAt: payload?.expiresAt ?? null,
+    generatedAt: generatedAt ? payload?.generatedAt ?? null : null,
+    expiresAt: expiresAt ? payload?.expiresAt ?? null : null,
     stale: !payload || expiresAt <= now,
     ageMinutes: generatedAt ? Math.max(0, Math.round((now - generatedAt) / 60_000)) : null,
     ttlMinutes: SIGNAL_CACHE_TTL_MINUTES,

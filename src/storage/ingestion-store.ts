@@ -1086,6 +1086,10 @@ type EventClusterRow = ReturnType<typeof eventClusterRow> & { id?: string; creat
 type MarketSnapshotRow = ReturnType<typeof marketSnapshotRow> & { id?: string; created_at?: string };
 type IntelligenceOutputRow = ReturnType<typeof intelligenceOutputRow> & { id?: string; created_at?: string };
 type TelemetryLogRow = ReturnType<typeof telemetryLogRow> & { id?: string; created_at?: string };
+type LiquidityScoreDbRow = ReturnType<typeof liquidityScoreRow> & { id?: string; created_at?: string };
+type RegimeInputDbRow = ReturnType<typeof regimeInputRow> & { id?: string; created_at?: string };
+type ForecastSnapshotDbRow = ReturnType<typeof forecastSnapshotRow> & { id?: string };
+type ForecastValidationDbRow = ReturnType<typeof forecastValidationRow> & { id?: string };
 
 function rawEventFromRow(row: RawEventRow): RawEventInput {
   return {
@@ -1157,6 +1161,88 @@ function telemetryLogFromRow(row: TelemetryLogRow): TelemetryLogInput {
     tableName: row.table_name ?? undefined,
     payload: row.payload ?? {},
     observedAt: row.observed_at,
+  };
+}
+
+function liquidityScoreFromRow(row: LiquidityScoreDbRow): LiquidityScoreSnapshotInput {
+  return {
+    runId: row.run_id ?? undefined,
+    scoreKey: row.score_key,
+    sourceType: row.source_type as LiquidityScoreSnapshotInput["sourceType"],
+    cryptoLiquidityProxyScore: row.crypto_liquidity_proxy_score === null ? null : Number(row.crypto_liquidity_proxy_score),
+    macroLiquidityPressureScore: row.macro_liquidity_pressure_score === null ? null : Number(row.macro_liquidity_pressure_score),
+    stablecoinPressure: row.stablecoin_pressure === null ? null : Number(row.stablecoin_pressure),
+    confidence: row.confidence === null ? null : Number(row.confidence),
+    quality: row.quality as LiquidityScoreSnapshotInput["quality"],
+    unavailablePremiumInputs: row.unavailable_premium_inputs ?? [],
+    explanationFa: row.explanation_fa,
+    payload: row.payload ?? {},
+    generatedAt: row.generated_at,
+  };
+}
+
+function regimeInputFromRow(row: RegimeInputDbRow): RegimeInputSnapshotInput {
+  return {
+    runId: row.run_id ?? undefined,
+    regimeKey: row.regime_key,
+    sourceType: row.source_type as RegimeInputSnapshotInput["sourceType"],
+    regime: row.regime,
+    confidence: row.confidence === null ? null : Number(row.confidence),
+    quality: row.quality as RegimeInputSnapshotInput["quality"],
+    usedInputs: row.used_inputs ?? [],
+    missingInputs: row.missing_inputs ?? [],
+    explanationFa: row.explanation_fa,
+    payload: row.payload ?? {},
+    generatedAt: row.generated_at,
+  };
+}
+
+function forecastSnapshotFromRow(row: ForecastSnapshotDbRow): ForecastSnapshotInput {
+  return {
+    id: row.id,
+    snapshotId: row.snapshot_id,
+    timestamp: row.forecast_timestamp,
+    asset: row.asset,
+    assetType: row.asset_type,
+    predictionHorizon: row.prediction_horizon as ForecastSnapshotInput["predictionHorizon"],
+    predictedDirection: row.predicted_direction as ForecastSnapshotInput["predictedDirection"],
+    predictedBias: row.predicted_bias,
+    predictedConfidence: row.predicted_confidence === null ? null : Number(row.predicted_confidence),
+    riskScore: row.risk_score === null ? null : Number(row.risk_score),
+    liquidityScore: row.liquidity_score === null ? null : Number(row.liquidity_score),
+    regime: row.regime,
+    mainDrivers: Array.isArray(row.main_drivers) ? row.main_drivers as string[] : [],
+    priceAtPrediction: Number(row.price_at_prediction),
+    validationDate: row.validation_date,
+    runId: row.run_id,
+    engineContributions: typeof row.engine_contributions === "object" && row.engine_contributions !== null ? row.engine_contributions as Record<string, number | null> : {},
+  };
+}
+
+function forecastValidationFromRow(row: ForecastValidationDbRow): ForecastValidationInput {
+  return {
+    id: row.id,
+    validationId: row.validation_id,
+    snapshotId: row.snapshot_id,
+    asset: row.asset,
+    assetType: row.asset_type,
+    predictionHorizon: row.prediction_horizon as ForecastValidationInput["predictionHorizon"],
+    predictionTimestamp: row.prediction_timestamp,
+    validationDate: row.validation_date,
+    validatedAt: row.validated_at,
+    predictedDirection: row.predicted_direction as ForecastValidationInput["predictedDirection"],
+    predictedConfidence: row.predicted_confidence === null ? null : Number(row.predicted_confidence),
+    priceAtPrediction: Number(row.price_at_prediction),
+    actualPrice: row.actual_price === null ? null : Number(row.actual_price),
+    realizedChangePct: row.realized_change_pct === null ? null : Number(row.realized_change_pct),
+    realizedDirection: row.realized_direction as ForecastValidationInput["realizedDirection"],
+    result: row.result as ForecastValidationInput["result"],
+    internalScore: row.internal_score === null ? null : Number(row.internal_score),
+    mainDrivers: Array.isArray(row.main_drivers) ? row.main_drivers as string[] : [],
+    engineContributions: typeof row.engine_contributions === "object" && row.engine_contributions !== null ? row.engine_contributions as Record<string, number | null> : {},
+    outcomeSummaryFa: row.outcome_summary_fa,
+    explanationFa: row.explanation_fa,
+    quality: row.quality as ForecastValidationInput["quality"],
   };
 }
 
@@ -1374,6 +1460,26 @@ export async function getLatestMarketSnapshots(limit = 100) {
   return rows.length ? rows.map(marketSnapshotFromRow) : getLatestMarketSnapshotsSync(limit);
 }
 
+export async function getLatestLiquidityScore() {
+  const rows = await selectSupabaseRows<LiquidityScoreDbRow>("liquidity_scores", "generated_at", 1);
+  return rows.length ? liquidityScoreFromRow(rows[0]) : getLatestLiquidityScoreSync();
+}
+
+export async function getLatestRegimeInput() {
+  const rows = await selectSupabaseRows<RegimeInputDbRow>("regime_inputs", "generated_at", 1);
+  return rows.length ? regimeInputFromRow(rows[0]) : getLatestRegimeInputSync();
+}
+
+export async function getLatestForecastSnapshots(limit = 30_000) {
+  const rows = await selectSupabaseRows<ForecastSnapshotDbRow>("forecast_snapshots", "forecast_timestamp", limit);
+  return rows.length ? rows.map(forecastSnapshotFromRow) : getForecastSnapshotsSync(limit);
+}
+
+export async function getLatestForecastValidations(limit = 30_000) {
+  const rows = await selectSupabaseRows<ForecastValidationDbRow>("forecast_validations", "validated_at", limit);
+  return rows.length ? rows.map(forecastValidationFromRow) : getForecastValidationsSync(limit);
+}
+
 export async function hydrateMarketSnapshotsFromSupabase(limit = 8_000) {
   const marketSnapshots = await getLatestMarketSnapshots(limit);
   if (marketSnapshots.length) tryWriteLatest("latest-market-snapshots.json", marketSnapshots);
@@ -1400,7 +1506,20 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     return { hydrated: false, reason: "recently_hydrated" as const };
   }
 
-  const [sourceHealth, rawEvents, rawMetrics, latestRun, schedulerRuns, telemetryLogs, marketSnapshots] = await Promise.all([
+  const [
+    sourceHealth,
+    rawEvents,
+    rawMetrics,
+    latestRun,
+    schedulerRuns,
+    telemetryLogs,
+    marketSnapshots,
+    etfDailyFlows,
+    liquidityScore,
+    regimeInput,
+    forecastSnapshots,
+    forecastValidations,
+  ] = await Promise.all([
     getLatestSourceHealth(),
     getLatestRawEvents(300),
     getLatestRawMetrics(500),
@@ -1408,6 +1527,11 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     getLatestSchedulerRuns(48),
     getLatestTelemetryLogs(200),
     getLatestMarketSnapshots(3_000),
+    getLatestEtfDailyFlows(20_000),
+    getLatestLiquidityScore(),
+    getLatestRegimeInput(),
+    getLatestForecastSnapshots(30_000),
+    getLatestForecastValidations(30_000),
   ]);
 
   if (sourceHealth.length) tryWriteLatest("source-health.json", sourceHealth);
@@ -1417,6 +1541,11 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
   if (schedulerRuns.length) tryWriteLatest("latest-scheduler-runs.json", schedulerRuns);
   if (telemetryLogs.length) tryWriteLatest("latest-telemetry-logs.json", telemetryLogs);
   if (marketSnapshots.length) tryWriteLatest("latest-market-snapshots.json", marketSnapshots);
+  if (etfDailyFlows.length) tryWriteLatest("latest-etf-daily-flows.json", etfDailyFlows);
+  if (liquidityScore) tryWriteLatest("latest-liquidity-score.json", liquidityScore);
+  if (regimeInput) tryWriteLatest("latest-regime-input.json", regimeInput);
+  if (forecastSnapshots.length) tryWriteLatest("forecast-snapshots.json", forecastSnapshots);
+  if (forecastValidations.length) tryWriteLatest("forecast-validations.json", forecastValidations);
 
   runtimeStoreHydratedAt = Date.now();
   return {
@@ -1426,6 +1555,11 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     rawMetrics: rawMetrics.length,
     schedulerRuns: schedulerRuns.length,
     marketSnapshots: marketSnapshots.length,
+    etfDailyFlows: etfDailyFlows.length,
+    liquidityScore: Boolean(liquidityScore),
+    regimeInput: Boolean(regimeInput),
+    forecastSnapshots: forecastSnapshots.length,
+    forecastValidations: forecastValidations.length,
     latestRun: Boolean(latestRun),
   };
 }

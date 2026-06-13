@@ -2,6 +2,7 @@ import type { AssetSymbol, DataPoint, DataSeriesPoint, IntelligenceAssetSymbol, 
 import { clampPercent, scoresToLegacyScores } from "@/server/analytics/scoring-engine";
 import { getCachedDataPointsSync, getSignalCacheStatusSync } from "@/server/data/signal-cache";
 import { freshnessStatus } from "@/server/analytics/quality-engine";
+import { isOperationalTimestamp } from "@/health/freshnessResolver";
 
 export type SeriesKey =
   | IntelligenceAssetSymbol
@@ -28,15 +29,18 @@ let signalSnapshotMemoKey: string | null = null;
 const returnSeriesMemo = new Map<string, number[]>();
 
 function latestCachedPointTimestamp() {
+  const now = new Date();
   const latest = getCachedDataPointsSync()
-    .map((point) => (point.timestamp ? Date.parse(point.timestamp) : NaN))
+    .map((point) => (isOperationalTimestamp(point.timestamp, now) ? Date.parse(point.timestamp as string) : NaN))
     .filter(Number.isFinite)
     .sort((left, right) => right - left)[0];
   return Number.isFinite(latest) ? new Date(latest).toISOString() : null;
 }
 
 export function getEngineLastUpdatedAt() {
-  return getSignalCacheStatusSync().generatedAt ?? latestCachedPointTimestamp() ?? new Date(0).toISOString();
+  const statusTimestamp = getSignalCacheStatusSync().generatedAt;
+  if (isOperationalTimestamp(statusTimestamp)) return statusTimestamp;
+  return latestCachedPointTimestamp() ?? "";
 }
 
 const channelByKey: Record<string, TransmissionChannel> = {
@@ -403,8 +407,8 @@ export function buildTimestampedReturnSeries(key: SeriesKey, frequency: "intrada
 
 export function minutesSinceEngineUpdate(now = new Date()) {
   const timestamp = getSignalCacheStatusSync().generatedAt ?? getEngineLastUpdatedAt();
-  const parsed = Date.parse(timestamp);
-  if (!Number.isFinite(parsed)) return 0;
+  if (!isOperationalTimestamp(timestamp, now)) return null;
+  const parsed = Date.parse(timestamp as string);
   const diff = now.getTime() - parsed;
   return Math.max(0, Math.round(diff / 60_000));
 }

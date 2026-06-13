@@ -24,11 +24,20 @@ export interface FreshnessResolution {
 const MINUTE = 1;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+const MIN_OPERATIONAL_TIMESTAMP_MS = Date.parse("2024-01-01T00:00:00.000Z");
+
+export function isOperationalTimestamp(timestamp: string | null | undefined, now = new Date()): timestamp is string {
+  if (!timestamp) return false;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return false;
+  if (parsed < MIN_OPERATIONAL_TIMESTAMP_MS) return false;
+  if (parsed > now.getTime() + 10 * 60_000) return false;
+  return true;
+}
 
 export function minutesSince(timestamp: string | null | undefined, now = new Date()) {
-  if (!timestamp) return null;
-  const parsed = Date.parse(timestamp);
-  if (!Number.isFinite(parsed)) return null;
+  if (!isOperationalTimestamp(timestamp, now)) return null;
+  const parsed = Date.parse(timestamp as string);
   return Math.max(0, Math.round((now.getTime() - parsed) / 60_000));
 }
 
@@ -229,8 +238,9 @@ export function resolveGlobalFreshness(params: {
   lastSuccessfulSource?: string | null;
   now?: Date;
 }) {
+  const now = params.now ?? new Date();
   const timestamps = [params.lastSuccessfulRun, params.lastSuccessfulSignal, params.lastSuccessfulSource]
-    .filter((timestamp): timestamp is string => typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp)))
+    .filter((timestamp): timestamp is string => typeof timestamp === "string" && isOperationalTimestamp(timestamp, now))
     .sort((left, right) => Date.parse(right) - Date.parse(left));
   const latest = timestamps[0] ?? null;
   const primary = resolveFreshness({
@@ -238,7 +248,7 @@ export function resolveGlobalFreshness(params: {
     expectedIntervalMinutes: 30,
     quality: latest ? "live" : "unavailable",
     warningLabelFa: "بروزرسانی کلی پلتفرم",
-    now: params.now,
+    now,
   });
   return {
     latest,

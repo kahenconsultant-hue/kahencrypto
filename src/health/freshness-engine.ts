@@ -217,6 +217,7 @@ function buildSignalRows(signals: NormalizedSignal[]) {
 }
 
 function sourceCountsAgainstGlobalFreshness(source: SourceFreshnessRow) {
+  if (source.sourceId === "binance-public-rest" || source.sourceId === "bybit-public-rest") return false;
   return source.enabled && source.tier === 1 && source.status !== "api_key_missing" && source.status !== "disabled";
 }
 

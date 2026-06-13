@@ -343,9 +343,13 @@ function buildReliabilityReport(params: {
       .toFixed(2),
   );
   const sourceHealthById = new Map(params.sourceHealth.map((source) => [source.sourceId, source]));
+  const coreMarketFallbackHealthy = ["success", "degraded"].includes(sourceHealthById.get("cmip-public-market-signal-adapters")?.status ?? "");
   const coreSources = productionSources.filter((source) => (source.intelligenceClass ?? "core") === "core");
   const premiumSources = productionSources.filter((source) => (source.intelligenceClass ?? "core") !== "core");
-  const criticalSources = productionSources.filter((source) => source.tier === 1 && (source.intelligenceClass ?? "core") === "core");
+  const criticalSources = productionSources.filter((source) => {
+    if (coreMarketFallbackHealthy && (source.id === "binance-public-rest" || source.id === "bybit-public-rest")) return false;
+    return source.tier === 1 && (source.intelligenceClass ?? "core") === "core";
+  });
   const missingCriticalSources = criticalSources
     .filter((source) => {
       const health = sourceHealthById.get(source.id);

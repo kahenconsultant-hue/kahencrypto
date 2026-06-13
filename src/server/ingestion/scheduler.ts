@@ -12,6 +12,41 @@ import type { IngestionRunSummary, SchedulerRunRecord, SchedulerStageRun } from 
 
 const DEFAULT_STAGE_TIMEOUT_MS = 75_000;
 
+const STAGE_SIGNAL_KEYS_BY_SOURCE_ID: Record<string, Record<string, string[]>> = {
+  market_data: {
+    "cmip-public-market-signal-adapters": [
+      "btc_price_usd",
+      "eth_price_usd",
+      "sol_price_usd",
+      "btc_volume_24h_usd",
+      "eth_volume_24h_usd",
+      "sol_volume_24h_usd",
+      "btc_market_cap",
+      "eth_market_cap",
+      "sol_market_cap",
+    ],
+  },
+  macro_data: {
+    "fred-api": ["cpi_latest", "ppi_latest", "fed_funds_rate", "unemployment_rate", "us10y_trend_24h", "us2y_trend_24h", "yield_curve_10y2y", "dxy_trend_24h"],
+  },
+};
+
+const BOUNDED_STAGE_TIMEOUT_MS: Record<string, number> = {
+  market_data: 28_000,
+  macro_data: 28_000,
+  news: 22_000,
+  etf: 20_000,
+};
+
+function isBoundedSchedulerRun(options: SchedulerRunOptions = {}) {
+  return (
+    options.schedulerSource === "external_cron_job_org" ||
+    options.schedulerSource === "unknown_http" ||
+    options.executionEnvironment === "production" ||
+    process.env.VERCEL_ENV === "production"
+  );
+}
+
 function schedulerDebug(message: string, payload?: Record<string, unknown>) {
   if (process.env.CMIP_SCHEDULER_DEBUG !== "true") return;
   const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
@@ -301,21 +336,27 @@ function staleSignalCount() {
 type SchedulerRunOptions = Pick<SchedulerRunRecord, "schedulerSource" | "executionEnvironment">;
 
 function ingestionOptionsForStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number], options: SchedulerRunOptions) {
-  const externalCron = options.schedulerSource === "external_cron_job_org";
+  const boundedRun = isBoundedSchedulerRun(options);
   return {
     sourceIds: [...stage.sourceIds],
     stageId: stage.stageId,
-    maxAttemptsOverride: externalCron ? 1 : undefined,
-    timeoutMsOverride: externalCron ? ("timeoutMs" in stage ? stage.timeoutMs : 6_000) : undefined,
+    signalKeysBySourceId: boundedRun ? STAGE_SIGNAL_KEYS_BY_SOURCE_ID[stage.stageId] : undefined,
+    maxAttemptsOverride: boundedRun ? 1 : undefined,
+    timeoutMsOverride: boundedRun ? ("timeoutMs" in stage ? stage.timeoutMs : 6_000) : undefined,
     skipEventProcessing: stage.stageId === "market_data" || stage.stageId === "etf",
-    eventProcessingLimit: externalCron ? 120 : 500,
+    eventProcessingLimit: boundedRun ? 120 : 500,
   };
 }
 
 async function runSchedulerStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number], options: SchedulerRunOptions = {}) {
   const stageStartedAt = new Date().toISOString();
   try {
-    const stageTimeoutMs = options.schedulerSource === "external_cron_job_org" ? ("timeoutMs" in stage ? stage.timeoutMs : 18_000) : "timeoutMs" in stage ? stage.timeoutMs : DEFAULT_STAGE_TIMEOUT_MS;
+    const boundedRun = isBoundedSchedulerRun(options);
+    const stageTimeoutMs = boundedRun
+      ? BOUNDED_STAGE_TIMEOUT_MS[stage.stageId] ?? ("timeoutMs" in stage ? stage.timeoutMs : 18_000)
+      : "timeoutMs" in stage
+        ? stage.timeoutMs
+        : DEFAULT_STAGE_TIMEOUT_MS;
     schedulerDebug("stage:start", { stageId: stage.stageId, timeoutMs: stageTimeoutMs });
     const summary = await withStageTimeout(runIngestionFoundation(ingestionOptionsForStage(stage, options)), stage.label, stageTimeoutMs);
     schedulerDebug("stage:done", { stageId: stage.stageId, durationMs: durationMs(summary.startedAt, summary.finishedAt), pulledMetrics: summary.pulledMetrics, pulledEvents: summary.pulledEvents });
@@ -333,7 +374,7 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
   const summaries: IngestionRunSummary[] = [];
   schedulerDebug("run:start", { runId, trigger, schedulerSource: options.schedulerSource ?? null });
 
-  const runStagesInParallel = options.schedulerSource === "external_cron_job_org";
+  const runStagesInParallel = isBoundedSchedulerRun(options);
   if (runStagesInParallel) {
     const stageResults = await Promise.all(INGESTION_SCHEDULER_STAGES.map((stage) => runSchedulerStage(stage, options)));
     stages.push(...stageResults.map((result) => result.stageRun));

@@ -368,6 +368,7 @@ export interface IngestionJobResult {
 export interface IngestionFoundationOptions {
   sourceIds?: string[];
   stageId?: string;
+  signalKeysBySourceId?: Record<string, string[]>;
   maxAttemptsOverride?: number;
   timeoutMsOverride?: number;
   skipEventProcessing?: boolean;

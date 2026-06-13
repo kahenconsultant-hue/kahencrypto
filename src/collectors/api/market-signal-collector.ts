@@ -63,11 +63,12 @@ export const marketSignalCollector: Collector = {
       const points = await fetchCurrentDataPoints(source.signalKeys);
       const rawMetrics = points.map((point) => metricFromDataPoint(source, point));
       const isInternalBundle = source.id === "cmip-public-market-signal-adapters";
+      const isStageLimitedBundle = isInternalBundle && Boolean(source.signalKeys?.length) && (source.signalKeys?.length ?? 0) < 24;
       const bundleSignals = isInternalBundle
         ? Array.from(new Map([...getSignalSnapshot().signals, ...points].map((signal) => [signal.key, signal])).values())
         : points;
-      const breakdown = isInternalBundle ? buildAdapterBundleBreakdown(bundleSignals) : null;
-      const sourceStatus = isInternalBundle ? null : sourceLevelStatus(source, points);
+      const breakdown = isInternalBundle && !isStageLimitedBundle ? buildAdapterBundleBreakdown(bundleSignals) : null;
+      const sourceStatus = isInternalBundle && !isStageLimitedBundle ? null : sourceLevelStatus(source, points);
       const status = breakdown?.status ?? sourceStatus?.status ?? "failed";
       const diagnosticSummary = breakdown
         ? status === "success"

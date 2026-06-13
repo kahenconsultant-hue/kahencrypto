@@ -159,10 +159,13 @@ function applyRuntimeOverrides(source: SourceDefinition, options: IngestionFound
       ? Math.max(1_000, Math.floor(options.timeoutMsOverride))
       : null;
 
-  if (maxAttemptsOverride === null && timeoutMsOverride === null) return source;
+  const signalKeysOverride = options.signalKeysBySourceId?.[source.id];
+
+  if (maxAttemptsOverride === null && timeoutMsOverride === null && !signalKeysOverride) return source;
 
   return {
     ...source,
+    signalKeys: signalKeysOverride ?? source.signalKeys,
     timeoutMs: timeoutMsOverride === null ? source.timeoutMs : Math.min(source.timeoutMs, timeoutMsOverride),
     retryPolicy:
       maxAttemptsOverride === null

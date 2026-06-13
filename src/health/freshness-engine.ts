@@ -120,10 +120,11 @@ function sourceFreshnessAge(source: SourceDefinition, health?: SourceHealthSnaps
 }
 
 function isOptionalOnlyAdapterDegradation(source: SourceDefinition, health: SourceHealthSnapshot | undefined) {
+  const match = (health?.lastError ?? "").match(/^Core adapters\s+(\d+)\/(\d+); optional enrichments missing:/i);
   return (
     source.id === "cmip-public-market-signal-adapters" &&
     health?.status === "degraded" &&
-    /^Core adapters 6\/6; optional enrichments missing:/i.test(health.lastError ?? "")
+    Boolean(match && Number(match[1]) === Number(match[2]))
   );
 }
 

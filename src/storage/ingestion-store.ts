@@ -743,7 +743,13 @@ export async function persistForecastValidations(validations: ForecastValidation
 
 export async function persistMarketSnapshots(snapshots: MarketSnapshotInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
   const supabaseWrite = await trySupabaseInsert("market_snapshots", snapshots.map(marketSnapshotRow));
-  writeLatest("latest-market-snapshots.json", snapshots);
+  if (snapshots.length) {
+    const previous = readLatest<MarketSnapshotInput[]>("latest-market-snapshots.json", []);
+    const merged = [...previous, ...snapshots]
+      .sort((left, right) => Date.parse(right.observedAt) - Date.parse(left.observedAt))
+      .slice(0, 5_000);
+    writeLatest("latest-market-snapshots.json", merged);
+  }
   if (supabaseWrite.storageMode === "supabase") return { persisted: snapshots.length, storageMode: "supabase" };
   return { persisted: snapshots.length, storageMode: "local_fallback" };
 }
@@ -1379,13 +1385,14 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     return { hydrated: false, reason: "recently_hydrated" as const };
   }
 
-  const [sourceHealth, rawEvents, rawMetrics, latestRun, schedulerRuns, telemetryLogs] = await Promise.all([
+  const [sourceHealth, rawEvents, rawMetrics, latestRun, schedulerRuns, telemetryLogs, marketSnapshots] = await Promise.all([
     getLatestSourceHealth(),
     getLatestRawEvents(300),
     getLatestRawMetrics(500),
     getLatestIngestionRun(),
     getLatestSchedulerRuns(48),
     getLatestTelemetryLogs(200),
+    getLatestMarketSnapshots(3_000),
   ]);
 
   if (sourceHealth.length) tryWriteLatest("source-health.json", sourceHealth);
@@ -1394,6 +1401,7 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
   if (latestRun) tryWriteLatest("latest-ingestion-run.json", latestRun);
   if (schedulerRuns.length) tryWriteLatest("latest-scheduler-runs.json", schedulerRuns);
   if (telemetryLogs.length) tryWriteLatest("latest-telemetry-logs.json", telemetryLogs);
+  if (marketSnapshots.length) tryWriteLatest("latest-market-snapshots.json", marketSnapshots);
 
   runtimeStoreHydratedAt = Date.now();
   return {
@@ -1402,6 +1410,7 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     rawEvents: rawEvents.length,
     rawMetrics: rawMetrics.length,
     schedulerRuns: schedulerRuns.length,
+    marketSnapshots: marketSnapshots.length,
     latestRun: Boolean(latestRun),
   };
 }

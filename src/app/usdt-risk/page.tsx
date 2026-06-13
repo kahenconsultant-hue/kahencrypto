@@ -5,6 +5,9 @@ export const metadata = {
   title: "USDT Risk Center | C.M.I.P",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function UsdtRiskPage() {
   return (
     <div className="space-y-4">

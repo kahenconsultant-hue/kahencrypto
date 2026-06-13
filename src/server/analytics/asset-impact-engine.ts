@@ -271,6 +271,7 @@ function assetSpecificInputs(asset: IntelligenceAssetSymbol) {
             : 0;
   const volatilityScore = asset === "USDT" ? -15 : clampSigned(-scoreValue(vixTrend) * (asset === "SOL" ? 4.2 : asset === "ETH" ? 3.2 : 2.4));
   const newsSeverityScore = assetSentiment;
+  const leverageStress = liquidity.dataQuality === "unavailable" ? 0 : (liquidity.leverageStress ?? 0);
   let impact = calculateImpactScore({
     regime_score: regimeScore,
     liquidity_score: liquidityScore,
@@ -289,13 +290,13 @@ function assetSpecificInputs(asset: IntelligenceAssetSymbol) {
   }
   if (asset === "SOL") {
     impact = {
-      score: clampSigned(regimeScore * 0.2 + liquidityScore * 0.18 + correlationScore * 0.16 + assetSentiment * 0.1 + flowScore * 0.09 - (liquidity.dataQuality === "unavailable" ? 0 : liquidity.leverageStress) * 0.12 + volatilityScore * 0.1),
+      score: clampSigned(regimeScore * 0.2 + liquidityScore * 0.18 + correlationScore * 0.16 + assetSentiment * 0.1 + flowScore * 0.09 - leverageStress * 0.12 + volatilityScore * 0.1),
       formula: "SOL: ۰٫۲۰×رژیم + ۰٫۱۸×نقدینگی + ۰٫۱۶×همبستگی با risk appetite + ۰٫۱۰×سنتیمنت + ۰٫۰۹×جریان اکوسیستم + جریمه اهرم + ۰٫۱۰×نوسان.",
     };
   }
   if (asset === "USDT") {
     impact = {
-      score: clampSigned(-(liquidity.stablecoinExpansion ? 100 - liquidity.stablecoinExpansion : 0) * 0.28 - (liquidity.dataQuality === "unavailable" ? 0 : Math.max(0, -liquidity.liquidityScoreSigned) * 0.2) - (liquidity.dataQuality === "unavailable" ? 0 : Math.max(0, liquidity.leverageStress - 65) * 0.22) + flowScore * 0.18 - Math.max(0, assetSentiment) * 0.05),
+      score: clampSigned(-(liquidity.stablecoinExpansion ? 100 - liquidity.stablecoinExpansion : 0) * 0.28 - (liquidity.dataQuality === "unavailable" ? 0 : Math.max(0, -liquidity.liquidityScoreSigned) * 0.2) - Math.max(0, leverageStress - 65) * 0.22 + flowScore * 0.18 - Math.max(0, assetSentiment) * 0.05),
       formula: "USDT risk: ریسک از ضعف رشد استیبل‌کوین، فشار نقدینگی، اهرم بالا و جریان عرضه ساخته می‌شود؛ برای USDT سوگیری قیمت تولید نمی‌شود.",
     };
   }

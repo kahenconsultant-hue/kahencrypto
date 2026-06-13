@@ -764,7 +764,7 @@ export function MarketRegimePanel() {
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <Metric label="Risk (ریسک)" value={`${marketRegime.riskScore}/100`} tone="warn" progress={marketRegime.riskScore} />
             <Metric label="Liquidity (نقدینگی)" value={`${marketRegime.liquidityScore}/100`} tone="neutral" progress={marketRegime.liquidityScore} />
-            <Metric label="Leverage (اهرم معاملاتی)" value={`${marketRegime.leverageScore}/100`} tone="warn" progress={marketRegime.leverageScore} />
+            <Metric label="Leverage (اهرم معاملاتی)" value={formatOptionalProgressScore(marketRegime.leverageScore)} tone="warn" progress={optionalProgress(marketRegime.leverageScore)} />
             <Metric label="Macro (کلان)" value={`${marketRegime.stressScore}/100`} tone="neutral" progress={marketRegime.stressScore} />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -1531,11 +1531,11 @@ export function LiquidityPanel() {
           <Metric label="نقدینگی اسپات واقعی" value={formatOptionalSignedScore(realSpotLiquidityScore)} tone={typeof realSpotLiquidityScore === "number" ? (realSpotLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
           <Metric label="نقدینگی اهرمی" value={formatOptionalProgressScore(leveragedLiquidityScore)} tone={typeof leveragedLiquidityScore === "number" && leveragedLiquidityScore >= 70 ? "warn" : "neutral"} progress={optionalProgress(leveragedLiquidityScore)} />
           <Metric label="پایداری نقدینگی" value={formatOptionalProgressScore(liquiditySustainabilityScore)} tone={typeof liquiditySustainabilityScore === "number" ? (liquiditySustainabilityScore >= 58 ? "good" : "warn") : "neutral"} progress={optionalProgress(liquiditySustainabilityScore)} />
-          <Metric label="جریان نهادی" value={`${liquidityEngine.institutionalFlow}/100`} tone={liquidityEngine.institutionalFlow >= 55 ? "good" : "warn"} progress={liquidityEngine.institutionalFlow} />
-          <Metric label="رشد استیبل‌کوین" value={`${liquidityEngine.stablecoinExpansion}/100`} tone={liquidityEngine.stablecoinExpansion >= 55 ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
-          <Metric label="حرارت سفته‌بازی" value={`${liquidityEngine.speculativeHeat}/100`} tone={liquidityEngine.speculativeHeat >= 70 ? "warn" : "neutral"} progress={liquidityEngine.speculativeHeat} />
-          <Metric label="استیبل‌کوین (Stablecoin)" value={labelOrRaw(biasLabels, liquidityEngine.stablecoinTrend)} tone={liquidityEngine.stablecoinTrend === "bullish" ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
-          <Metric label="جریان ETF" value={labelOrRaw(biasLabels, liquidityEngine.etfFlowStatus)} tone={liquidityEngine.etfFlowStatus === "bearish" ? "bad" : "good"} progress={liquidityEngine.institutionalFlow} />
+          <Metric label="جریان نهادی" value={formatOptionalProgressScore(liquidityEngine.institutionalFlow)} tone={typeof liquidityEngine.institutionalFlow === "number" && liquidityEngine.institutionalFlow >= 55 ? "good" : "warn"} progress={optionalProgress(liquidityEngine.institutionalFlow)} />
+          <Metric label="رشد استیبل‌کوین" value={formatOptionalProgressScore(liquidityEngine.stablecoinExpansion)} tone={typeof liquidityEngine.stablecoinExpansion === "number" && liquidityEngine.stablecoinExpansion >= 55 ? "good" : "neutral"} progress={optionalProgress(liquidityEngine.stablecoinExpansion)} />
+          <Metric label="حرارت سفته‌بازی" value={formatOptionalProgressScore(liquidityEngine.speculativeHeat)} tone={typeof liquidityEngine.speculativeHeat === "number" && liquidityEngine.speculativeHeat >= 70 ? "warn" : "neutral"} progress={optionalProgress(liquidityEngine.speculativeHeat)} />
+          <Metric label="استیبل‌کوین (Stablecoin)" value={labelOrRaw(biasLabels, liquidityEngine.stablecoinTrend)} tone={liquidityEngine.stablecoinTrend === "bullish" ? "good" : "neutral"} progress={optionalProgress(liquidityEngine.stablecoinExpansion)} />
+          <Metric label="جریان ETF" value={labelOrRaw(biasLabels, liquidityEngine.etfFlowStatus)} tone={liquidityEngine.etfFlowStatus === "bearish" ? "bad" : "good"} progress={optionalProgress(liquidityEngine.institutionalFlow)} />
           <Metric label="فشار اهرم معاملاتی" value={formatOptionalProgressScore(leverageStress)} tone={typeof leverageStress === "number" && leverageStress >= 70 ? "warn" : "neutral"} progress={optionalProgress(leverageStress)} />
         </div>
         {liquidityEngine.decomposition?.length ? (

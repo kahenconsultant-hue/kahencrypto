@@ -45,11 +45,29 @@ export interface EnvironmentValidationReport {
   connectionError?: string;
 }
 
+async function withEnvTimeout<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Environment Supabase check timed out after ${timeoutMs}ms.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function checkSupabaseConnection() {
   const client = createSupabaseServerClient();
   if (!client) return { connected: false, error: "Supabase env is not configured." };
-  const { error } = await client.from("source_health").select("id", { head: true, count: "exact" }).limit(1);
-  return { connected: !error, error: error?.message };
+  try {
+    const { error } = await withEnvTimeout(Promise.resolve(client.from("source_health").select("id", { head: true, count: "exact" }).limit(1)));
+    return { connected: !error, error: error?.message };
+  } catch (error) {
+    return { connected: false, error: error instanceof Error ? error.message : "Supabase connection check timed out." };
+  }
 }
 
 export async function getEnvironmentValidationReport(): Promise<EnvironmentValidationReport> {

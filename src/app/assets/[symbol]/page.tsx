@@ -6,9 +6,8 @@ type PageProps = {
   params: Promise<{ symbol: string }>;
 };
 
-export function generateStaticParams() {
-  return Object.keys(assetIntelligence).map((symbol) => ({ symbol }));
-}
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function generateMetadata({ params }: PageProps) {
   const { symbol } = await params;

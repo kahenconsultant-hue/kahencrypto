@@ -12,6 +12,12 @@ import type { IngestionRunSummary, SchedulerRunRecord, SchedulerStageRun } from 
 
 const DEFAULT_STAGE_TIMEOUT_MS = 75_000;
 
+function schedulerDebug(message: string, payload?: Record<string, unknown>) {
+  if (process.env.CMIP_SCHEDULER_DEBUG !== "true") return;
+  const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
+  console.info(`[cmip:scheduler] ${new Date().toISOString()} ${message}${suffix}`);
+}
+
 export const INGESTION_SCHEDULER_STAGES = [
   {
     stageId: "market_data",
@@ -85,6 +91,9 @@ function etfStageDetails(summary: IngestionRunSummary): Record<string, unknown> 
 function isNonBlockingSourceDegradation(sourceId: string, message?: string | null) {
   const text = message ?? "";
   if (sourceId.includes("etf") && /real ETF rows were loaded from The Block|fallback/i.test(text)) return true;
+  if ((sourceId === "binance-public-rest" || sourceId === "bybit-public-rest") && /did not return usable public market metrics|exchange collector failed|timed out|unavailable/i.test(text)) {
+    return true;
+  }
   if (sourceId === "cmip-public-market-signal-adapters") {
     const coreMatch = text.match(/Core adapters\s+(\d+)\/(\d+)/i);
     const coreComplete = coreMatch ? Number(coreMatch[1]) === Number(coreMatch[2]) : false;
@@ -297,6 +306,8 @@ function ingestionOptionsForStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[num
     stageId: stage.stageId,
     maxAttemptsOverride: externalCron ? 1 : undefined,
     timeoutMsOverride: externalCron ? ("timeoutMs" in stage ? stage.timeoutMs : 6_000) : undefined,
+    skipEventProcessing: stage.stageId === "market_data" || stage.stageId === "etf",
+    eventProcessingLimit: externalCron ? 120 : 500,
   };
 }
 
@@ -304,9 +315,12 @@ async function runSchedulerStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[numb
   const stageStartedAt = new Date().toISOString();
   try {
     const stageTimeoutMs = options.schedulerSource === "external_cron_job_org" ? ("timeoutMs" in stage ? stage.timeoutMs : 18_000) : "timeoutMs" in stage ? stage.timeoutMs : DEFAULT_STAGE_TIMEOUT_MS;
+    schedulerDebug("stage:start", { stageId: stage.stageId, timeoutMs: stageTimeoutMs });
     const summary = await withStageTimeout(runIngestionFoundation(ingestionOptionsForStage(stage, options)), stage.label, stageTimeoutMs);
+    schedulerDebug("stage:done", { stageId: stage.stageId, durationMs: durationMs(summary.startedAt, summary.finishedAt), pulledMetrics: summary.pulledMetrics, pulledEvents: summary.pulledEvents });
     return { stageRun: stageFromSummary(stage, summary), summary };
   } catch (error) {
+    schedulerDebug("stage:failed", { stageId: stage.stageId, error: error instanceof Error ? error.message : String(error) });
     return { stageRun: failedStage(stage, stageStartedAt, error), summary: null };
   }
 }
@@ -316,6 +330,7 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
   const startedAt = new Date().toISOString();
   const stages: SchedulerStageRun[] = [];
   const summaries: IngestionRunSummary[] = [];
+  schedulerDebug("run:start", { runId, trigger, schedulerSource: options.schedulerSource ?? null });
 
   const runStagesInParallel = options.schedulerSource === "external_cron_job_org";
   if (runStagesInParallel) {
@@ -332,10 +347,15 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
 
   const fusionStartedAt = new Date().toISOString();
   try {
+    schedulerDebug("fusion:refresh:start");
     const refresh = await withStageTimeout(refreshSignalCache(), "Stage 5: Signal Cache Refresh");
+    schedulerDebug("fusion:refresh:done", { total: refresh.counts.total, unavailable: refresh.counts.unavailable, retainedPreviousSnapshot: refresh.retainedPreviousSnapshot });
+    schedulerDebug("fusion:derived:start");
     const derived = await withStageTimeout(runDerivedSignalProcessing(runId), "Stage 5: Derived Signal Processing");
+    schedulerDebug("fusion:derived:done", { persisted: derived.persisted.derivedSignals, storageMode: derived.persisted.derivedSignalsStorageMode });
     stages.push(fusionStage(fusionStartedAt, refresh, derived));
   } catch (error) {
+    schedulerDebug("fusion:failed", { error: error instanceof Error ? error.message : String(error) });
     stages.push(failedFusionStage(fusionStartedAt, error));
   }
 
@@ -368,13 +388,22 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
     rootCause: "Cron used to run ingestion, cache refresh and derived processing as one monolithic HTTP response with a large payload; the hardened route records stage results and returns a compact scheduler summary.",
   };
 
+  schedulerDebug("forecast:start");
+  schedulerDebug("forecast:validate:start");
   const forecastValidations = validateDueForecasts(new Date(finishedAt));
+  schedulerDebug("forecast:validate:done", { validations: forecastValidations.length });
+  schedulerDebug("forecast:snapshot:start");
   const forecastSnapshots = buildForecastSnapshots(runId, new Date(finishedAt));
+  schedulerDebug("forecast:snapshot:done", { snapshots: forecastSnapshots.length });
+  schedulerDebug("forecast:built", { validations: forecastValidations.length, snapshots: forecastSnapshots.length });
   await persistForecastValidations(forecastValidations);
   await persistForecastSnapshots(forecastSnapshots);
+  schedulerDebug("forecast:persisted");
 
   const schedulerStorageMode = await persistSchedulerRun(schedulerRun);
+  schedulerDebug("scheduler-run:persisted", { storageMode: schedulerStorageMode });
   const ingestionStorageMode = await persistIngestionRun(aggregateIngestionSummary(runId, startedAt, finishedAt, stages, summaries));
+  schedulerDebug("ingestion-run:persisted", { storageMode: ingestionStorageMode });
   schedulerRun.schedulerStorageMode = schedulerStorageMode;
   schedulerRun.ingestionStorageMode = ingestionStorageMode;
   schedulerRun.storageMode = schedulerStorageMode === "supabase" || ingestionStorageMode === "supabase" ? "supabase" : "local_fallback";

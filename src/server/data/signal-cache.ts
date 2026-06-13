@@ -21,6 +21,9 @@ let memoryPayloadMtimeMs = 0;
 let sharedPayloadHydratedAt = 0;
 
 const CRITICAL_SIGNAL_KEYS = [
+  "btc_price_usd",
+  "eth_price_usd",
+  "sol_price_usd",
   "btc_trend_24h",
   "eth_trend_24h",
   "sol_trend_24h",
@@ -54,9 +57,15 @@ function unavailablePoint(key: string, group: SignalGroup): DataPoint {
 }
 
 const groupByKey: Record<string, SignalGroup> = {
+  btc_price_usd: "price",
+  eth_price_usd: "price",
+  sol_price_usd: "price",
   btc_trend_24h: "price",
   eth_trend_24h: "price",
   sol_trend_24h: "price",
+  btc_volume_24h_usd: "liquidity",
+  eth_volume_24h_usd: "liquidity",
+  sol_volume_24h_usd: "liquidity",
   btc_market_cap: "price",
   eth_market_cap: "price",
   sol_market_cap: "price",

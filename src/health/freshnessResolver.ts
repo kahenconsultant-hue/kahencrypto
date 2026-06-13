@@ -101,6 +101,7 @@ export function signalFreshnessClassification(signal: Pick<NormalizedSignal, "ke
     return "OPTIONAL_FREE";
   }
   if (signal.key === "us2y_trend_24h" || signal.key === "yield_curve_10y2y") return "OPTIONAL_FREE";
+  if (signal.key === "cpi_latest" || signal.key === "ppi_latest" || signal.key === "fed_funds_rate" || signal.key === "unemployment_rate") return "CORE_DEGRADED";
   if (signal.key === "funding_btc" || signal.key === "nasdaq_trend_24h") return "CORE_DEGRADED";
   if (/etf_flow/i.test(signal.key)) return "OPTIONAL_FREE";
   return "CORE_REQUIRED";

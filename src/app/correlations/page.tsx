@@ -6,6 +6,9 @@ export const metadata = {
   title: "موتور همبستگی | C.M.I.P",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function CorrelationsPage() {
   return (
     <div className="space-y-4">

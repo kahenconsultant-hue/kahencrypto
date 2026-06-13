@@ -6,6 +6,8 @@ import {
   type SeriesKey,
 } from "@/server/analytics/market-signals";
 import { clampPercent } from "@/server/analytics/scoring-engine";
+import { getLatestMarketSnapshotsSync } from "@/storage/ingestion-store";
+import type { MarketSnapshotInput } from "@/types/ingestion";
 
 export type CorrelationWindow = "24h" | "7d" | "30d" | "90d";
 type CorrelationStatus = "available" | "insufficient_data" | "missing_series";
@@ -26,6 +28,13 @@ const windowSamples: Record<CorrelationWindow, number> = {
   "30d": 30,
   "90d": 90,
 };
+
+const CORRELATION_CACHE_TTL_MS = 30_000;
+
+type TimestampedValue = { timestamp: string; value: number };
+
+let latestSnapshotCache: { expiresAt: number; snapshots: MarketSnapshotInput[] } | null = null;
+const returnSeriesCache = new Map<string, { expiresAt: number; values: TimestampedValue[] }>();
 
 const pairDefinitions: Array<{
   id: string;
@@ -123,6 +132,107 @@ function windowEnabled(left: SeriesKey, right: SeriesKey, window: CorrelationWin
   return window !== "24h" || isCryptoOnlyPair(left, right);
 }
 
+const snapshotMetricPreferences: Partial<Record<CorrelationSeriesKey, string[]>> = {
+  BTC: ["price_usd", "price_trend_24h_pct"],
+  ETH: ["price_usd", "price_trend_24h_pct"],
+  SOL: ["price_usd", "price_trend_24h_pct"],
+  DXY: ["price_trend_24h_pct"],
+  US10Y: ["yield_change_pct_point"],
+  Nasdaq: ["price_trend_24h_pct"],
+  Gold: ["price_trend_24h_pct"],
+  "Stablecoin Market Cap": ["total_stablecoin_market_cap_usd", "market_cap_change_7d_pct"],
+};
+
+type SnapshotMetricRow = {
+  asset?: string | null;
+  metric?: string | null;
+  value?: number | null;
+  timestamp?: string | null;
+  sourceName?: string | null;
+  quality?: string | null;
+};
+
+function latestSnapshotsForCorrelation() {
+  const now = Date.now();
+  if (latestSnapshotCache && latestSnapshotCache.expiresAt > now) return latestSnapshotCache.snapshots;
+  const snapshots = getLatestMarketSnapshotsSync(5_000);
+  latestSnapshotCache = { expiresAt: now + CORRELATION_CACHE_TTL_MS, snapshots };
+  return snapshots;
+}
+
+function cachedReturnSeriesKey(key: SeriesKey, frequency: CorrelationFrequency) {
+  return `${key}:${frequency}`;
+}
+
+function snapshotMetrics(snapshot: MarketSnapshotInput): SnapshotMetricRow[] {
+  const payload = snapshot.payload as { metrics?: unknown[] } | undefined;
+  return (payload?.metrics ?? [])
+    .map((item) => (typeof item === "object" && item !== null ? (item as SnapshotMetricRow) : null))
+    .filter((item): item is SnapshotMetricRow => Boolean(item));
+}
+
+function seriesAssetMatches(key: CorrelationSeriesKey, metric: SnapshotMetricRow) {
+  if (key === "Stablecoin Market Cap") return metric.asset === "Stablecoins";
+  return metric.asset === key;
+}
+
+function valueForSnapshotSeries(key: CorrelationSeriesKey, snapshot: MarketSnapshotInput) {
+  const preferences = snapshotMetricPreferences[key] ?? [];
+  const metrics = snapshotMetrics(snapshot).filter((metric) => seriesAssetMatches(key, metric) && typeof metric.value === "number" && Number.isFinite(metric.value));
+  for (const metricName of preferences) {
+    const match = metrics.find((metric) => metric.metric === metricName);
+    if (match && typeof match.value === "number") return match.value;
+  }
+  return null;
+}
+
+function bucketedSnapshotValues(key: CorrelationSeriesKey, frequency: CorrelationFrequency) {
+  const snapshots = latestSnapshotsForCorrelation();
+  const byBucket = new Map<string, { timestamp: string; value: number }>();
+
+  for (const snapshot of snapshots) {
+    const value = valueForSnapshotSeries(key, snapshot);
+    if (value === null) continue;
+    const timestamp = snapshot.observedAt;
+    if (!Number.isFinite(Date.parse(timestamp))) continue;
+    const bucket = bucketTimestamp(timestamp, frequency);
+    if (frequency === "daily" && isWeekendBucket(bucket)) continue;
+    const previous = byBucket.get(bucket);
+    if (!previous || Date.parse(timestamp) >= Date.parse(previous.timestamp)) {
+      byBucket.set(bucket, { timestamp, value });
+    }
+  }
+
+  return Array.from(byBucket.values()).sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function timestampedReturnsFromValues(values: TimestampedValue[]) {
+  const returns: TimestampedValue[] = [];
+  for (let index = 1; index < values.length; index += 1) {
+    const previous = values[index - 1].value;
+    const current = values[index].value;
+    const timestamp = values[index].timestamp;
+    if (previous > 0 && current > 0) {
+      returns.push({ timestamp, value: Number(Math.log(current / previous).toFixed(6)) });
+    } else if (previous !== 0) {
+      returns.push({ timestamp, value: Number(((current - previous) / Math.abs(previous)).toFixed(6)) });
+    }
+  }
+  return returns;
+}
+
+function buildHistoricalReturnSeries(key: SeriesKey, frequency: CorrelationFrequency) {
+  const now = Date.now();
+  const cacheKey = cachedReturnSeriesKey(key, frequency);
+  const cached = returnSeriesCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.values;
+
+  const snapshotReturns = timestampedReturnsFromValues(bucketedSnapshotValues(key as CorrelationSeriesKey, frequency));
+  const values = snapshotReturns.length ? snapshotReturns : buildTimestampedReturnSeries(key, frequency);
+  returnSeriesCache.set(cacheKey, { expiresAt: now + CORRELATION_CACHE_TTL_MS, values });
+  return values;
+}
+
 export function getCorrelationWindowPlan(left: SeriesKey, right: SeriesKey, window: CorrelationWindow) {
   return {
     frequency: displayFrequency(frequencyForWindow(left, right, window)),
@@ -140,8 +250,8 @@ function displayFrequency(frequency: CorrelationFrequency): CorrelationWindowMet
 }
 
 function alignedReturns(left: SeriesKey, right: SeriesKey, frequency: "intraday" | "daily") {
-  const leftReturns = buildTimestampedReturnSeries(left, frequency);
-  const rightReturns = buildTimestampedReturnSeries(right, frequency);
+  const leftReturns = buildHistoricalReturnSeries(left, frequency);
+  const rightReturns = buildHistoricalReturnSeries(right, frequency);
   const rightByBucket = new Map(
     rightReturns
       .map((item) => [bucketTimestamp(item.timestamp, frequency), item.value] as const)
@@ -195,7 +305,9 @@ function correlationForWindow(left: SeriesKey, right: SeriesKey, window: Correla
   const sampleSize = sample.length;
   const leftSignal = getSeriesSignal(left);
   const rightSignal = getSeriesSignal(right);
-  const missingSeries = !leftSignal || !rightSignal || !buildTimestampedReturnSeries(left, frequency).length || !buildTimestampedReturnSeries(right, frequency).length;
+  const leftSeries = buildHistoricalReturnSeries(left, frequency);
+  const rightSeries = buildHistoricalReturnSeries(right, frequency);
+  const missingSeries = (!leftSignal && !leftSeries.length) || (!rightSignal && !rightSeries.length) || !leftSeries.length || !rightSeries.length;
   const lastAlignedTimestamp = sample.at(-1)?.bucket ?? null;
 
   if (missingSeries) {

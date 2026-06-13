@@ -7,6 +7,9 @@ export const metadata = {
   title: "Sentiment Dashboard | C.M.I.P",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function SentimentPage() {
   const items = getNewsItems("sentiment").slice(0, 8);
 

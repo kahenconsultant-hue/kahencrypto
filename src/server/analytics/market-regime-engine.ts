@@ -106,10 +106,11 @@ function labelToEngine(label: MacroRegimeLabel): EngineRegimeState {
 
 function labelToProbabilisticState(label: MacroRegimeLabel, input: RegimeInputVector, liquidity: LiquidityEngineOutput): ProbabilisticRegimeState {
   const momentum = cryptoMomentum(input);
+  const leverageStress = liquidity.leverageStress;
   if (label === "Risk-On Expansion") return "expansion";
   if (label === "Weak Risk-On") return "risk_on";
   if (label === "Fragile Risk-On") {
-    if (liquidity.leverageStress >= 75 && momentum !== null && momentum > 0.25) return "speculative_mania";
+    if (leverageStress !== null && leverageStress >= 75 && momentum !== null && momentum > 0.25) return "speculative_mania";
     return "unstable";
   }
   if (label === "Liquidity-Constrained Risk-On") return "unstable";
@@ -117,7 +118,7 @@ function labelToProbabilisticState(label: MacroRegimeLabel, input: RegimeInputVe
   if (label === "Liquidity Squeeze") return "squeeze";
   if (label === "Dollar Strength Pressure" || label === "Rates Shock") return "contraction";
   if (label === "Crypto-Specific Bullish") return liquidity.liquiditySustainabilityScore !== undefined && liquidity.liquiditySustainabilityScore >= 62 ? "expansion" : "risk_on";
-  if (label === "Crypto-Specific Stress") return liquidity.leverageStress >= 70 ? "deleveraging" : "risk_off";
+  if (label === "Crypto-Specific Stress") return leverageStress !== null && leverageStress >= 70 ? "deleveraging" : "risk_off";
   if (label === "Geopolitical Shock") return "panic";
   if (label === "High Volatility Unclear Regime") return "unstable";
   return "neutral";
@@ -153,7 +154,7 @@ function probabilityDrivers(label: MacroRegimeLabel, input: RegimeInputVector, l
   if (input.nasdaqTrend !== null && Math.abs(input.nasdaqTrend) >= 0.2) drivers.push(input.nasdaqTrend > 0 ? "Nasdaq risk appetite" : "Nasdaq pressure");
   if (momentum !== null && Math.abs(momentum) >= 0.2) drivers.push(momentum > 0 ? "crypto momentum aligned" : "crypto momentum weakening");
   if (liquidity.dataQuality !== "unavailable") drivers.push(`liquidity ${liquidity.liquidityScoreSigned}/100`);
-  if (liquidity.leverageStress >= 70) drivers.push("elevated leverage stress");
+  if (liquidity.leverageStress !== null && liquidity.leverageStress >= 70) drivers.push("elevated leverage stress");
   if (input.btcEtfFlow === null && (label.includes("Risk-On") || label.includes("Bullish"))) drivers.push("ETF confirmation missing");
   return drivers.slice(0, 4);
 }
@@ -244,7 +245,7 @@ export function evaluateRiskOnConfirmation(input: RegimeInputVector, liquidity: 
     nasdaqPositive: input.nasdaqTrend !== null && input.nasdaqTrend > 0.15,
     cryptoLiquidityPositive: liquidity.dataQuality !== "unavailable" && liquidity.cryptoLiquidityScore > 0 && typeof liquidity.realSpotLiquidityScore === "number" && liquidity.realSpotLiquidityScore > 0,
     dxyNeutralOrWeakening: input.dxyTrend !== null && input.dxyTrend <= 0.15,
-    leverageNotOverheated: liquidity.leverageStress < 70,
+    leverageNotOverheated: liquidity.leverageStress !== null && liquidity.leverageStress < 70,
     cryptoMomentumAligned: momentum !== null && momentum > 0.12 && input.btcTrend !== null && input.ethTrend !== null && input.solTrend !== null && input.btcTrend > -0.2 && input.ethTrend > -0.25 && input.solTrend > -0.45,
     etfOrStablecoinConfirmation: (input.btcEtfFlow !== null && input.btcEtfFlow > 0) || (input.stablecoinTrend !== null && input.stablecoinTrend >= 0.35),
   };
@@ -269,9 +270,10 @@ export function applyRegimePenalties(params: {
     params.label === "Liquidity-Constrained Risk-On" ||
     params.label === "Crypto-Specific Bullish";
   const liquidityAvailable = params.liquidity.dataQuality !== "unavailable";
+  const leverageStress = params.liquidity.leverageStress;
   const contradictionPenalty = riskOnLike && dxyRising && liquidityNegative ? 18 : dxyRising && liquidityNegative ? 8 : 0;
   const liquidityPenalty = riskOnLike && liquidityAvailable ? (params.liquidity.liquidityScoreSigned <= -25 ? 24 : params.liquidity.liquidityScoreSigned <= 0 ? 14 : 0) : 0;
-  const leveragePenalty = params.liquidity.leverageStress > 70 ? Math.min(24, 8 + (params.liquidity.leverageStress - 70) * 0.55) : 0;
+  const leveragePenalty = leverageStress !== null && leverageStress > 70 ? Math.min(24, 8 + (leverageStress - 70) * 0.55) : 0;
   const snapshot = getSignalSnapshot();
   const stalePenalty = Math.min(
     16,
@@ -311,7 +313,7 @@ function transitionAnalysis(params: {
   liquidity: LiquidityEngineOutput;
 }) {
   const macroPressure = (params.input.dxyTrend !== null && params.input.dxyTrend > 0.15) || (params.input.us10yTrend !== null && params.input.us10yTrend > 0.03);
-  const leveragePressure = params.liquidity.dataQuality !== "unavailable" && params.liquidity.leverageStress >= 70;
+  const leveragePressure = params.liquidity.dataQuality !== "unavailable" && params.liquidity.leverageStress !== null && params.liquidity.leverageStress >= 70;
   const liquidityWeak = params.liquidity.dataQuality !== "unavailable" && (params.liquidity.liquidityScoreSigned < 0 || (params.liquidity.liquiditySustainabilityScore !== undefined && params.liquidity.liquiditySustainabilityScore < 45));
   const probability = clampPercent(34 + params.penalties.contradictionPenalty * 1.2 + params.penalties.liquidityPenalty * 1.1 + params.penalties.leveragePenalty + (macroPressure ? 12 : 0));
   if ((params.label === "Fragile Risk-On" || params.label === "Liquidity-Constrained Risk-On") && (macroPressure || liquidityWeak || leveragePressure)) {
@@ -376,7 +378,7 @@ function calculateRegimeInstability(params: {
   const scoreGap = Math.max(0, params.selected.finalScore - secondScore);
   const closeRacePenalty = clampPercent(44 - scoreGap * 1.8);
   const contradiction = params.selected.penalties.contradictionPenalty + params.selected.penalties.liquidityPenalty + params.selected.penalties.correlationPenalty;
-  const leverage = params.liquidity.leverageStress >= 70 ? Math.min(24, (params.liquidity.leverageStress - 62) * 0.75) : 0;
+  const leverage = params.liquidity.leverageStress !== null && params.liquidity.leverageStress >= 70 ? Math.min(24, (params.liquidity.leverageStress - 62) * 0.75) : 0;
   const missingPenalty = Math.min(18, params.missingInputs.length * 2.2);
   const macroConflict =
     params.input.nasdaqTrend !== null &&
@@ -407,7 +409,7 @@ function buildRegimeProbabilities(params: {
   sourceType: MarketRegimeEngineOutput["sourceType"];
 }) {
   const top = params.candidates[0]?.finalScore ?? 0;
-  const temperature = params.liquidity.leverageStress >= 75 ? 23 : 18;
+  const temperature = params.liquidity.leverageStress !== null && params.liquidity.leverageStress >= 75 ? 23 : 18;
   const weighted = params.candidates.map((candidate) => ({
     candidate,
     weight: Math.exp((candidate.finalScore - top) / temperature),
@@ -523,7 +525,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
     const constrainedLabel: MacroRegimeLabel =
       (liquidity.dataQuality !== "unavailable" && liquidity.liquidityScoreSigned < 0) || (input.dxyTrend !== null && input.dxyTrend > 0.15)
         ? "Liquidity-Constrained Risk-On"
-        : liquidity.leverageStress >= 70
+        : liquidity.leverageStress !== null && liquidity.leverageStress >= 70
           ? "Fragile Risk-On"
           : "Weak Risk-On";
     const rawScore = Math.max(candidateScores[constrainedLabel], selected.rawScore * 0.78);

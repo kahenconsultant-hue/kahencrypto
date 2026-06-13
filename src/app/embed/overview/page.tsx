@@ -33,6 +33,9 @@ export const metadata = {
   title: "ویجت قابل جاسازی رژیم بازار",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function EmbedOverviewPage() {
   const marketRegime = getMarketRegimeReport();
   const smartAlerts = generateSmartAlerts();

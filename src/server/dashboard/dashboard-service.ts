@@ -40,6 +40,20 @@ type DashboardCacheEntry<T> = {
 const dashboardCache = new Map<string, DashboardCacheEntry<unknown>>();
 let activeSignalRefresh: Promise<unknown> | null = null;
 
+async function withDashboardTimeout<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T | null> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timeout = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function scheduleDashboardSignalRefresh() {
   activeSignalRefresh ??= refreshSignalCache()
     .then((result) => {
@@ -58,7 +72,7 @@ function scheduleDashboardSignalRefresh() {
 }
 
 export async function ensureDashboardSignalCacheFresh() {
-  await Promise.all([loadSharedSignalCache(), hydrateRuntimeStoreFromSupabase()]);
+  await withDashboardTimeout(Promise.all([loadSharedSignalCache(), hydrateRuntimeStoreFromSupabase()]));
   const status = getSignalCacheStatusSync();
   if (status.exists && !status.stale) return { refreshed: false, status };
 

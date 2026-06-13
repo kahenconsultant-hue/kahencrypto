@@ -166,6 +166,18 @@ function binancePriceAndVolumeMetrics(source: SourceDefinition, asset: AssetSymb
       source,
       asset,
       group: "price",
+      metric: "price_usd",
+      value: last,
+      previousValue: previous,
+      timestamp,
+      reliability: 88,
+      sampleSize: rows.length,
+      rawPayload: { provider: "binance", symbol },
+    }),
+    metric({
+      source,
+      asset,
+      group: "price",
       metric: "price_trend_24h_pct",
       value: trend,
       previousValue: previousTrend,
@@ -298,6 +310,18 @@ function bybitPriceAndVolumeMetrics(source: SourceDefinition, asset: AssetSymbol
   }
 
   return [
+    metric({
+      source,
+      asset,
+      group: "price",
+      metric: "price_usd",
+      value: last,
+      previousValue: previous,
+      timestamp,
+      reliability: 82,
+      sampleSize: rows.length,
+      rawPayload: { provider: "bybit", symbol, category },
+    }),
     metric({
       source,
       asset,

@@ -40,9 +40,15 @@ export function getEngineLastUpdatedAt() {
 }
 
 const channelByKey: Record<string, TransmissionChannel> = {
+  btc_price_usd: "risk_on_risk_off",
+  eth_price_usd: "risk_on_risk_off",
+  sol_price_usd: "risk_on_risk_off",
   btc_trend_24h: "risk_on_risk_off",
   eth_trend_24h: "risk_on_risk_off",
   sol_trend_24h: "risk_on_risk_off",
+  btc_volume_24h_usd: "liquidity",
+  eth_volume_24h_usd: "liquidity",
+  sol_volume_24h_usd: "liquidity",
   btc_market_cap: "risk_on_risk_off",
   eth_market_cap: "risk_on_risk_off",
   sol_market_cap: "risk_on_risk_off",
@@ -92,9 +98,15 @@ const channelByKey: Record<string, TransmissionChannel> = {
 };
 
 const labelByKey: Record<string, string> = {
+  btc_price_usd: "قیمت لحظه‌ای BTC",
+  eth_price_usd: "قیمت لحظه‌ای ETH",
+  sol_price_usd: "قیمت لحظه‌ای SOL",
   btc_trend_24h: "روند ۲۴ ساعته BTC",
   eth_trend_24h: "روند ۲۴ ساعته ETH",
   sol_trend_24h: "روند ۲۴ ساعته SOL",
+  btc_volume_24h_usd: "حجم ۲۴ ساعته BTC",
+  eth_volume_24h_usd: "حجم ۲۴ ساعته ETH",
+  sol_volume_24h_usd: "حجم ۲۴ ساعته SOL",
   btc_market_cap: "ارزش بازار BTC",
   eth_market_cap: "ارزش بازار ETH",
   sol_market_cap: "ارزش بازار SOL",
@@ -306,9 +318,9 @@ export function deriveBaseScores(): SignalScores {
 }
 
 export const seriesKeyToSignalKey: Record<SeriesKey, string> = {
-  BTC: "btc_trend_24h",
-  ETH: "eth_trend_24h",
-  SOL: "sol_trend_24h",
+  BTC: "btc_price_usd",
+  ETH: "eth_price_usd",
+  SOL: "sol_price_usd",
   USDT: "usdt_supply_7d",
   DXY: "dxy_trend_24h",
   Gold: "gold_trend_24h",

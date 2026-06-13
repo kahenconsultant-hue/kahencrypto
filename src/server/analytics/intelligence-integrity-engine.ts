@@ -229,7 +229,7 @@ function validateRegime(): IntegrityIssue[] {
   const us10y = snapshot.byKey.us10y_trend_24h?.value;
   const macroNegative = (typeof dxy === "number" && dxy > 0.15) || (typeof us10y === "number" && us10y > 0.03);
   const liquidityWeak = liquidity.dataQuality !== "unavailable" && ((liquidity.liquidityHealthScore ?? 50) < 45 || liquidity.liquidityScoreSigned < 0);
-  const leverageElevated = liquidity.dataQuality !== "unavailable" && liquidity.leverageStress >= 70;
+  const leverageElevated = liquidity.dataQuality !== "unavailable" && liquidity.leverageStress !== null && liquidity.leverageStress >= 70;
   const regimeText = `${regime.regimeLabel ?? ""} ${regime.active ?? ""} ${regime.interpretationFa ?? ""}`;
   const expansionLike = /risk-on expansion|expansion|liquidity expansion|گسترش|ریسک‌پذیری قوی/i.test(regimeText);
 

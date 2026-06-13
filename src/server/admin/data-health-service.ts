@@ -474,7 +474,7 @@ function firstSignal(keys: string[], signals: ReturnType<typeof getSignalSnapsho
 }
 
 function isMisattributedFredBundleError(message: string | null | undefined) {
-  return Boolean(message && /Blocking core adapter failure/i.test(message) && /Binance market adapter|Bybit derivatives adapter|DefiLlama stablecoin adapter|CoinGecko market cap adapter|RSS\/news adapter/i.test(message));
+  return Boolean(message && /Blocking core adapter failure/i.test(message) && /Core market fallback adapter|Binance market adapter|Bybit derivatives adapter|DefiLlama stablecoin adapter|CoinGecko market cap adapter|RSS\/news adapter/i.test(message));
 }
 
 function parseFredObservationDate(source: string | null | undefined) {

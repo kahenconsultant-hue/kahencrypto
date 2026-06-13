@@ -213,10 +213,15 @@ export async function runIngestionFoundation(options: IngestionFoundationOptions
   const observedAt = new Date().toISOString();
   const marketSnapshots = buildMarketSnapshotsFromMetrics(runId, rawMetrics, observedAt);
   const marketSnapshotStore = await persistMarketSnapshots(marketSnapshots);
-  const recentRawEvents = await getRecentRawEventsForNormalization(500);
-  const normalization = normalizeAndClusterRawEvents(recentRawEvents);
-  const normalizedStore = await persistNormalizedEvents(normalization.normalizedEvents);
-  const clusterStore = await persistEventClusters(normalization.eventClusters);
+  const shouldProcessEvents = !options.skipEventProcessing;
+  const eventProcessingLimit =
+    typeof options.eventProcessingLimit === "number" && Number.isFinite(options.eventProcessingLimit)
+      ? Math.max(0, Math.floor(options.eventProcessingLimit))
+      : 500;
+  const recentRawEvents = shouldProcessEvents && eventProcessingLimit > 0 ? await getRecentRawEventsForNormalization(eventProcessingLimit) : [];
+  const normalization = shouldProcessEvents ? normalizeAndClusterRawEvents(recentRawEvents) : { normalizedEvents: [], eventClusters: [], duplicatesDetected: 0 };
+  const normalizedStore = shouldProcessEvents ? await persistNormalizedEvents(normalization.normalizedEvents) : { persisted: 0, storageMode: "memory" as const };
+  const clusterStore = shouldProcessEvents ? await persistEventClusters(normalization.eventClusters) : { persisted: 0, storageMode: "memory" as const };
   const storageMode: IngestionStorageMode =
     eventStore.storageMode === "supabase" || metricStore.storageMode === "supabase" || etfDailyFlowStore.storageMode === "supabase" ? "supabase" : "local_fallback";
   const sourceHealth = results.map((result) => healthFromCollectorOutput(result.output, previousHealth.get(result.output.source.id)));

@@ -76,6 +76,15 @@ function scoreExchangeFlows(input: Pick<LiquidityInputVector, "exchangeInflows" 
   return clampSigned(netOutflow / 15_000_000);
 }
 
+function scoreSpotVolume(value: number | null) {
+  if (value === null) return null;
+  if (Math.abs(value) > 1_000_000) {
+    const logVolume = Math.log10(Math.max(1, Math.abs(value)));
+    return clampSigned((logVolume - 9.4) * 22);
+  }
+  return clampSigned(value * 2.2);
+}
+
 function weightedAvailable(values: Array<{ value: number | null; weight: number }>) {
   const available = values.filter((item): item is { value: number; weight: number } => item.value !== null && Number.isFinite(item.value));
   if (!available.length) return null;
@@ -94,7 +103,7 @@ function scoreCryptoLiquidity(input: LiquidityInputVector) {
   const etf = scoreEtfFlow(input.btcEtfFlow);
   const reserves = scoreExchangeReserves(input.exchangeReserveTrend);
   const exchangeFlows = scoreExchangeFlows(input);
-  const spot = input.spotVolumeTrend === null ? null : input.spotVolumeTrend * 2.2;
+  const spot = scoreSpotVolume(input.spotVolumeTrend);
   const futures = input.futuresVolumeTrend === null || input.spotVolumeTrend === null ? null : -Math.max(0, input.futuresVolumeTrend - Math.max(0, input.spotVolumeTrend)) * 1.4;
   const funding = input.fundingRate === null ? null : normalizeSignalScore({ key: "funding_btc", value: input.fundingRate, quality: "live" });
   const openInterest = input.openInterestTrend === null ? null : normalizeSignalScore({ key: "open_interest_btc_24h", value: input.openInterestTrend, quality: "live" });
@@ -117,7 +126,7 @@ export function scoreRealSpotLiquidity(input: LiquidityInputVector) {
   const ethEtf = scoreEtfFlow(input.ethEtfFlow);
   const reserves = scoreExchangeReserves(input.exchangeReserveTrend);
   const exchangeFlows = scoreExchangeFlows(input);
-  const spot = input.spotVolumeTrend === null ? null : clampSigned(input.spotVolumeTrend * 2.2);
+  const spot = scoreSpotVolume(input.spotVolumeTrend);
   const score = weightedAvailable([
     { value: stablecoin, weight: 0.3 },
     { value: btcEtf, weight: 0.24 },
@@ -376,7 +385,6 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
   ]);
   const leverageStressRaw = leverageStressInputs === null ? null : clampPercent(50 + leverageStressInputs);
   const liquidityScoreSigned = liquidityScoreSignedRaw ?? 0;
-  const leverageStress = leverageStressRaw ?? 0;
   const stablecoinScore = scoreStablecoins(input.stablecoinMarketCapTrend);
   const etfUnavailablePenalty = input.btcEtfFlow === null ? 8 : 0;
   const liquiditySustainabilityRaw = weightedAvailable([
@@ -390,20 +398,20 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     { value: scoreEtfFlow(input.btcEtfFlow), weight: 0.7 },
     { value: scoreEtfFlow(input.ethEtfFlow), weight: 0.3 },
   ]);
-  const institutionalFlow = institutionalFlowRaw === null ? 0 : clampPercent(50 + institutionalFlowRaw * 0.5);
+  const institutionalFlow = institutionalFlowRaw === null ? null : clampPercent(50 + institutionalFlowRaw * 0.5);
   const stablecoinExpansionRaw = weightedAvailable([
     { value: scoreStablecoins(input.stablecoinMarketCapTrend), weight: 0.6 },
     { value: scoreStablecoins(input.usdtSupplyTrend), weight: 0.25 },
     { value: scoreStablecoins(input.usdcSupplyTrend), weight: 0.15 },
   ]);
-  const stablecoinExpansion = stablecoinExpansionRaw === null ? 0 : clampPercent(50 + stablecoinExpansionRaw);
+  const stablecoinExpansion = stablecoinExpansionRaw === null ? null : clampPercent(50 + stablecoinExpansionRaw);
   const speculativeHeatRaw = weightedAvailable([
     { value: leverageStressRaw, weight: 0.55 },
     { value: input.futuresVolumeTrend === null ? null : Math.max(0, input.futuresVolumeTrend) * 1.7, weight: 0.25 },
     { value: input.spotVolumeTrend === null ? null : -Math.max(0, input.spotVolumeTrend) * 0.7, weight: 0.2 },
   ]);
-  const speculativeHeat = speculativeHeatRaw === null ? 0 : clampPercent(50 + speculativeHeatRaw * 0.42);
-  const riskCompression = liquidityScoreSignedRaw === null || leverageStressRaw === null ? 0 : clampPercent(50 + liquidityScoreSignedRaw * 0.28 - leverageStressRaw * 0.18);
+  const speculativeHeat = speculativeHeatRaw === null ? null : clampPercent(50 + speculativeHeatRaw * 0.42);
+  const riskCompression = liquidityScoreSignedRaw === null || leverageStressRaw === null ? null : clampPercent(50 + liquidityScoreSignedRaw * 0.28 - leverageStressRaw * 0.18);
   const rawLiquidityHealthScore = liquidityHealthFromSigned(liquidityScoreSignedRaw);
   const v2State = detectLiquidityV2State({
     liquidityScoreSigned: liquidityScoreSignedRaw,
@@ -665,7 +673,7 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
     liquiditySustainabilityScore: liquiditySustainabilityScore ?? undefined,
     stablecoinTrend,
     etfFlowStatus,
-    leverageStress,
+    leverageStress: leverageStressRaw,
     institutionalFlow,
     stablecoinExpansion,
     speculativeHeat,

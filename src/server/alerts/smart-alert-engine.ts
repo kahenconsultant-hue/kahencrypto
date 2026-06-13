@@ -788,10 +788,11 @@ function leverageTrapAlert(): SmartAlert | null {
   if (!(funding > 0.025 && oi >= 3 && futures > Math.max(spot + 5, 5) && realSpotLiquidity <= 15)) return null;
   const confidence = confidenceFor(["funding_btc", "open_interest_btc_24h", "futures_volume_btc_24h", "spot_volume_btc_24h"], 80, getIntelligenceReliabilityReportSync().confidenceCaps.alerts);
   if (confidence === null) return null;
+  const leverageStress = liquidity.leverageStress ?? 0;
   return alertBase({
     id: "leverage-trap-btc",
     type: "Leverage Trap Alert",
-    priority: funding > 0.06 || liquidity.leverageStress >= 78 ? "high" : "medium",
+    priority: funding > 0.06 || leverageStress >= 78 ? "high" : "medium",
     direction: "mixed",
     timeframe: "24h",
     affectedAssets: ["BTC", "ETH", "SOL"],
@@ -801,7 +802,7 @@ function leverageTrapAlert(): SmartAlert | null {
     evidence: [`Funding ${funding.toFixed(3)}٪`, `OI ${oi.toFixed(2)}٪`, `Futures volume ${futures.toFixed(2)}٪`, `Spot volume ${spot.toFixed(2)}٪`],
     causalChain: "اهرم ↑ + حجم فیوچرز ↑ + اسپات ضعیف → حرکت شکننده → ریسک لیکوییدیشن و برگشت تند.",
     confidence,
-    importance: clampPercent(confidence + liquidity.leverageStress * 0.18),
+    importance: clampPercent(confidence + leverageStress * 0.18),
     invalidationCondition: "این هشدار وقتی ضعیف می‌شود که funding به محدوده عادی برگردد، OI کاهش یابد یا حجم اسپات از فیوچرز پیشی بگیرد.",
     suggestedTraderAction: "قدرت حرکت را فقط از قیمت نخوانید؛ کیفیت پشتوانه آن را با funding، OI و spot volume بررسی کنید.",
     whyItMattersFa: "حرکت اهرمی بدون نقدینگی اسپات پایدار نیست و معمولاً به stop cascade حساس‌تر است.",

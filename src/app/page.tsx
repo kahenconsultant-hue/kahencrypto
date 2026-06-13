@@ -55,7 +55,9 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-4">
       <Reveal>
-        <MarketRegimePanel />
+        <DeferredSection label="رژیم بازار">
+          <MarketRegimePanel />
+        </DeferredSection>
       </Reveal>
       <Reveal delay={0.02}>
         <DeferredSection label="هشدارهای هوشمند">
@@ -73,7 +75,9 @@ export default async function DashboardPage() {
         </DeferredSection>
       </Reveal>
       <Reveal delay={0.08}>
-        <LiquidityPanel />
+        <DeferredSection label="نقدینگی">
+          <LiquidityPanel />
+        </DeferredSection>
       </Reveal>
       <div className="grid gap-4 2xl:grid-cols-[1.12fr_0.88fr]">
         <Reveal delay={0.1}>
@@ -82,7 +86,9 @@ export default async function DashboardPage() {
           </DeferredSection>
         </Reveal>
         <Reveal delay={0.12}>
-          <ReliabilityStatusPanel />
+          <DeferredSection label="وضعیت اعتمادپذیری">
+            <ReliabilityStatusPanel />
+          </DeferredSection>
         </Reveal>
       </div>
       <Reveal delay={0.14}>
@@ -97,7 +103,9 @@ export default async function DashboardPage() {
       </Reveal>
       <div className="grid gap-4 2xl:grid-cols-[0.9fr_1.1fr]">
         <Reveal delay={0.12}>
-          <MacroSummaryPanel />
+          <DeferredSection label="خلاصه ماکرو">
+            <MacroSummaryPanel />
+          </DeferredSection>
         </Reveal>
         <Reveal delay={0.15}>
           <DeferredSection label="سیگنال‌های مشتق‌شده">

@@ -253,8 +253,20 @@ type CoinGeckoMarketRow = {
   last_updated?: string;
 };
 
+type CoinGeckoSimplePriceResponse = Record<
+  "bitcoin" | "ethereum" | "solana",
+  {
+    usd?: number;
+    usd_market_cap?: number;
+    usd_24h_vol?: number;
+    usd_24h_change?: number;
+    last_updated_at?: number;
+  }
+>;
+
 const coinGeckoChartCache = new Map<string, Promise<CoinGeckoMarketChart | null>>();
 let coinGeckoMarketsCache: Promise<CoinGeckoMarketRow[] | null> | null = null;
+let coinGeckoSimplePriceCache: Promise<CoinGeckoSimplePriceResponse | null> | null = null;
 
 async function fetchCoinGeckoMarketChart(id: "bitcoin" | "ethereum" | "solana", days = 7, interval: "hourly" | "daily" = days > 90 ? "daily" : "hourly") {
   const key = `${id}:${days}:${interval}`;
@@ -269,6 +281,73 @@ async function fetchCoinGeckoMarkets() {
     "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum,solana&order=market_cap_desc&per_page=3&page=1&sparkline=false",
   );
   return coinGeckoMarketsCache;
+}
+
+async function fetchCoinGeckoSimplePrices() {
+  coinGeckoSimplePriceCache ??= fetchJson<CoinGeckoSimplePriceResponse>(
+    "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true",
+  );
+  return coinGeckoSimplePriceCache;
+}
+
+async function fetchCoinGeckoSimpleRow(id: "bitcoin" | "ethereum" | "solana") {
+  const rows = await fetchCoinGeckoSimplePrices();
+  const row = rows?.[id];
+  if (!row || typeof row !== "object") return null;
+  return row;
+}
+
+function simpleTimestamp(row: { last_updated_at?: number }) {
+  return typeof row.last_updated_at === "number" && Number.isFinite(row.last_updated_at)
+    ? new Date(row.last_updated_at * 1000).toISOString()
+    : new Date().toISOString();
+}
+
+async function fetchCoinGeckoSimplePrice(id: "bitcoin" | "ethereum" | "solana") {
+  const row = await fetchCoinGeckoSimpleRow(id);
+  const price = Number(row?.usd);
+  if (!Number.isFinite(price)) return null;
+  const change = Number(row?.usd_24h_change);
+  const previousValue = Number.isFinite(change) ? price / (1 + change / 100) : null;
+  return live({
+    value: price,
+    previousValue,
+    timestamp: simpleTimestamp(row ?? {}),
+    source: `CoinGecko Simple Price fallback ${id} price_usd`,
+    reliability: 74,
+    sourceType: "API",
+    quality: "partial_live",
+  });
+}
+
+async function fetchCoinGeckoSimpleTrend(id: "bitcoin" | "ethereum" | "solana") {
+  const row = await fetchCoinGeckoSimpleRow(id);
+  const change = Number(row?.usd_24h_change);
+  if (!Number.isFinite(change)) return null;
+  return live({
+    value: change,
+    previousValue: 0,
+    timestamp: simpleTimestamp(row ?? {}),
+    source: `CoinGecko Simple Price fallback ${id} 24h change`,
+    reliability: 74,
+    sourceType: "API",
+    quality: "partial_live",
+  });
+}
+
+async function fetchCoinGeckoSimpleVolumeLevel(id: "bitcoin" | "ethereum" | "solana") {
+  const row = await fetchCoinGeckoSimpleRow(id);
+  const volume = Number(row?.usd_24h_vol);
+  if (!Number.isFinite(volume)) return null;
+  return live({
+    value: volume,
+    previousValue: null,
+    timestamp: simpleTimestamp(row ?? {}),
+    source: `CoinGecko Simple Price fallback ${id} 24h volume USD`,
+    reliability: 72,
+    sourceType: "API",
+    quality: "partial_live",
+  });
 }
 
 function marketChartHistory(rows: Array<[number, number]> | undefined): DataSeriesPoint[] {
@@ -338,6 +417,73 @@ async function fetchBinanceVolumeTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT"
     timestamp: new Date(data[data.length - 1][0]).toISOString(),
     source: futures ? "Binance Futures public volume" : "Binance spot public volume",
     reliability: futures ? 78 : 84,
+  });
+}
+
+type BybitKlineResponse = {
+  retCode?: number;
+  retMsg?: string;
+  result?: {
+    list?: string[][];
+  };
+};
+
+async function fetchBybitKlines(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT", category: "spot" | "linear" = "spot") {
+  const data = await fetchJson<BybitKlineResponse>(`https://api.bybit.com/v5/market/kline?category=${category}&symbol=${symbol}&interval=60&limit=49`);
+  const rows = data?.result?.list ?? [];
+  return rows
+    .map((row) => ({
+      timestamp: Number(row[0]),
+      open: Number(row[1]),
+      close: Number(row[4]),
+      turnover: Number(row[6] ?? row[5]),
+    }))
+    .filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.open) && Number.isFinite(row.close))
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function bybitHistory(rows: Awaited<ReturnType<typeof fetchBybitKlines>>): DataSeriesPoint[] {
+  return rows.map((row) => ({ timestamp: new Date(row.timestamp).toISOString(), value: row.close }));
+}
+
+async function fetchBybitTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT") {
+  const rows = await fetchBybitKlines(symbol, "spot");
+  if (!rows.length || rows.length < 25) return null;
+  const first = rows[rows.length - 25].open;
+  const previous = rows[rows.length - 2].close;
+  const last = rows[rows.length - 1].close;
+  const change = percentChange(last, first);
+  const previousChange = percentChange(previous, first);
+  if (change === null || previousChange === null) return null;
+  return live({
+    value: change,
+    previousValue: previousChange,
+    timestamp: new Date(rows[rows.length - 1].timestamp).toISOString(),
+    source: `Bybit public spot fallback ${symbol} 24h change`,
+    reliability: 76,
+    sourceType: "API",
+    quality: "partial_live",
+    intradayHistory: bybitHistory(rows),
+  });
+}
+
+async function fetchBybitVolumeTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT", futures = false) {
+  const rows = await fetchBybitKlines(symbol, futures ? "linear" : "spot");
+  if (!rows.length || rows.length < 48) return null;
+  const currentWindow = rows.slice(-24);
+  const previousWindow = rows.slice(-48, -24);
+  const currentVolume = currentWindow.reduce((sum, row) => sum + Number(row.turnover || 0), 0);
+  const previousVolume = previousWindow.reduce((sum, row) => sum + Number(row.turnover || 0), 0);
+  const change = percentChange(currentVolume, previousVolume);
+  if (change === null) return null;
+  return live({
+    value: change,
+    previousValue: 0,
+    timestamp: new Date(rows[rows.length - 1].timestamp).toISOString(),
+    source: futures ? `Bybit public linear fallback ${symbol} futures volume` : `Bybit public spot fallback ${symbol} spot volume`,
+    reliability: futures ? 70 : 74,
+    sourceType: "API",
+    quality: "partial_live",
   });
 }
 
@@ -744,6 +890,41 @@ async function fetchBybitFundingRate(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT" =
   });
 }
 
+async function fetchBybitOpenInterestTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT" = "BTCUSDT") {
+  const data = await fetchJson<{
+    retCode?: number;
+    retMsg?: string;
+    result?: { list?: Array<{ openInterest?: string; timestamp?: string }> };
+  }>(`https://api.bybit.com/v5/market/open-interest?category=linear&symbol=${symbol}&intervalTime=1h&limit=25`);
+  const rows = (data?.result?.list ?? [])
+    .map((row) => ({
+      openInterest: Number(row.openInterest),
+      timestamp: Number(row.timestamp),
+    }))
+    .filter((row) => Number.isFinite(row.openInterest))
+    .sort((left, right) => left.timestamp - right.timestamp);
+  if (rows.length < 2) return null;
+  const first = rows[0].openInterest;
+  const previous = rows[rows.length - 2].openInterest;
+  const last = rows[rows.length - 1].openInterest;
+  const value = percentChange(last, first);
+  const previousValue = percentChange(previous, first);
+  if (value === null || previousValue === null) return null;
+  return live({
+    value,
+    previousValue,
+    timestamp: Number.isFinite(rows[rows.length - 1].timestamp) ? new Date(rows[rows.length - 1].timestamp).toISOString() : new Date().toISOString(),
+    source: `Bybit public open interest history ${symbol}`,
+    reliability: 74,
+    sourceType: "API",
+    quality: "partial_live",
+    history: rows.map((row) => ({
+      timestamp: Number.isFinite(row.timestamp) ? new Date(row.timestamp).toISOString() : new Date().toISOString(),
+      value: row.openInterest,
+    })),
+  });
+}
+
 async function fetchOpenInterestTrend(symbol: "BTCUSDT" | "ETHUSDT" | "SOLUSDT" = "BTCUSDT") {
   const data = await fetchJson<Array<{ sumOpenInterestValue?: string; timestamp?: number }>>(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=25`);
   if (!data?.length || data.length < 2) return null;
@@ -1047,18 +1228,24 @@ function fallbackPoint(key: string): AdapterResult {
 export const marketDataAdapter: DataAdapter = {
   id: "marketDataAdapter",
   async fetchPoint(key) {
-    if (key === "btc_trend_24h") return (await fetchBinanceTrend("BTCUSDT")) ?? (await fetchCoinGeckoTrend("bitcoin")) ?? fallbackPoint(key);
-    if (key === "eth_trend_24h") return (await fetchBinanceTrend("ETHUSDT")) ?? (await fetchCoinGeckoTrend("ethereum")) ?? fallbackPoint(key);
-    if (key === "sol_trend_24h") return (await fetchBinanceTrend("SOLUSDT")) ?? (await fetchCoinGeckoTrend("solana")) ?? fallbackPoint(key);
+    if (key === "btc_price_usd") return (await fetchCoinGeckoSimplePrice("bitcoin")) ?? unavailable("CoinGecko Simple Price BTC", "BTC price unavailable from CoinGecko Simple Price.");
+    if (key === "eth_price_usd") return (await fetchCoinGeckoSimplePrice("ethereum")) ?? unavailable("CoinGecko Simple Price ETH", "ETH price unavailable from CoinGecko Simple Price.");
+    if (key === "sol_price_usd") return (await fetchCoinGeckoSimplePrice("solana")) ?? unavailable("CoinGecko Simple Price SOL", "SOL price unavailable from CoinGecko Simple Price.");
+    if (key === "btc_trend_24h") return (await fetchBinanceTrend("BTCUSDT")) ?? (await fetchBybitTrend("BTCUSDT")) ?? (await fetchCoinGeckoSimpleTrend("bitcoin")) ?? (await fetchCoinGeckoTrend("bitcoin")) ?? fallbackPoint(key);
+    if (key === "eth_trend_24h") return (await fetchBinanceTrend("ETHUSDT")) ?? (await fetchBybitTrend("ETHUSDT")) ?? (await fetchCoinGeckoSimpleTrend("ethereum")) ?? (await fetchCoinGeckoTrend("ethereum")) ?? fallbackPoint(key);
+    if (key === "sol_trend_24h") return (await fetchBinanceTrend("SOLUSDT")) ?? (await fetchBybitTrend("SOLUSDT")) ?? (await fetchCoinGeckoSimpleTrend("solana")) ?? (await fetchCoinGeckoTrend("solana")) ?? fallbackPoint(key);
+    if (key === "btc_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("bitcoin")) ?? unavailable("CoinGecko Simple Price BTC volume", "BTC 24h volume unavailable from CoinGecko Simple Price.");
+    if (key === "eth_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("ethereum")) ?? unavailable("CoinGecko Simple Price ETH volume", "ETH 24h volume unavailable from CoinGecko Simple Price.");
+    if (key === "sol_volume_24h_usd") return (await fetchCoinGeckoSimpleVolumeLevel("solana")) ?? unavailable("CoinGecko Simple Price SOL volume", "SOL 24h volume unavailable from CoinGecko Simple Price.");
     if (key === "btc_market_cap") return (await fetchCoinGeckoMarketCap("bitcoin")) ?? unavailable("CoinGecko BTC market cap", "CoinGecko BTC market cap unavailable.");
     if (key === "eth_market_cap") return (await fetchCoinGeckoMarketCap("ethereum")) ?? unavailable("CoinGecko ETH market cap", "CoinGecko ETH market cap unavailable.");
     if (key === "sol_market_cap") return (await fetchCoinGeckoMarketCap("solana")) ?? unavailable("CoinGecko SOL market cap", "CoinGecko SOL market cap unavailable.");
-    if (key === "spot_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT")) ?? (await fetchCoinGeckoVolumeTrend("bitcoin")) ?? fallbackPoint(key);
-    if (key === "spot_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT")) ?? (await fetchCoinGeckoVolumeTrend("ethereum")) ?? unavailable("Binance/CoinGecko ETH spot volume", "ETH spot volume unavailable.");
-    if (key === "spot_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT")) ?? (await fetchCoinGeckoVolumeTrend("solana")) ?? unavailable("Binance/CoinGecko SOL spot volume", "SOL spot volume unavailable.");
-    if (key === "futures_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT", true)) ?? fallbackPoint(key);
-    if (key === "futures_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT", true)) ?? unavailable("Binance ETH futures volume", "ETH futures volume unavailable.");
-    if (key === "futures_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT", true)) ?? unavailable("Binance SOL futures volume", "SOL futures volume unavailable.");
+    if (key === "spot_volume_btc_24h") return (await fetchBinanceVolumeTrend("BTCUSDT")) ?? (await fetchBybitVolumeTrend("BTCUSDT")) ?? (await fetchCoinGeckoVolumeTrend("bitcoin")) ?? (await fetchCoinGeckoSimpleVolumeLevel("bitcoin")) ?? fallbackPoint(key);
+    if (key === "spot_volume_eth_24h") return (await fetchBinanceVolumeTrend("ETHUSDT")) ?? (await fetchBybitVolumeTrend("ETHUSDT")) ?? (await fetchCoinGeckoVolumeTrend("ethereum")) ?? (await fetchCoinGeckoSimpleVolumeLevel("ethereum")) ?? unavailable("Binance/Bybit/CoinGecko ETH spot volume", "ETH spot volume unavailable.");
+    if (key === "spot_volume_sol_24h") return (await fetchBinanceVolumeTrend("SOLUSDT")) ?? (await fetchBybitVolumeTrend("SOLUSDT")) ?? (await fetchCoinGeckoVolumeTrend("solana")) ?? (await fetchCoinGeckoSimpleVolumeLevel("solana")) ?? unavailable("Binance/Bybit/CoinGecko SOL spot volume", "SOL spot volume unavailable.");
+    if (key === "futures_volume_btc_24h") return (await fetchBybitVolumeTrend("BTCUSDT", true)) ?? (await fetchBinanceVolumeTrend("BTCUSDT", true)) ?? unavailable("Bybit/Binance BTC futures volume", "BTC futures volume unavailable; no zero leverage value is generated.");
+    if (key === "futures_volume_eth_24h") return (await fetchBybitVolumeTrend("ETHUSDT", true)) ?? (await fetchBinanceVolumeTrend("ETHUSDT", true)) ?? unavailable("Bybit/Binance ETH futures volume", "ETH futures volume unavailable.");
+    if (key === "futures_volume_sol_24h") return (await fetchBybitVolumeTrend("SOLUSDT", true)) ?? (await fetchBinanceVolumeTrend("SOLUSDT", true)) ?? unavailable("Bybit/Binance SOL futures volume", "SOL futures volume unavailable.");
     return fallbackPoint(key);
   },
 };
@@ -1161,12 +1348,12 @@ export const onchainAdapter: DataAdapter = {
 export const correlationAdapter: DataAdapter = {
   id: "correlationAdapter",
   async fetchPoint(key) {
-    if (key === "funding_btc") return (await fetchFundingRate("BTCUSDT")) ?? (await fetchBybitFundingRate("BTCUSDT")) ?? (await fetchCoinAnkFundingRate("BTCUSDT"));
-    if (key === "funding_eth") return (await fetchFundingRate("ETHUSDT")) ?? (await fetchBybitFundingRate("ETHUSDT")) ?? (await fetchCoinAnkFundingRate("ETHUSDT"));
-    if (key === "funding_sol") return (await fetchFundingRate("SOLUSDT")) ?? (await fetchBybitFundingRate("SOLUSDT")) ?? (await fetchCoinAnkFundingRate("SOLUSDT"));
-    if (key === "open_interest_btc_24h") return (await fetchOpenInterestTrend("BTCUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("BTCUSDT")) ?? fallbackPoint(key);
-    if (key === "open_interest_eth_24h") return (await fetchOpenInterestTrend("ETHUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("ETHUSDT")) ?? unavailable("Binance/CoinAnk ETH open interest", "ETH open interest unavailable.");
-    if (key === "open_interest_sol_24h") return (await fetchOpenInterestTrend("SOLUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("SOLUSDT")) ?? unavailable("Binance/CoinAnk SOL open interest", "SOL open interest unavailable.");
+    if (key === "funding_btc") return (await fetchBybitFundingRate("BTCUSDT")) ?? (await fetchFundingRate("BTCUSDT")) ?? (await fetchCoinAnkFundingRate("BTCUSDT"));
+    if (key === "funding_eth") return (await fetchBybitFundingRate("ETHUSDT")) ?? (await fetchFundingRate("ETHUSDT")) ?? (await fetchCoinAnkFundingRate("ETHUSDT"));
+    if (key === "funding_sol") return (await fetchBybitFundingRate("SOLUSDT")) ?? (await fetchFundingRate("SOLUSDT")) ?? (await fetchCoinAnkFundingRate("SOLUSDT"));
+    if (key === "open_interest_btc_24h") return (await fetchBybitOpenInterestTrend("BTCUSDT")) ?? (await fetchOpenInterestTrend("BTCUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("BTCUSDT")) ?? unavailable("Bybit/Binance/CoinAnk BTC open interest", "BTC open interest unavailable; leverage remains unavailable instead of zero.");
+    if (key === "open_interest_eth_24h") return (await fetchBybitOpenInterestTrend("ETHUSDT")) ?? (await fetchOpenInterestTrend("ETHUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("ETHUSDT")) ?? unavailable("Bybit/Binance/CoinAnk ETH open interest", "ETH open interest unavailable.");
+    if (key === "open_interest_sol_24h") return (await fetchBybitOpenInterestTrend("SOLUSDT")) ?? (await fetchOpenInterestTrend("SOLUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("SOLUSDT")) ?? unavailable("Bybit/Binance/CoinAnk SOL open interest", "SOL open interest unavailable.");
     if (key === "liquidation_btc_24h") return await fetchCoinAnkLiquidationProxy("BTCUSDT");
     return fallbackPoint(key);
   },
@@ -1176,9 +1363,15 @@ export const regimeAdapter: DataAdapter = { id: "regimeAdapter", fetchPoint: asy
 export const alertAdapter: DataAdapter = { id: "alertAdapter", fetchPoint: async (key) => fallbackPoint(key) };
 
 const adapterByKey: Record<string, { adapter: DataAdapter; group: SignalGroup }> = {
+  btc_price_usd: { adapter: marketDataAdapter, group: "price" },
+  eth_price_usd: { adapter: marketDataAdapter, group: "price" },
+  sol_price_usd: { adapter: marketDataAdapter, group: "price" },
   btc_trend_24h: { adapter: marketDataAdapter, group: "price" },
   eth_trend_24h: { adapter: marketDataAdapter, group: "price" },
   sol_trend_24h: { adapter: marketDataAdapter, group: "price" },
+  btc_volume_24h_usd: { adapter: marketDataAdapter, group: "liquidity" },
+  eth_volume_24h_usd: { adapter: marketDataAdapter, group: "liquidity" },
+  sol_volume_24h_usd: { adapter: marketDataAdapter, group: "liquidity" },
   btc_market_cap: { adapter: marketDataAdapter, group: "price" },
   eth_market_cap: { adapter: marketDataAdapter, group: "price" },
   sol_market_cap: { adapter: marketDataAdapter, group: "price" },
@@ -1230,9 +1423,15 @@ const adapterByKey: Record<string, { adapter: DataAdapter; group: SignalGroup }>
 export const requiredSignalKeys = Object.keys(adapterByKey);
 
 const descriptorByKey: Record<string, { asset: AssetSymbol | "VIX" | "Stablecoins"; metric: string; sourceType: SourceType }> = {
+  btc_price_usd: { asset: "BTC", metric: "price_usd", sourceType: "API" },
+  eth_price_usd: { asset: "ETH", metric: "price_usd", sourceType: "API" },
+  sol_price_usd: { asset: "SOL", metric: "price_usd", sourceType: "API" },
   btc_trend_24h: { asset: "BTC", metric: "price_trend_24h_pct", sourceType: "API" },
   eth_trend_24h: { asset: "ETH", metric: "price_trend_24h_pct", sourceType: "API" },
   sol_trend_24h: { asset: "SOL", metric: "price_trend_24h_pct", sourceType: "API" },
+  btc_volume_24h_usd: { asset: "BTC", metric: "volume_24h_usd", sourceType: "API" },
+  eth_volume_24h_usd: { asset: "ETH", metric: "volume_24h_usd", sourceType: "API" },
+  sol_volume_24h_usd: { asset: "SOL", metric: "volume_24h_usd", sourceType: "API" },
   btc_market_cap: { asset: "BTC", metric: "market_cap_usd", sourceType: "API" },
   eth_market_cap: { asset: "ETH", metric: "market_cap_usd", sourceType: "API" },
   sol_market_cap: { asset: "SOL", metric: "market_cap_usd", sourceType: "API" },

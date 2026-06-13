@@ -82,7 +82,7 @@ export function generateAssetScenarios(asset: IntelligenceAssetSymbol): AssetSce
   const macroPressure = dxy > 0.15 || us10y > 0.03;
   const realSpotLiquidityScore = liquidity.realSpotLiquidityScore ?? null;
   const realLiquidityConfirmed = realSpotLiquidityScore !== null && realSpotLiquidityScore > 25 && stablecoin >= 0.35;
-  const leverageHot = liquidity.leverageStress >= 70;
+  const leverageHot = liquidity.leverageStress !== null && liquidity.leverageStress >= 70;
   const name = assetNames[asset];
 
   let bearish = 24 + (macroPressure ? 12 : 0) + (liquidity.liquidityScoreSigned < 0 ? 10 : 0) + (leverageHot ? 8 : 0);

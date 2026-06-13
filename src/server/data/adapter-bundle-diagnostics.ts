@@ -42,15 +42,16 @@ const adapterDefinitions: Array<{
   optionalInputs?: string[];
 }> = [
   {
-    adapterName: "Binance market adapter",
-    source: "Binance spot public REST / CoinGecko fallback",
+    adapterName: "Core market fallback adapter",
+    source: "Binance spot public REST / Bybit public ticker / CoinGecko Simple Price fallback",
     class: "core",
-    requiredInputs: ["btc_trend_24h", "eth_trend_24h", "sol_trend_24h", "spot_volume_btc_24h", "spot_volume_eth_24h", "spot_volume_sol_24h"],
+    requiredInputs: ["btc_price_usd", "eth_price_usd", "sol_price_usd", "btc_volume_24h_usd", "eth_volume_24h_usd", "sol_volume_24h_usd"],
+    optionalInputs: ["btc_trend_24h", "eth_trend_24h", "sol_trend_24h", "spot_volume_btc_24h", "spot_volume_eth_24h", "spot_volume_sol_24h"],
   },
   {
     adapterName: "Bybit derivatives adapter",
     source: "Bybit public REST target / Binance Futures public metrics currently consumed / CoinAnk proxy validation fallback",
-    class: "core",
+    class: "optional",
     requiredInputs: ["funding_btc", "funding_eth", "funding_sol", "open_interest_btc_24h", "open_interest_eth_24h", "open_interest_sol_24h"],
     optionalInputs: ["liquidation_btc_24h"],
   },

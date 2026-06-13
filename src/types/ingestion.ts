@@ -370,6 +370,8 @@ export interface IngestionFoundationOptions {
   stageId?: string;
   maxAttemptsOverride?: number;
   timeoutMsOverride?: number;
+  skipEventProcessing?: boolean;
+  eventProcessingLimit?: number;
 }
 
 export interface IngestionRunSummary {

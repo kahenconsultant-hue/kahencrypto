@@ -617,11 +617,11 @@ export interface LiquidityEngineOutput extends SignalScores {
   liquiditySustainabilityScore?: number;
   stablecoinTrend: DirectionalBias;
   etfFlowStatus: DirectionalBias;
-  leverageStress: number;
-  institutionalFlow: number;
-  stablecoinExpansion: number;
-  speculativeHeat: number;
-  riskCompression: number;
+  leverageStress: number | null;
+  institutionalFlow: number | null;
+  stablecoinExpansion: number | null;
+  speculativeHeat: number | null;
+  riskCompression: number | null;
   confidence: number;
   confidenceDetail?: ConfidenceResult;
   dataCoveragePercent?: number;

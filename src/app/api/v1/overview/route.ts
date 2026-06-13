@@ -1,6 +1,5 @@
 import { apiJson, apiOptions } from "@/lib/api-response";
 import {
-  assetIntelligence,
   getNewsGroupedByCategory,
   pricingPlans,
   sourceHealth,
@@ -30,6 +29,7 @@ import {
   ensureDashboardSignalCacheFresh,
 } from "@/server/dashboard/dashboard-service";
 import { getEtfFlowSnapshotSync } from "@/server/data/etf-flow-module";
+import { getUnifiedIntelligenceReport } from "@/server/intelligence/unified-intelligence-engine";
 
 export function OPTIONS() {
   return apiOptions();
@@ -44,6 +44,7 @@ export async function GET() {
   const dataSourceStatus = getDashboardModuleDataSourceStatus();
   const alerts = getDashboardAlerts();
   const integrity = getDashboardIntegrityReport();
+  const unifiedIntelligence = getUnifiedIntelligenceReport();
   const etfFlows = [
     { issuer: "BTC ETF basket", signal: snapshot.byKey.btc_etf_flow_24h, snapshot: getEtfFlowSnapshotSync("BTC") },
     { issuer: "ETH ETF basket", signal: snapshot.byKey.eth_etf_flow_24h, snapshot: getEtfFlowSnapshotSync("ETH") },
@@ -88,7 +89,8 @@ export async function GET() {
     liquidityIntelligence: getDashboardLiquidityIntelligenceStack(),
     correlations: getDashboardCorrelationReport(),
     assetImpacts: getDashboardAssetImpactProfiles(),
-    assets: assetIntelligence,
+    unifiedIntelligence,
+    assets: unifiedIntelligence.assets,
     etfFlows,
     sentiment: getDashboardSentimentReport(),
     dataQuality: {

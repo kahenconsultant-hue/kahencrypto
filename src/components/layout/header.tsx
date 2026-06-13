@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { Bell, Braces, Radio, Search } from "lucide-react";
+import { Bell, Braces, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
 
 export function Header() {
+  const activeAlertCount = generateSmartAlerts().filter((alert) => alert.status !== "suppressed").length;
+
   return (
     <header className="sticky top-0 z-20 border-b bg-background/90 px-4 py-3 backdrop-blur">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -23,12 +26,8 @@ export function Header() {
             جست‌وجو در خبرها، همبستگی‌ها، هشدارها
           </div>
           <Button variant="outline">
-            <Radio className="h-4 w-4" aria-hidden />
-            پایش لحظه‌ای
-          </Button>
-          <Button variant="outline">
             <Bell className="h-4 w-4" aria-hidden />
-            ۸+ هشدار فعال
+            {activeAlertCount} هشدار فعال
           </Button>
           <Link
             href="/api/v1/overview"

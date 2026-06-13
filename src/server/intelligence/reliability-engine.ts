@@ -417,7 +417,7 @@ function buildReliabilityReport(params: {
   const globalCap = clampPercent(coreReliability * 100);
   const warningsFa = [
     missingCriticalSources.length
-      ? `برخی منابع رایگان اصلی ناموجود یا ناموفق هستند: ${missingCriticalSources.slice(0, 4).join("، ")}${missingCriticalSources.length > 4 ? "…" : ""}`
+      ? `برخی منابع عمومی اصلی ناموجود یا ناموفق هستند: ${missingCriticalSources.slice(0, 4).join("، ")}${missingCriticalSources.length > 4 ? "…" : ""}`
       : "",
     staleSources || obsoleteSources ? `${staleSources + obsoleteSources} منبع فعال stale/obsolete هستند و نباید به شکل تازه یا زنده نمایش داده شوند.` : "",
     ...freshnessReport.summary.warningsFa,
@@ -425,7 +425,7 @@ function buildReliabilityReport(params: {
     missingCoreMacroInputs.length
       ? `Macro Engine به داده‌های اصلی FRED کامل وصل نیست؛ ورودی‌های ناموجود: ${missingCoreMacroInputs.join("، ")}. هشدارهای کلان قوی نباید تولید شوند.`
       : "",
-    disabledPremiumModules.length ? `پوشش premium محدود است: ${disabledPremiumModules.slice(0, 4).join("، ")}. تحلیل core با پروکسی‌های رایگان ادامه دارد.` : "",
+    disabledPremiumModules.length ? `پوشش premium محدود است: ${disabledPremiumModules.slice(0, 4).join("، ")}. تحلیل core با پروکسی‌های عمومی ادامه دارد.` : "",
     degradedModules.length ? "برخی ماژول‌ها در حالت degraded هستند و نباید confidence بالا نشان دهند." : "",
   ].filter(Boolean);
 

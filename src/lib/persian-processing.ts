@@ -84,7 +84,7 @@ export const eventTypeLabelsFa: Record<string, string> = {
 };
 
 export const publicAnalysisModeLabels: Record<string, string> = {
-  free_data_plus_proxies: "داده رایگان + سیگنال‌های پروکسی",
+  free_data_plus_proxies: "داده عمومی + سیگنال‌های پروکسی",
   direct_data: "داده مستقیم",
   degraded: "کیفیت محدود",
   unavailable: "ناموجود",

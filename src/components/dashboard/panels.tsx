@@ -687,9 +687,9 @@ export function DerivedSignalsPanel() {
         <div>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" aria-hidden />
-            سیگنال‌های مشتق‌شده از داده‌های رایگان
+            سیگنال‌های مشتق‌شده از داده‌های عمومی
           </CardTitle>
-          <CardDescription>این بخش خروجی مستقیم نهادی نیست؛ سیگنال‌ها از داده‌های رایگان، RSS، Binance، DefiLlama و proxyهای ماکرو ساخته می‌شوند و محدودیت‌ها شفاف نمایش داده می‌شود.</CardDescription>
+          <CardDescription>این بخش خروجی مستقیم نهادی نیست؛ سیگنال‌ها از داده‌های عمومی، RSS، Binance، DefiLlama و proxyهای ماکرو ساخته می‌شوند و محدودیت‌ها شفاف نمایش داده می‌شود.</CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <DataSourceBadge status={moduleDataSourceStatus.derivedSignals} />

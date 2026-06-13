@@ -258,7 +258,7 @@ export function calculateDerivedSignals(runId?: string): DerivedSignalInput[] {
             ? "استیبل‌کوین، حجم اسپات یا روند قیمت‌ها از نقدینگی کوتاه‌مدت حمایت می‌کنند؛ چون ETF و ذخایر صرافی کامل نیستند، نتیجه با برچسب proxy نمایش داده می‌شود."
             : cryptoLiquidityProxyScore < -25
               ? "نقدینگی عمومی کریپتو حمایتی نیست؛ اگر رشد قیمت رخ دهد باید با حجم اسپات و استیبل‌کوین راستی‌آزمایی شود."
-              : "نقدینگی کریپتو از داده‌های رایگان نشانه قوی نمی‌دهد و خروجی باید محتاطانه خوانده شود.",
+              : "نقدینگی کریپتو از داده‌های عمومی نشانه قوی نمی‌دهد و خروجی باید محتاطانه خوانده شود.",
       formula: "crypto_liquidity_proxy = 0.34×stablecoin trend + 0.22×spot volume + weighted BTC/ETH/SOL momentum",
       payload: { stablecoins, spotVolume, btc, eth, sol },
     }),
@@ -294,7 +294,7 @@ export function calculateDerivedSignals(runId?: string): DerivedSignalInput[] {
             ? "رفتار BTC، نزدک و فشار دلار نشان می‌دهد اشتهای ریسک بهتر شده، اما نبود ETF flow مستقیم confidence را محدود می‌کند."
             : institutionalRiskAppetiteScore < -25
               ? "داده‌های عمومی نشان می‌دهند ریسک‌پذیری نهادی یا شبه‌نهادی ضعیف است؛ تأیید ETF اگر اضافه شود می‌تواند این برداشت را تغییر دهد."
-              : "اشتهای ریسک نهادی از داده‌های رایگان جهت مشخصی ندارد.",
+              : "اشتهای ریسک نهادی از داده‌های عمومی جهت مشخصی ندارد.",
       formula: "institutional_risk_appetite_proxy = BTC trend + Nasdaq trend + inverse DXY + Gold adjustment + stablecoin trend + optional ETF flow",
       payload: { btc, nasdaq, dxy, gold, stablecoins, etf },
     }),
@@ -363,7 +363,7 @@ export function buildLiquidityProxySnapshot(runId?: string): LiquidityScoreSnaps
       : byKey.crypto_liquidity_proxy?.quality ?? "unavailable",
     unavailablePremiumInputs,
     explanationFa:
-      "این امتیاز نقدینگی از داده‌های رایگان و پروکسی ساخته می‌شود: DefiLlama، Binance، CoinGecko/Yahoo proxy و RSS. نبود ETF یا ذخایر صرافی کل تحلیل را قطع نمی‌کند، اما confidence را پایین می‌آورد.",
+      "این امتیاز نقدینگی از داده‌های عمومی و پروکسی ساخته می‌شود: DefiLlama، Binance، CoinGecko/Yahoo proxy و RSS. نبود ETF یا ذخایر صرافی کل تحلیل را قطع نمی‌کند، اما confidence را پایین می‌آورد.",
     payload: { derivedSignals: signals },
     generatedAt,
   };
@@ -400,8 +400,8 @@ export function buildRegimeInputSnapshot(runId?: string): RegimeInputSnapshotInp
     missingInputs: missing,
     explanationFa:
       regime === "insufficient_core_data"
-        ? "داده‌های رایگان اصلی برای تشخیص رژیم کافی نیستند."
-        : "رژیم بازار از پروکسی‌های رایگان ساخته شده است؛ نبود داده‌های premium مثل CoinGlass، Glassnode یا ETF مستقیم باعث کاهش confidence می‌شود، نه توقف کل تحلیل.",
+        ? "داده‌های عمومی اصلی برای تشخیص رژیم کافی نیستند."
+        : "رژیم بازار از پروکسی‌های عمومی ساخته شده است؛ نبود داده‌های premium مثل CoinGlass، Glassnode یا ETF مستقیم باعث کاهش confidence می‌شود، نه توقف کل تحلیل.",
     payload: { derivedSignals: signals },
     generatedAt: new Date().toISOString(),
   };

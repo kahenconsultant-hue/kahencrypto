@@ -516,7 +516,7 @@ export function calculateLiquidityEngine(input: LiquidityInputVector = buildLiqu
           formula: `${confidenceDetail.formula} برای حالت proxy، confidence نهایی از ترکیب adaptive confidence و confidence سیگنال‌های مشتق‌شده ساخته می‌شود، سپس با پوشش داده، تازگی و نبود premium inputs سقف‌گذاری می‌شود.`,
           explanation:
             confidenceCalibration.reason ||
-            "اطمینان نقدینگی از داده‌های رایگان، proxyهای مشتق‌شده، تازگی منابع و جریمه نبود ETF/exchange-reserve مستقیم محاسبه شده است؛ بنابراین نبود داده پریمیوم خروجی را قطع نمی‌کند.",
+            "اطمینان نقدینگی از داده‌های عمومی، proxyهای مشتق‌شده، تازگی منابع و جریمه نبود ETF/exchange-reserve مستقیم محاسبه شده است؛ بنابراین نبود داده پریمیوم خروجی را قطع نمی‌کند.",
         }
       : {
           ...confidenceDetail,

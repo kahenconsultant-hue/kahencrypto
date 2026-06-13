@@ -599,7 +599,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
           score: cappedConfidence,
           label: confidenceLabel(cappedConfidence),
           formula: `${confidenceDetail.formula} برای regime proxy، confidence نهایی با confidence سیگنال‌های مشتق‌شده، سقف reliability، coverage و تازگی داده ترکیب می‌شود.`,
-          explanation: regimeConfidenceCalibration.reason || "اطمینان رژیم از هم‌راستایی سیگنال‌های رایگان/پروکسی، کیفیت core data و جریمه داده‌های ناموجود ساخته شده است.",
+          explanation: regimeConfidenceCalibration.reason || "اطمینان رژیم از هم‌راستایی سیگنال‌های عمومی/پروکسی، کیفیت core data و جریمه داده‌های ناموجود ساخته شده است.",
         }
       : {
           ...confidenceDetail,
@@ -684,7 +684,7 @@ export function calculateMarketRegime(input: RegimeInputVector = buildRegimeInpu
     invalidationSignals,
     explanation:
       regimeInputSnapshot.regime === "insufficient_core_data"
-        ? "داده‌های رایگان اصلی برای تشخیص رژیم کافی نیستند؛ سیستم رژیم قطعی تولید نمی‌کند و تا refresh بعدی فقط وضعیت کیفیت داده را نشان می‌دهد."
+        ? "داده‌های عمومی اصلی برای تشخیص رژیم کافی نیستند؛ سیستم رژیم قطعی تولید نمی‌کند و تا refresh بعدی فقط وضعیت کیفیت داده را نشان می‌دهد."
         : regimeLabel === "Liquidity-Constrained Risk-On"
         ? `ساختار فعلی «${regimeLabelFa[regimeLabel]}» است، نه expansion کامل. Nasdaq بخشی از اشتهای ریسک را حمایت می‌کند، اما امتیاز نقدینگی ${liquidity.dataQuality === "unavailable" ? "ناموجود" : `${liquidity.liquidityScoreSigned}/100`}، پایداری نقدینگی ${liquidity.liquiditySustainabilityScore ?? "ناموجود"}/100، وضعیت ETF ${input.btcEtfFlow === null ? "ناموجود" : "قابل محاسبه"} و leverage stress ${liquidity.dataQuality === "unavailable" ? "ناموجود" : `${liquidity.leverageStress}/100`} اجازه نمی‌دهد رژیم به‌عنوان Risk-On Expansion معتبر طبقه‌بندی شود.`
         : regimeLabel === "Fragile Risk-On"

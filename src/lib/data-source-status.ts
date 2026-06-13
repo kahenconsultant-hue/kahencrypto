@@ -33,7 +33,7 @@ export type ModuleStatusKey = keyof typeof moduleDataSourceStatus;
 
 export const dataSourceStatusLabels: Record<DataSourceStatus, string> = {
   live: "زنده",
-  partial_live: "نیمه‌زنده",
+  partial_live: "بروز شده",
   delayed: "با تأخیر",
   proxy: "پروکسی",
   estimated: "برآوردی با توضیح",

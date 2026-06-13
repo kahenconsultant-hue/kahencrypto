@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { assetIntelligence } from "@/lib/production-data";
 import { AssetDashboard } from "@/components/assets/asset-dashboard";
+import { getUnifiedAssetIntelligence, getUnifiedAssetRegistry } from "@/server/intelligence/unified-intelligence-engine";
+import { ensureDashboardSignalCacheFresh } from "@/server/dashboard/dashboard-service";
 
 type PageProps = {
   params: Promise<{ symbol: string }>;
@@ -11,8 +12,9 @@ export const revalidate = 0;
 
 export async function generateMetadata({ params }: PageProps) {
   const { symbol } = await params;
-  const key = symbol.toLowerCase() as keyof typeof assetIntelligence;
-  const asset = assetIntelligence[key];
+  const registry = getUnifiedAssetRegistry();
+  const key = symbol.toLowerCase() as keyof typeof registry;
+  const asset = registry[key];
 
   return {
     title: asset ? `${asset.symbol} Intelligence | C.M.I.P` : "Asset Intelligence | C.M.I.P",
@@ -21,11 +23,12 @@ export async function generateMetadata({ params }: PageProps) {
 
 export default async function AssetPage({ params }: PageProps) {
   const { symbol } = await params;
-  const key = symbol.toLowerCase() as keyof typeof assetIntelligence;
+  await ensureDashboardSignalCacheFresh();
+  const asset = getUnifiedAssetIntelligence(symbol);
 
-  if (!assetIntelligence[key]) {
+  if (!asset) {
     notFound();
   }
 
-  return <AssetDashboard assetKey={key} />;
+  return <AssetDashboard asset={asset} />;
 }

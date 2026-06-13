@@ -110,11 +110,12 @@ function stageOperationalStatus(summary: IngestionRunSummary) {
   const nonBlockingLimitations = [...failedRows, ...degradedRows].filter((source) =>
     isNonBlockingSourceDegradation(source.sourceId, source.lastError),
   );
+  const deadLettersAreNonBlocking = summary.deadLetters > 0 && nonBlockingLimitations.length > 0 && !blockingFailures.length && !blockingDegradations.length;
   const allSourcesFailed = summary.failedSources > 0 && summary.successfulSources === 0 && summary.degradedSources === 0;
   const status =
     allSourcesFailed || blockingFailures.length
       ? "failed"
-      : blockingDegradations.length || summary.deadLetters > 0
+      : blockingDegradations.length || (summary.deadLetters > 0 && !deadLettersAreNonBlocking)
         ? "degraded"
         : nonBlockingLimitations.length
           ? "success_with_limited_confidence"

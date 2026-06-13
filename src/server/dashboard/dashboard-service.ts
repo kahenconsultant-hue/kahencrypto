@@ -72,7 +72,8 @@ function scheduleDashboardSignalRefresh() {
 }
 
 export async function ensureDashboardSignalCacheFresh() {
-  await withDashboardTimeout(Promise.all([loadSharedSignalCache(), hydrateRuntimeStoreFromSupabase()]));
+  const hydration = await withDashboardTimeout(Promise.all([loadSharedSignalCache(), hydrateRuntimeStoreFromSupabase()]), 12_000);
+  if (hydration) dashboardCache.clear();
   const status = getSignalCacheStatusSync();
   if (status.exists && !status.stale) return { refreshed: false, status };
 

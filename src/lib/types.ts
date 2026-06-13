@@ -341,6 +341,9 @@ export interface CorrelationPair {
     observationsUsed: number;
     missingObservations: number;
     minimumObservations: number;
+    coveragePercent?: number;
+    availableSamples?: number;
+    requiredSamples?: number;
     lastAlignedTimestamp: string | null;
     sourcePair: string;
     status: "available" | "insufficient_data" | "missing_series";
@@ -387,6 +390,9 @@ export interface CorrelationSignal {
     observationsUsed: number;
     missingObservations: number;
     minimumObservations: number;
+    coveragePercent?: number;
+    availableSamples?: number;
+    requiredSamples?: number;
     lastAlignedTimestamp: string | null;
     sourcePair: string;
     status: "available" | "insufficient_data" | "missing_series";

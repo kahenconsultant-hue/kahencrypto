@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { runIngestionFoundation } from "@/api/ingestion";
 import { resolveSignalFreshness, signalFreshnessClassification } from "@/health/freshnessResolver";
 import { REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
+import { buildCorrelationAlignmentSnapshots } from "@/server/analytics/correlation_alignment_engine";
 import { runDerivedSignalProcessing } from "@/server/analytics/derived-signal-engine";
 import { buildForecastSnapshots } from "@/server/analytics/forecast_snapshot_engine";
 import { validateDueForecasts } from "@/server/analytics/forecast_validation_engine";
 import { getSignalSnapshot } from "@/server/analytics/market-signals";
 import { refreshSignalCache } from "@/server/data/signal-cache";
-import { persistForecastSnapshots, persistForecastValidations, persistIngestionRun, persistSchedulerRun } from "@/storage/ingestion-store";
+import { persistForecastSnapshots, persistForecastValidations, persistIngestionRun, persistMarketSnapshots, persistSchedulerRun } from "@/storage/ingestion-store";
 import type { IngestionRunSummary, SchedulerRunRecord, SchedulerStageRun } from "@/types/ingestion";
 
 const DEFAULT_STAGE_TIMEOUT_MS = 75_000;
@@ -224,7 +225,12 @@ function failedStage(stage: (typeof INGESTION_SCHEDULER_STAGES)[number], started
   };
 }
 
-function fusionStage(startedAt: string, refresh: Awaited<ReturnType<typeof refreshSignalCache>>, derived: Awaited<ReturnType<typeof runDerivedSignalProcessing>>): SchedulerStageRun {
+function fusionStage(
+  startedAt: string,
+  refresh: Awaited<ReturnType<typeof refreshSignalCache>>,
+  derived: Awaited<ReturnType<typeof runDerivedSignalProcessing>>,
+  alignment: { persisted: number; error: string | null },
+): SchedulerStageRun {
   const finishedAt = new Date().toISOString();
   const unavailableSignals = refresh.failedSources.map((failure) => {
     const classification = signalFreshnessClassification({ key: failure.key, source: failure.source });
@@ -252,7 +258,7 @@ function fusionStage(startedAt: string, refresh: Awaited<ReturnType<typeof refre
     pulledEvents: 0,
     pulledMetrics: refresh.counts.total,
     persistedEvents: 0,
-    persistedMetrics: derived.persisted.derivedSignals,
+    persistedMetrics: derived.persisted.derivedSignals + alignment.persisted,
     failedSources: blockingFailures.length,
     degradedSources: status === "success_with_limited_confidence" ? nonBlockingLimitations.length : blockingFailures.length ? 1 : 0,
     deadLetters: 0,
@@ -265,6 +271,8 @@ function fusionStage(startedAt: string, refresh: Awaited<ReturnType<typeof refre
       confidenceLimitedBy: nonBlockingLimitations.length ? "optional/free/premium unavailable inputs" : null,
       signalCounts: refresh.counts,
       derivedSignalsPersisted: derived.persisted.derivedSignals,
+      correlationAlignmentSnapshotsPersisted: alignment.persisted,
+      correlationAlignmentError: alignment.error,
     },
   };
 }
@@ -395,7 +403,18 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
     schedulerDebug("fusion:derived:start");
     const derived = await withStageTimeout(runDerivedSignalProcessing(runId), "Stage 5: Derived Signal Processing");
     schedulerDebug("fusion:derived:done", { persisted: derived.persisted.derivedSignals, storageMode: derived.persisted.derivedSignalsStorageMode });
-    stages.push(fusionStage(fusionStartedAt, refresh, derived));
+    let alignment = { persisted: 0, error: null as string | null };
+    try {
+      schedulerDebug("fusion:correlation-alignment:start");
+      const snapshots = buildCorrelationAlignmentSnapshots(runId);
+      const persisted = await withStageTimeout(persistMarketSnapshots(snapshots), "Stage 5: Correlation Alignment Persistence", 8_000);
+      alignment = { persisted: persisted.persisted, error: null };
+      schedulerDebug("fusion:correlation-alignment:done", { persisted: persisted.persisted, storageMode: persisted.storageMode });
+    } catch (error) {
+      alignment = { persisted: 0, error: error instanceof Error ? error.message : String(error) };
+      schedulerDebug("fusion:correlation-alignment:failed", { error: alignment.error });
+    }
+    stages.push(fusionStage(fusionStartedAt, refresh, derived, alignment));
   } catch (error) {
     schedulerDebug("fusion:failed", { error: error instanceof Error ? error.message : String(error) });
     stages.push(failedFusionStage(fusionStartedAt, error));

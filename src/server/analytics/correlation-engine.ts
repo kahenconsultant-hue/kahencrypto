@@ -5,6 +5,7 @@ import {
   getSeriesSignal,
   type SeriesKey,
 } from "@/server/analytics/market-signals";
+import { buildCorrelationAlignmentDataset } from "@/server/analytics/correlation_alignment_engine";
 import { clampPercent } from "@/server/analytics/scoring-engine";
 import { getLatestMarketSnapshotsSync } from "@/storage/ingestion-store";
 import type { MarketSnapshotInput } from "@/types/ingestion";
@@ -52,7 +53,9 @@ const pairDefinitions: Array<{
   { id: "btc-stablecoin-market-cap", label: "BTC ↔ Stablecoin Market Cap", left: "BTC", right: "Stablecoin Market Cap", importance: 0.9 },
   { id: "eth-sol", label: "ETH ↔ SOL", left: "ETH", right: "SOL", importance: 0.82 },
   { id: "eth-dxy", label: "ETH ↔ DXY", left: "ETH", right: "DXY", importance: 0.82 },
+  { id: "eth-nasdaq", label: "ETH ↔ Nasdaq", left: "ETH", right: "Nasdaq", importance: 0.8 },
   { id: "sol-dxy", label: "SOL ↔ DXY", left: "SOL", right: "DXY", importance: 0.78 },
+  { id: "sol-nasdaq", label: "SOL ↔ Nasdaq", left: "SOL", right: "Nasdaq", importance: 0.78 },
 ];
 
 export function rollingCorrelation(left: number[], right: number[]) {
@@ -250,6 +253,15 @@ function displayFrequency(frequency: CorrelationFrequency): CorrelationWindowMet
 }
 
 function alignedReturns(left: SeriesKey, right: SeriesKey, frequency: "intraday" | "daily") {
+  if (frequency === "daily") {
+    const dataset = buildCorrelationAlignmentDataset(left, right);
+    if (dataset) {
+      return dataset.points
+        .map((item) => ({ bucket: item.day, left: item.leftReturn, right: item.rightReturn }))
+        .sort((a, b) => a.bucket.localeCompare(b.bucket));
+    }
+  }
+
   const leftReturns = buildHistoricalReturnSeries(left, frequency);
   const rightReturns = buildHistoricalReturnSeries(right, frequency);
   const rightByBucket = new Map(
@@ -277,6 +289,7 @@ function correlationWindowMeta(params: {
   sampleSize: number;
   status: CorrelationStatus;
   lastAlignedTimestamp: string | null;
+  sourcePair?: string;
 }): CorrelationWindowMeta {
   return {
     window: params.window,
@@ -284,8 +297,11 @@ function correlationWindowMeta(params: {
     observationsUsed: params.sampleSize,
     missingObservations: Math.max(0, minimumSamples[params.window] - params.sampleSize),
     minimumObservations: minimumSamples[params.window],
+    availableSamples: params.sampleSize,
+    requiredSamples: minimumSamples[params.window],
+    coveragePercent: clampPercent((params.sampleSize / Math.max(1, minimumSamples[params.window])) * 100),
     lastAlignedTimestamp: params.lastAlignedTimestamp,
-    sourcePair: sourceText(params.left, params.right),
+    sourcePair: params.sourcePair ?? sourceText(params.left, params.right),
     status: params.status,
   };
 }
@@ -303,6 +319,7 @@ function correlationForWindow(left: SeriesKey, right: SeriesKey, window: Correla
   const aligned = alignedReturns(left, right, frequency);
   const sample = aligned.slice(-windowSamples[window]);
   const sampleSize = sample.length;
+  const alignmentDataset = frequency === "daily" ? buildCorrelationAlignmentDataset(left, right) : null;
   const leftSignal = getSeriesSignal(left);
   const rightSignal = getSeriesSignal(right);
   const leftSeries = buildHistoricalReturnSeries(left, frequency);
@@ -315,7 +332,7 @@ function correlationForWindow(left: SeriesKey, right: SeriesKey, window: Correla
       value: null,
       sampleSize,
       status: "missing_series" as CorrelationStatus,
-      meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "missing_series", lastAlignedTimestamp }),
+      meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "missing_series", lastAlignedTimestamp, sourcePair: alignmentDataset?.sourcePair }),
     };
   }
   if (sampleSize < minimumSamples[window]) {
@@ -323,15 +340,25 @@ function correlationForWindow(left: SeriesKey, right: SeriesKey, window: Correla
       value: null,
       sampleSize,
       status: "insufficient_data" as CorrelationStatus,
-      meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "insufficient_data", lastAlignedTimestamp }),
+      meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "insufficient_data", lastAlignedTimestamp, sourcePair: alignmentDataset?.sourcePair }),
+    };
+  }
+
+  const value = rollingCorrelation(sample.map((item) => item.left), sample.map((item) => item.right));
+  if (value === null) {
+    return {
+      value: null,
+      sampleSize,
+      status: "insufficient_data" as CorrelationStatus,
+      meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "insufficient_data", lastAlignedTimestamp, sourcePair: alignmentDataset?.sourcePair }),
     };
   }
 
   return {
-    value: rollingCorrelation(sample.map((item) => item.left), sample.map((item) => item.right)),
+    value,
     sampleSize,
     status: "available" as CorrelationStatus,
-    meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "available", lastAlignedTimestamp }),
+    meta: correlationWindowMeta({ left, right, window, frequency, sampleSize, status: "available", lastAlignedTimestamp, sourcePair: alignmentDataset?.sourcePair }),
   };
 }
 
@@ -924,12 +951,14 @@ export function getDynamicCorrelationReport() {
   const coverage = calculateCorrelationCoverage(signals);
   const engineConfidence =
     engineConfidenceRaw === null ? null : capCorrelationConfidenceByCoverage(clampPercent(engineConfidenceRaw), coverage.coverage);
-  const engineStatus = validPairs >= 6 ? "connected" : validPairs >= 3 ? "degraded" : "degraded";
+  const engineStatus = validPairs >= 6 && coverage.coverage >= 60 ? "connected" : "degraded";
   const engineReason =
     validPairs === 0
       ? "insufficient valid time series"
       : validPairs < 6
         ? `only ${validPairs}/${requiredPairs} correlation pairs have enough observations`
+        : coverage.coverage < 60
+          ? `${validPairs}/${requiredPairs} pairs have usable short-window data, but historical coverage is only ${coverage.coverage}%`
         : `${validPairs}/${requiredPairs} correlation pairs are available`;
 
   return {
@@ -971,6 +1000,18 @@ export function getDynamicCorrelationReport() {
         "7d": signal.sampleSizes?.["7d"] ?? 0,
         "30d": signal.sampleSizes?.["30d"] ?? 0,
         "90d": signal.sampleSizes?.["90d"] ?? 0,
+      },
+      requiredSamples: {
+        "24h": signal.windowIntegrity?.["24h"]?.minimumObservations ?? minimumSamples["24h"],
+        "7d": signal.windowIntegrity?.["7d"]?.minimumObservations ?? minimumSamples["7d"],
+        "30d": signal.windowIntegrity?.["30d"]?.minimumObservations ?? minimumSamples["30d"],
+        "90d": signal.windowIntegrity?.["90d"]?.minimumObservations ?? minimumSamples["90d"],
+      },
+      coverageByWindow: {
+        "24h": signal.windowIntegrity?.["24h"]?.coveragePercent ?? 0,
+        "7d": signal.windowIntegrity?.["7d"]?.coveragePercent ?? 0,
+        "30d": signal.windowIntegrity?.["30d"]?.coveragePercent ?? 0,
+        "90d": signal.windowIntegrity?.["90d"]?.coveragePercent ?? 0,
       },
       windowIntegrity: signal.windowIntegrity,
       source: signal.source ?? "منبع ناموجود",

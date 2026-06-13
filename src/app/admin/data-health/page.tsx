@@ -829,7 +829,10 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
                     {row.leadLag.leader === "insufficient" ? "نمونه ناکافی" : `${row.leadLag.leader} / ${row.leadLag.lag ?? "-"}`}
                   </td>
                   <td className="border-y px-2 py-2">
-                    24h: {row.observations24h} / 7d: {row.observations7d} / 30d: {row.observations30d} / 90d: {row.observations90d}
+                    <div>24h: {row.observations24h}/{row.windowIntegrity?.["24h"]?.minimumObservations ?? "-"} · {row.windowIntegrity?.["24h"]?.coveragePercent ?? 0}%</div>
+                    <div>7d: {row.observations7d}/{row.windowIntegrity?.["7d"]?.minimumObservations ?? "-"} · {row.windowIntegrity?.["7d"]?.coveragePercent ?? 0}%</div>
+                    <div>30d: {row.observations30d}/{row.windowIntegrity?.["30d"]?.minimumObservations ?? "-"} · {row.windowIntegrity?.["30d"]?.coveragePercent ?? 0}%</div>
+                    <div>90d: {row.observations90d}/{row.windowIntegrity?.["90d"]?.minimumObservations ?? "-"} · {row.windowIntegrity?.["90d"]?.coveragePercent ?? 0}%</div>
                   </td>
                   <td className="max-w-[300px] border-y px-2 py-2 text-muted-foreground">{row.source}</td>
                   <td className="border-y px-2 py-2">

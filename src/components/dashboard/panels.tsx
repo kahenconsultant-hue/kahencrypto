@@ -1640,7 +1640,10 @@ export function CorrelationMapPanel() {
                   قدرت آماری {pair.statisticalStrength === "strong" ? "قوی" : pair.statisticalStrength === "moderate" ? "متوسط" : pair.statisticalStrength === "weak" ? "ضعیف" : "نمونه ناکافی"}
                 </Badge>
                 <Badge variant="outline">
-                  حداقل نمونه: 24h=12، 7d=5، 30d=20
+                  نمونه 7D {pair.windowIntegrity?.["7d"]?.observationsUsed ?? 0}/{pair.windowIntegrity?.["7d"]?.minimumObservations ?? "-"} · {pair.windowIntegrity?.["7d"]?.coveragePercent ?? 0}٪
+                </Badge>
+                <Badge variant="outline">
+                  نمونه 30D {pair.windowIntegrity?.["30d"]?.observationsUsed ?? 0}/{pair.windowIntegrity?.["30d"]?.minimumObservations ?? "-"} · {pair.windowIntegrity?.["30d"]?.coveragePercent ?? 0}٪
                 </Badge>
                 <Badge variant={pair.structuralBreak ? "warning" : "muted"}>
                   {pair.structuralBreak ? "شکست ساختاری" : "بدون شکست ساختاری"}

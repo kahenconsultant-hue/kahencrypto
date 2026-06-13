@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { createSupabaseServerClient } from "@/server/supabase/client";
 import type { DataPoint } from "@/lib/types";
 import type {
@@ -28,7 +28,13 @@ import type {
   TelemetryLogInput,
 } from "@/types/ingestion";
 
-const INGESTION_STORE_DIR = process.env.CMIP_INGESTION_STORE_PATH ?? join(process.cwd(), ".cache", "cmip", "ingestion");
+function runtimeWritablePath(envPath: string | undefined, fallback: string) {
+  if (!process.env.VERCEL) return envPath ?? fallback;
+  if (!envPath) return join("/tmp", "cmip", "ingestion");
+  return isAbsolute(envPath) ? envPath : join("/tmp", envPath);
+}
+
+const INGESTION_STORE_DIR = runtimeWritablePath(process.env.CMIP_INGESTION_STORE_PATH, join(process.cwd(), ".cache", "cmip", "ingestion"));
 
 export interface SharedSignalCachePayload {
   generatedAt: string;

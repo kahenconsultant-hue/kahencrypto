@@ -1,11 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { DataPoint, SignalGroup } from "@/lib/types";
 import { fetchCurrentDataPoints, requiredSignalKeys } from "@/server/data/adapters";
 import { getLatestSharedSignalCache, persistSharedSignalCache, type SharedSignalCachePayload } from "@/storage/ingestion-store";
 
 export const SIGNAL_CACHE_TTL_MINUTES = 30;
-const SIGNAL_CACHE_PATH = process.env.CMIP_SIGNAL_CACHE_PATH ?? join(process.cwd(), ".cache", "cmip", "latest-signals.json");
+
+function runtimeWritableFilePath(envPath: string | undefined, fallback: string) {
+  if (!process.env.VERCEL) return envPath ?? fallback;
+  if (!envPath) return join("/tmp", "cmip", "latest-signals.json");
+  return isAbsolute(envPath) ? envPath : join("/tmp", envPath);
+}
+
+const SIGNAL_CACHE_PATH = runtimeWritableFilePath(process.env.CMIP_SIGNAL_CACHE_PATH, join(process.cwd(), ".cache", "cmip", "latest-signals.json"));
 
 type CachePayload = {
   generatedAt: string;

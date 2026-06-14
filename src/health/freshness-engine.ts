@@ -157,7 +157,57 @@ function sourceWarning(source: SourceDefinition, health: SourceHealthSnapshot | 
   return null;
 }
 
-function buildSourceRows(sourceHealth: SourceHealthSnapshot[]) {
+const exchangeFallbackSignalKeys = [
+  "btc_price_usd",
+  "eth_price_usd",
+  "sol_price_usd",
+  "btc_volume_24h_usd",
+  "eth_volume_24h_usd",
+  "sol_volume_24h_usd",
+  "funding_btc",
+  "funding_eth",
+  "funding_sol",
+  "open_interest_btc_24h",
+  "open_interest_eth_24h",
+  "open_interest_sol_24h",
+  "futures_volume_btc_24h",
+  "futures_volume_eth_24h",
+  "futures_volume_sol_24h",
+];
+
+function exchangeFallbackEvidence(source: SourceDefinition, health: SourceHealthSnapshot | undefined, signals: NormalizedSignal[]) {
+  if (source.id !== "binance-public-rest" && source.id !== "bybit-public-rest") return null;
+  if (health?.status !== "failed") return null;
+
+  const exchangeSignals = signals.filter((signal) => {
+    if (!exchangeFallbackSignalKeys.includes(signal.key)) return false;
+    if (signal.value === null || signal.quality === "unavailable" || signal.quality === "estimated") return false;
+    return /Binance|Bybit|CoinGecko/i.test(signal.source ?? "");
+  });
+
+  if (exchangeSignals.length < 3) return null;
+
+  const lastSuccessAt = latestTimestamp(exchangeSignals.map((signal) => signal.timestamp));
+  const freshnessMinutes = minutesSince(lastSuccessAt);
+  const expectedIntervalMinutes = expectedIntervalMinutesForSource(source);
+  const freshnessState = resolverFreshnessStateFromAge(freshnessMinutes, expectedIntervalMinutes);
+  const derivativeCount = exchangeSignals.filter((signal) => /funding|open_interest|futures_volume/i.test(signal.key)).length;
+  const availableKeys = exchangeSignals.map((signal) => signal.key).slice(0, 8).join(", ");
+
+  return {
+    status: "degraded" as SourceFreshnessRow["status"],
+    freshnessState,
+    healthState: "degraded" as OperationalHealthState,
+    freshnessMinutes,
+    lastSuccessAt,
+    warningFa:
+      derivativeCount > 0
+        ? `collector مستقیم این منبع در runtime فعلی ناموفق بود، اما مسیر signal adapter/fallback داده‌های بازار و مشتقات را تولید کرده است: ${availableKeys}.`
+        : `collector مستقیم این منبع در runtime فعلی ناموفق بود، اما مسیر signal adapter/fallback داده‌های بازار را تولید کرده است: ${availableKeys}.`,
+  };
+}
+
+function buildSourceRows(sourceHealth: SourceHealthSnapshot[], signals: NormalizedSignal[]) {
   const healthById = new Map(sourceHealth.map((source) => [source.sourceId, source]));
   return productionSources.map((source): SourceFreshnessRow => {
     const health = healthById.get(source.id);
@@ -165,6 +215,24 @@ function buildSourceRows(sourceHealth: SourceHealthSnapshot[]) {
     const freshnessMinutes = sourceFreshnessAge(source, health);
     const freshnessState = resolution.state;
     const healthState = sourceHealthState(source, health, freshnessState);
+    const fallbackEvidence = exchangeFallbackEvidence(source, health, signals);
+
+    if (fallbackEvidence) {
+      return {
+        sourceId: source.id,
+        sourceName: source.name,
+        tier: source.tier,
+        enabled: source.enabled,
+        status: fallbackEvidence.status,
+        freshnessState: fallbackEvidence.freshnessState,
+        healthState: fallbackEvidence.healthState,
+        freshnessMinutes: fallbackEvidence.freshnessMinutes,
+        expectedIntervalMinutes: resolution.expectedIntervalMinutes,
+        lastSuccessAt: fallbackEvidence.lastSuccessAt,
+        lastFailureAt: health?.lastFailureAt ?? null,
+        warningFa: fallbackEvidence.warningFa,
+      };
+    }
 
     return {
       sourceId: source.id,
@@ -250,7 +318,7 @@ export function buildFreshnessReportFromInputs(params: {
   lastRun: IngestionRunSummary | null;
   schedulerLastRunAt?: string | null;
 }): FreshnessReport {
-  const sourceRows = buildSourceRows(params.sourceHealth);
+  const sourceRows = buildSourceRows(params.sourceHealth, params.signals);
   const signalRows = buildSignalRows(params.signals);
   const enabledRows = sourceRows.filter((source) => source.enabled);
   const globalSourceRows = enabledRows.filter(sourceCountsAgainstGlobalFreshness);

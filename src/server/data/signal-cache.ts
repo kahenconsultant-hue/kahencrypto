@@ -223,6 +223,32 @@ function toCachePayload(payload: SharedSignalCachePayload): CachePayload {
   };
 }
 
+function mergeRetainedSnapshot(previous: CachePayload, candidate: CachePayload, retentionReason: string): CachePayload {
+  const previousByKey = new Map(previous.points.map((point) => [point.key, point]));
+  const candidateByKey = new Map(candidate.points.map((point) => [point.key, point]));
+  const allKeys = Array.from(new Set([...previousByKey.keys(), ...candidateByKey.keys()]));
+
+  const points = allKeys.map((key) => {
+    const previousPoint = previousByKey.get(key);
+    const candidatePoint = candidateByKey.get(key);
+    if (!previousPoint) return candidatePoint;
+    if (!candidatePoint) return previousPoint;
+
+    if (hasUsableValue(candidatePoint)) return candidatePoint;
+    if (!hasUsableValue(previousPoint)) return candidatePoint;
+    return previousPoint;
+  }).filter((point): point is DataPoint => Boolean(point));
+
+  return {
+    generatedAt: candidate.generatedAt,
+    expiresAt: candidate.expiresAt,
+    points,
+    counts: countByQuality(points),
+    retainedPreviousSnapshot: true,
+    retentionReason,
+  };
+}
+
 export async function loadSharedSignalCache(force = false) {
   if (!force && memoryPayload?.points?.length && Date.now() - sharedPayloadHydratedAt < 15_000) return memoryPayload;
   const shared = await getLatestSharedSignalCache();
@@ -270,14 +296,7 @@ export async function refreshSignalCache() {
   const expiresAt = new Date(Date.now() + SIGNAL_CACHE_TTL_MINUTES * 60_000).toISOString();
   const candidate: CachePayload = { generatedAt, expiresAt, points, counts: countByQuality(points) };
   const retentionReason = shouldRetainPreviousSnapshot(candidate, previous);
-  const payload: CachePayload = retentionReason && previous
-    ? {
-        ...previous,
-        counts: countByQuality(previous.points),
-        retainedPreviousSnapshot: true,
-        retentionReason,
-      }
-    : candidate;
+  const payload: CachePayload = retentionReason && previous ? mergeRetainedSnapshot(previous, candidate, retentionReason) : candidate;
 
   safeWriteLocalPayload(payload);
   const storageMode = await persistSharedSignalCache(payload);

@@ -126,3 +126,44 @@ The limited confidence status is from non-blocking optional/premium inputs, not 
 - No open interest value is fabricated.
 - No derivatives volume is fabricated.
 - Missing derivatives remain unavailable if Binance and Bybit both fail.
+
+## Production Follow-up Fix
+
+After the first production deployment, the live API showed a cache-retention edge case:
+
+- `dataQuality.byKey` still contained real Binance Futures values.
+- `liquidityIntelligence.derivatives` was `missing` because the derivatives engine used a strict 90-minute usability window.
+- The signal-cache quality guard retained the previous snapshot wholesale when a newer partial refresh lost some core macro coverage, which could suppress newer usable non-core signals.
+
+Fixes applied:
+
+- Signal-cache retention now merges snapshots instead of replacing the candidate with the entire previous snapshot.
+- New usable candidate signals are kept, while previous usable signals are retained only where the candidate is missing or unusable.
+- The derivatives liquidity sub-engine now accepts last valid real funding/open-interest/futures-volume inputs for up to 24 hours with `delayed` freshness and a confidence cap.
+
+Production verification after deployment `dpl_GTgyVgN9FsZ6CX965FSgSdKAsrmE`:
+
+| Check | Result |
+| --- | --- |
+| `/api/v1/overview` status | 200 |
+| Overall freshness | fresh |
+| Overall health | healthy |
+| Binance public REST | degraded, fallback active, fresh source evidence |
+| Bybit public REST | degraded, fallback active, fresh source evidence |
+| Derivatives Engine | connected |
+| Derivatives coverage | 100% |
+| Derivatives confidence | 65% |
+| Derivatives freshness | delayed |
+| Missing derivatives inputs | 0 |
+| Forecast snapshots stored | 372 |
+
+Production derivatives values consumed:
+
+- `funding_btc`: `-0.0034`
+- `funding_eth`: `-0.0005`
+- `funding_sol`: `-0.01`
+- `open_interest_btc_24h`: `3.7119`
+- `open_interest_eth_24h`: `1.53`
+- `open_interest_sol_24h`: `6.0506`
+- `futures_volume_btc_24h`: `-33.2951`
+- `spot_volume_btc_24h`: available

@@ -15,6 +15,7 @@ import { freshnessFromLatestEtfDate, parsedRowsFromEtfDailyFlowRecords } from "@
 import { simulateSchedulerCycles } from "@/server/ingestion/scheduler";
 import {
   getLatestDeadLetters,
+  getLatestDataHealthSnapshots,
   getLatestEtfDailyFlows,
   getLatestIngestionLogs,
   getLatestIngestionRun,
@@ -24,6 +25,7 @@ import {
   getLatestSchedulerRuns,
   getLatestSourceHealth,
   getLatestStorageWriteReportsSync,
+  type DataHealthSnapshotDbRow,
 } from "@/storage/ingestion-store";
 import type {
   IngestionLogEntry,
@@ -1189,6 +1191,44 @@ function successRateForReports(reports: StorageWriteReport[], operation: "read" 
   return clampScore((scoped.filter((report) => report.status === "success").length / scoped.length) * 100);
 }
 
+function asNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function asSupabaseStatus(value: unknown): StorageDiagnostics["supabaseStatus"] {
+  return value === "connected" || value === "degraded" || value === "disconnected" ? value : "disconnected";
+}
+
+function asStorageWriteReport(value: unknown): StorageWriteReport | null {
+  if (!value || typeof value !== "object") return null;
+  const report = value as Partial<StorageWriteReport>;
+  if (typeof report.table !== "string" || typeof report.status !== "string" || typeof report.storageMode !== "string" || typeof report.attemptedAt !== "string") {
+    return null;
+  }
+  return report as StorageWriteReport;
+}
+
+function storageDiagnosticsFromSnapshot(snapshot: DataHealthSnapshotDbRow | undefined, schedulerStorageMode: string | null): StorageDiagnostics | null {
+  if (!snapshot) return null;
+  const diagnostics = snapshot.storage_diagnostics ?? {};
+  return {
+    storageMode: String(diagnostics.storageMode ?? snapshot.storage_mode ?? schedulerStorageMode ?? "supabase"),
+    supabaseStatus: asSupabaseStatus(diagnostics.supabaseStatus),
+    readSuccessRate: asNumber(diagnostics.readSuccessRate),
+    writeSuccessRate: asNumber(diagnostics.writeSuccessRate),
+    timeoutCount: asNumber(diagnostics.timeoutCount),
+    fallbackCount: asNumber(diagnostics.fallbackCount),
+    slowQueryCount: asNumber(diagnostics.slowQueryCount),
+    averageQueryDurationMs: asNumber(diagnostics.averageQueryDurationMs),
+    lastStorageFailure: asStorageWriteReport(diagnostics.lastStorageFailure),
+    affectedTables: asStringArray(diagnostics.affectedTables),
+  };
+}
+
 function buildStorageDiagnostics(reports: StorageWriteReport[], schedulerStorageMode: string | null): StorageDiagnostics {
   const failed = reports.filter((report) => report.status === "failed");
   const fallback = reports.filter((report) => report.fallbackUsed || report.storageMode === "local_fallback" || report.storageMode === "degraded_supabase_fallback");
@@ -1295,7 +1335,7 @@ function buildDebugPayload(params: {
 }
 
 export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
-  const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun, schedulerRuns] = await Promise.all([
+  const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun, schedulerRuns, dataHealthSnapshots] = await Promise.all([
     getLatestSourceHealth(),
     getLatestRawEvents(100),
     getLatestRawMetrics(100),
@@ -1304,6 +1344,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     getLatestDeadLetters(100),
     getLatestIngestionRun(),
     getLatestSchedulerRuns(48),
+    getLatestDataHealthSnapshots(5),
   ]);
   await hydrateMarketSnapshotsFromSupabase();
 
@@ -1325,7 +1366,9 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
   const scheduler = buildSchedulerDashboard(schedulerRuns);
   const scores = buildScores({ dataSources, marketCoverage, engineHealth, scheduler, integrity });
   const storageReports = getLatestStorageWriteReportsSync(120);
-  const storageDiagnostics = buildStorageDiagnostics(storageReports, scheduler.storageMode);
+  const storageDiagnostics = storageReports.length
+    ? buildStorageDiagnostics(storageReports, scheduler.storageMode)
+    : storageDiagnosticsFromSnapshot(dataHealthSnapshots[0], scheduler.storageMode) ?? buildStorageDiagnostics(storageReports, scheduler.storageMode);
   const storageWriteFailures = storageReports.filter((report) => report.status === "failed");
   const latestRunDeadLetters = deadLetters.filter(
     (letter) =>

@@ -1303,6 +1303,20 @@ type LiquidityScoreDbRow = ReturnType<typeof liquidityScoreRow> & { id?: string;
 type RegimeInputDbRow = ReturnType<typeof regimeInputRow> & { id?: string; created_at?: string };
 type ForecastSnapshotDbRow = ReturnType<typeof forecastSnapshotRow> & { id?: string };
 type ForecastValidationDbRow = ReturnType<typeof forecastValidationRow> & { id?: string };
+export type DataHealthSnapshotDbRow = {
+  id?: string;
+  run_id?: string | null;
+  storage_mode: IngestionStorageMode;
+  source_reliability_score?: number | null;
+  freshness_score?: number | null;
+  coverage_score?: number | null;
+  engine_reliability_score?: number | null;
+  overall_platform_health_score?: number | null;
+  storage_diagnostics: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  observed_at: string;
+  created_at?: string;
+};
 
 function rawEventFromRow(row: RawEventRow): RawEventInput {
   return {
@@ -1691,6 +1705,10 @@ export async function getLatestForecastSnapshots(limit = MAX_FORECAST_ROWS) {
 export async function getLatestForecastValidations(limit = MAX_FORECAST_ROWS) {
   const rows = await selectSupabaseRows<ForecastValidationDbRow>("forecast_validations", "validated_at", limit);
   return rows.length ? rows.map(forecastValidationFromRow) : getForecastValidationsSync(limit);
+}
+
+export async function getLatestDataHealthSnapshots(limit = 10) {
+  return selectSupabaseRows<DataHealthSnapshotDbRow>("data_health_snapshots", "observed_at", limit);
 }
 
 export async function hydrateMarketSnapshotsFromSupabase(limit = 8_000) {

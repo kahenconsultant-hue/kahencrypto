@@ -217,30 +217,33 @@ function derivativesClassification(risk: number | null) {
 }
 
 function buildDerivativesEngine(): LiquiditySubEngine {
+  const derivativesMaxAgeMinutes = 24 * 60;
   const keys = ["funding_btc", "funding_eth", "funding_sol", "open_interest_btc_24h", "open_interest_eth_24h", "open_interest_sol_24h", "futures_volume_btc_24h", "spot_volume_btc_24h"];
-  const inputLists = buildInputLists(keys);
+  const inputLists = buildInputLists(keys, derivativesMaxAgeMinutes);
+  const derivativesFreshness = freshness(keys, derivativesMaxAgeMinutes);
   const risk = weightedScore([
-    { value: derivativeHeatScore(usable("funding_btc"), usable("open_interest_btc_24h")), weight: 0.48 },
-    { value: derivativeHeatScore(usable("funding_eth"), usable("open_interest_eth_24h")), weight: 0.26 },
-    { value: derivativeHeatScore(usable("funding_sol"), usable("open_interest_sol_24h")), weight: 0.18 },
+    { value: derivativeHeatScore(usable("funding_btc", derivativesMaxAgeMinutes), usable("open_interest_btc_24h", derivativesMaxAgeMinutes)), weight: 0.48 },
+    { value: derivativeHeatScore(usable("funding_eth", derivativesMaxAgeMinutes), usable("open_interest_eth_24h", derivativesMaxAgeMinutes)), weight: 0.26 },
+    { value: derivativeHeatScore(usable("funding_sol", derivativesMaxAgeMinutes), usable("open_interest_sol_24h", derivativesMaxAgeMinutes)), weight: 0.18 },
     {
       value:
-        usable("futures_volume_btc_24h") === null || usable("spot_volume_btc_24h") === null
+        usable("futures_volume_btc_24h", derivativesMaxAgeMinutes) === null || usable("spot_volume_btc_24h", derivativesMaxAgeMinutes) === null
           ? null
-          : clampPercent(45 + Math.max(0, (usable("futures_volume_btc_24h") ?? 0) - Math.max(0, usable("spot_volume_btc_24h") ?? 0)) * 1.4),
+          : clampPercent(45 + Math.max(0, (usable("futures_volume_btc_24h", derivativesMaxAgeMinutes) ?? 0) - Math.max(0, usable("spot_volume_btc_24h", derivativesMaxAgeMinutes) ?? 0)) * 1.4),
       weight: 0.08,
     },
   ]);
   const liquidityScore = risk === null ? null : clampPercent(100 - risk);
-  const inputCoverage = coverage(keys);
+  const inputCoverage = coverage(keys, derivativesMaxAgeMinutes);
+  const confidenceCap = derivativesFreshness === "live" || derivativesFreshness === "partial_live" ? 100 : derivativesFreshness === "delayed" ? 65 : 45;
   return {
     id: "derivatives",
     labelFa: "موتور مشتقات",
     status: healthStatus(liquidityScore, inputCoverage),
     score: liquidityScore,
-    confidence: liquidityScore === null ? 0 : clampPercent(Math.min(inputCoverage, 35 + inputCoverage * 0.45)),
+    confidence: liquidityScore === null ? 0 : clampPercent(Math.min(inputCoverage, confidenceCap, 35 + inputCoverage * 0.45)),
     coverage: inputCoverage,
-    freshness: freshness(keys),
+    freshness: derivativesFreshness,
     sourceCount: sourceCount(inputLists.usedInputs),
     lastUpdated: latestTimestamp(inputLists.usedInputs),
     ...inputLists,
@@ -253,10 +256,10 @@ function buildDerivativesEngine(): LiquiditySubEngine {
       derivativesRiskScore: risk,
       derivativesLiquidityScore: liquidityScore,
       leveragePressureScore: risk,
-      btcFunding: usable("funding_btc"),
-      btcOpenInterest: usable("open_interest_btc_24h"),
-      ethFunding: usable("funding_eth"),
-      solFunding: usable("funding_sol"),
+      btcFunding: usable("funding_btc", derivativesMaxAgeMinutes),
+      btcOpenInterest: usable("open_interest_btc_24h", derivativesMaxAgeMinutes),
+      ethFunding: usable("funding_eth", derivativesMaxAgeMinutes),
+      solFunding: usable("funding_sol", derivativesMaxAgeMinutes),
     },
   };
 }

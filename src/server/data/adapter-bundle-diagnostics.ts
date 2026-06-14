@@ -50,7 +50,7 @@ const adapterDefinitions: Array<{
   },
   {
     adapterName: "Bybit derivatives adapter",
-    source: "Bybit public REST target / Binance Futures public metrics currently consumed / CoinAnk proxy validation fallback",
+    source: "Binance Futures public REST primary / Bybit Linear public REST fallback",
     class: "optional",
     requiredInputs: ["funding_btc", "funding_eth", "funding_sol", "open_interest_btc_24h", "open_interest_eth_24h", "open_interest_sol_24h"],
     optionalInputs: ["liquidation_btc_24h"],

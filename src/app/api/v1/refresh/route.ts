@@ -9,6 +9,7 @@ import { hydrateRuntimeStoreFromSupabase, persistForecastSnapshots, persistForec
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const preferredRegion = "fra1";
 
 let activeCatchupIngestion: Promise<void> | null = null;
 

@@ -35,6 +35,10 @@ function runtimeWritablePath(envPath: string | undefined, fallback: string) {
 }
 
 const INGESTION_STORE_DIR = runtimeWritablePath(process.env.CMIP_INGESTION_STORE_PATH, join(process.cwd(), ".cache", "cmip", "ingestion"));
+const SUPABASE_SLOW_QUERY_MS = 2_500;
+const MAX_ADMIN_ROWS = 100;
+const MAX_ETF_ROWS = 1_200;
+const MAX_FORECAST_ROWS = 5_000;
 
 export interface SharedSignalCachePayload {
   generatedAt: string;
@@ -123,8 +127,68 @@ function sourceHealthReliability(health: SourceHealthSnapshot) {
 
 function writeStorageReport(report: StorageWriteReport) {
   const reports = readLatest<StorageWriteReport[]>("latest-storage-write-status.json", []);
-  const next = [report, ...reports.filter((item) => item.table !== report.table)].slice(0, 50);
+  const next = [
+    report,
+    ...reports.filter((item) => !(item.table === report.table && (item.operation ?? "write") === (report.operation ?? "write"))),
+  ].slice(0, 120);
   writeLatest("latest-storage-write-status.json", next);
+}
+
+function isProductionRuntime() {
+  return process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+}
+
+function fallbackStorageMode(clientConfigured: boolean): IngestionStorageMode {
+  return isProductionRuntime() || clientConfigured ? "degraded_supabase_fallback" : "local_fallback";
+}
+
+function tableLimit(table: string, requested: number) {
+  if (table === "raw_events" || table === "raw_metrics") return Math.min(requested, MAX_ADMIN_ROWS);
+  if (table === "etf_daily_flows") return Math.min(requested, MAX_ETF_ROWS);
+  if (table === "forecast_snapshots" || table === "forecast_validations") return Math.min(requested, MAX_FORECAST_ROWS);
+  return requested;
+}
+
+function selectColumnsForTable(table: string) {
+  if (table === "raw_events") {
+    return "id,source_id_text,source_name,source_type,category,title,content,url,language,event_timestamp,dedup_hash,quality,created_at,source_reliability,freshness_status,delay_minutes";
+  }
+  if (table === "raw_metrics") {
+    return "id,source_id_text,source_name,source_type,asset,signal_group,metric,value,previous_value,change_abs,change_pct,metric_timestamp,quality,reliability,sample_size,error,created_at,freshness_status,delay_minutes,confidence_base";
+  }
+  if (table === "forecast_snapshots") {
+    return "snapshot_id,forecast_timestamp,asset,asset_type,prediction_horizon,predicted_direction,predicted_bias,predicted_confidence,risk_score,liquidity_score,regime,main_drivers,price_at_prediction,validation_date,run_id,engine_contributions,created_at";
+  }
+  if (table === "forecast_validations") {
+    return "validation_id,snapshot_id,asset,asset_type,prediction_horizon,prediction_timestamp,validation_date,validated_at,predicted_direction,predicted_confidence,price_at_prediction,actual_price,realized_change_pct,realized_direction,result,internal_score,main_drivers,engine_contributions,outcome_summary_fa,explanation_fa,quality,created_at";
+  }
+  return "*";
+}
+
+function reportStorageOperation(params: {
+  table: string;
+  rows: number;
+  status: StorageWriteReport["status"];
+  storageMode: IngestionStorageMode;
+  operation: NonNullable<StorageWriteReport["operation"]>;
+  startedAtMs: number;
+  query?: string;
+  error?: string;
+}) {
+  const durationMs = Math.max(0, Date.now() - params.startedAtMs);
+  writeStorageReport({
+    table: params.table,
+    rows: params.rows,
+    status: params.status,
+    storageMode: params.storageMode,
+    attemptedAt: new Date().toISOString(),
+    operation: params.operation,
+    durationMs,
+    fallbackUsed: params.storageMode === "local_fallback" || params.storageMode === "degraded_supabase_fallback",
+    slowQuery: durationMs >= SUPABASE_SLOW_QUERY_MS,
+    query: params.query,
+    error: params.error,
+  });
 }
 
 async function withSupabaseTimeout<T>(promise: Promise<T>, timeoutMs = 8_000): Promise<T> {
@@ -143,19 +207,37 @@ async function withSupabaseTimeout<T>(promise: Promise<T>, timeoutMs = 8_000): P
 
 async function trySupabaseInsert(table: string, rows: unknown[], onConflict?: string): Promise<StorageWriteReport> {
   const attemptedAt = new Date().toISOString();
+  const startedAtMs = Date.now();
   const client = createSupabaseServerClient();
   if (!rows.length) {
-    const report: StorageWriteReport = { table, rows: 0, status: "skipped", storageMode: client ? "supabase" : "local_fallback", attemptedAt };
+    const report: StorageWriteReport = {
+      table,
+      rows: 0,
+      status: "skipped",
+      storageMode: client ? "supabase" : fallbackStorageMode(false),
+      attemptedAt,
+      operation: "write",
+      durationMs: 0,
+      fallbackUsed: !client,
+      slowQuery: false,
+      query: `upsert:${table}`,
+    };
     writeStorageReport(report);
     return report;
   }
   if (!client) {
+    const storageMode = fallbackStorageMode(false);
     const report: StorageWriteReport = {
       table,
       rows: rows.length,
       status: "failed",
-      storageMode: "local_fallback",
+      storageMode,
       attemptedAt,
+      operation: "write",
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      fallbackUsed: true,
+      slowQuery: false,
+      query: `upsert:${table}`,
       error: "Supabase env is not configured.",
     };
     writeStorageReport(report);
@@ -168,9 +250,33 @@ async function trySupabaseInsert(table: string, rows: unknown[], onConflict?: st
   } catch (error) {
     writeError = error instanceof Error ? error : new Error(String(error));
   }
+  const durationMs = Math.max(0, Date.now() - startedAtMs);
   const report: StorageWriteReport = writeError
-    ? { table, rows: rows.length, status: "failed", storageMode: "local_fallback", attemptedAt, error: writeError.message }
-    : { table, rows: rows.length, status: "success", storageMode: "supabase", attemptedAt };
+    ? {
+        table,
+        rows: rows.length,
+        status: "failed",
+        storageMode: fallbackStorageMode(true),
+        attemptedAt,
+        operation: "write",
+        durationMs,
+        fallbackUsed: true,
+        slowQuery: durationMs >= SUPABASE_SLOW_QUERY_MS,
+        query: `upsert:${table}${onConflict ? ` on ${onConflict}` : ""}`,
+        error: writeError.message,
+      }
+    : {
+        table,
+        rows: rows.length,
+        status: "success",
+        storageMode: "supabase",
+        attemptedAt,
+        operation: "write",
+        durationMs,
+        fallbackUsed: false,
+        slowQuery: durationMs >= SUPABASE_SLOW_QUERY_MS,
+        query: `upsert:${table}${onConflict ? ` on ${onConflict}` : ""}`,
+      };
   writeStorageReport(report);
   return report;
 }
@@ -549,18 +655,42 @@ function forecastValidationRow(validation: ForecastValidationInput) {
 async function countExistingRawEvents(dedupHashes: string[]) {
   const client = createSupabaseServerClient();
   if (!client || !dedupHashes.length) return 0;
+  const startedAtMs = Date.now();
   try {
     const { count, error } = await withSupabaseTimeout(Promise.resolve(client.from("raw_events").select("id", { count: "exact", head: true }).in("dedup_hash", dedupHashes)));
-    if (error) return 0;
+    if (error) {
+      reportStorageOperation({
+        table: "raw_events",
+        rows: dedupHashes.length,
+        status: "failed",
+        storageMode: fallbackStorageMode(true),
+        operation: "count",
+        startedAtMs,
+        query: "count raw_events by dedup_hash",
+        error: error.message,
+      });
+      return 0;
+    }
+    reportStorageOperation({
+      table: "raw_events",
+      rows: count ?? 0,
+      status: "success",
+      storageMode: "supabase",
+      operation: "count",
+      startedAtMs,
+      query: "count raw_events by dedup_hash",
+    });
     return count ?? 0;
-  } catch {
-    writeStorageReport({
+  } catch (error) {
+    reportStorageOperation({
       table: "raw_events",
       rows: dedupHashes.length,
       status: "failed",
-      storageMode: "local_fallback",
-      attemptedAt: new Date().toISOString(),
-      error: "Supabase raw_events count timed out; insertion will use local fallback assumptions.",
+      storageMode: fallbackStorageMode(true),
+      operation: "count",
+      startedAtMs,
+      query: "count raw_events by dedup_hash",
+      error: error instanceof Error ? error.message : "Supabase raw_events count timed out; insertion will use local fallback assumptions.",
     });
     return 0;
   }
@@ -575,7 +705,7 @@ export async function persistRawEvents(events: RawEventInput[]): Promise<RawEven
   const updated = supabaseWrite.storageMode === "supabase" ? existing : 0;
   const inserted = supabaseWrite.storageMode === "supabase" ? Math.max(0, unique.length - existing) : unique.length;
   if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, inserted, updated, storageMode: "supabase" };
-  return { persisted: unique.length, inserted, updated, storageMode: "local_fallback" };
+  return { persisted: unique.length, inserted, updated, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistRawMetrics(metrics: RawMetricInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
@@ -583,7 +713,7 @@ export async function persistRawMetrics(metrics: RawMetricInput[]): Promise<{ pe
   appendJsonl("raw-metrics.jsonl", metrics);
   writeLatest("latest-metrics.json", metrics.slice(0, 200));
   if (supabaseWrite.storageMode === "supabase") return { persisted: metrics.length, storageMode: "supabase" };
-  return { persisted: metrics.length, storageMode: "local_fallback" };
+  return { persisted: metrics.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistEtfDailyFlows(flows: ETFDailyFlowInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
@@ -601,7 +731,7 @@ export async function persistEtfDailyFlows(flows: ETFDailyFlowInput[]): Promise<
     writeLatest("latest-etf-daily-flows.json", merged);
   }
   if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, storageMode: "supabase" };
-  return { persisted: unique.length, storageMode: "local_fallback" };
+  return { persisted: unique.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistNormalizedEvents(events: NormalizedEventInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
@@ -614,7 +744,7 @@ export async function persistNormalizedEvents(events: NormalizedEventInput[]): P
     writeLatest("latest-normalized-events.json", latest);
   }
   if (supabaseWrite.storageMode === "supabase") return { persisted: events.length, storageMode: "supabase" };
-  return { persisted: events.length, storageMode: "local_fallback" };
+  return { persisted: events.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistEventClusters(clusters: EventClusterInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
@@ -637,7 +767,7 @@ export async function persistEventClusters(clusters: EventClusterInput[]): Promi
   }
   writeLatest("latest-event-clusters.json", clusters.slice(0, 200));
   if (supabaseWrite.storageMode === "supabase") return { persisted: clusters.length, storageMode: "supabase" };
-  return { persisted: clusters.length, storageMode: "local_fallback" };
+  return { persisted: clusters.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistSourceHealth(health: SourceHealthSnapshot[]): Promise<IngestionStorageMode> {
@@ -702,11 +832,40 @@ export async function persistReliabilitySnapshot(snapshot: {
   return supabaseWrite.storageMode;
 }
 
+export async function persistDataHealthSnapshot(snapshot: {
+  runId?: string;
+  storageMode: IngestionStorageMode;
+  sourceReliabilityScore?: number | null;
+  freshnessScore?: number | null;
+  coverageScore?: number | null;
+  engineReliabilityScore?: number | null;
+  overallPlatformHealthScore?: number | null;
+  storageDiagnostics: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+}): Promise<IngestionStorageMode> {
+  const supabaseWrite = await trySupabaseInsert("data_health_snapshots", [
+    {
+      run_id: snapshot.runId ?? null,
+      storage_mode: snapshot.storageMode,
+      source_reliability_score: snapshot.sourceReliabilityScore ?? null,
+      freshness_score: snapshot.freshnessScore ?? null,
+      coverage_score: snapshot.coverageScore ?? null,
+      engine_reliability_score: snapshot.engineReliabilityScore ?? null,
+      overall_platform_health_score: snapshot.overallPlatformHealthScore ?? null,
+      storage_diagnostics: snapshot.storageDiagnostics,
+      payload: snapshot.payload ?? {},
+      observed_at: new Date().toISOString(),
+    },
+  ]);
+  writeLatest("latest-data-health-snapshot.json", snapshot);
+  return supabaseWrite.storageMode;
+}
+
 export async function persistDerivedSignals(signals: DerivedSignalInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
   const supabaseWrite = await trySupabaseInsert("derived_signals", signals.map(derivedSignalRow));
   writeLatest("latest-derived-signals.json", signals);
   if (supabaseWrite.storageMode === "supabase") return { persisted: signals.length, storageMode: "supabase" };
-  return { persisted: signals.length, storageMode: "local_fallback" };
+  return { persisted: signals.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistLiquidityScoreSnapshot(score: LiquidityScoreSnapshotInput): Promise<IngestionStorageMode> {
@@ -731,7 +890,7 @@ export async function persistForecastSnapshots(snapshots: ForecastSnapshotInput[
   appendJsonl("forecast-snapshots.jsonl", unique);
   const supabaseWrite = await trySupabaseInsert("forecast_snapshots", unique.map(forecastSnapshotRow), "snapshot_id");
   if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, storageMode: "supabase" };
-  return { persisted: unique.length, storageMode: "local_fallback" };
+  return { persisted: unique.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistForecastValidations(validations: ForecastValidationInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
@@ -744,7 +903,7 @@ export async function persistForecastValidations(validations: ForecastValidation
   appendJsonl("forecast-validations.jsonl", unique);
   const supabaseWrite = await trySupabaseInsert("forecast_validations", unique.map(forecastValidationRow), "validation_id");
   if (supabaseWrite.storageMode === "supabase") return { persisted: unique.length, storageMode: "supabase" };
-  return { persisted: unique.length, storageMode: "local_fallback" };
+  return { persisted: unique.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistMarketSnapshots(snapshots: MarketSnapshotInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
@@ -757,14 +916,14 @@ export async function persistMarketSnapshots(snapshots: MarketSnapshotInput[]): 
     writeLatest("latest-market-snapshots.json", merged);
   }
   if (supabaseWrite.storageMode === "supabase") return { persisted: snapshots.length, storageMode: "supabase" };
-  return { persisted: snapshots.length, storageMode: "local_fallback" };
+  return { persisted: snapshots.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistIntelligenceOutputs(outputs: IntelligenceOutputInput[]): Promise<{ persisted: number; storageMode: IngestionStorageMode }> {
   const supabaseWrite = await trySupabaseInsert("intelligence_outputs", outputs.map(intelligenceOutputRow));
   writeLatest("latest-intelligence-outputs.json", outputs);
   if (supabaseWrite.storageMode === "supabase") return { persisted: outputs.length, storageMode: "supabase" };
-  return { persisted: outputs.length, storageMode: "local_fallback" };
+  return { persisted: outputs.length, storageMode: supabaseWrite.storageMode };
 }
 
 export async function persistTelemetryLogs(logs: TelemetryLogInput[]): Promise<IngestionStorageMode> {
@@ -851,7 +1010,7 @@ export function getLatestRawMetricsSync(limit = 80) {
   return readLatest<RawMetricInput[]>("latest-metrics.json", []).slice(0, limit);
 }
 
-export function getLatestEtfDailyFlowsSync(limit = 20_000) {
+export function getLatestEtfDailyFlowsSync(limit = MAX_ETF_ROWS) {
   return readLatest<ETFDailyFlowInput[]>("latest-etf-daily-flows.json", []).slice(0, limit);
 }
 
@@ -895,11 +1054,11 @@ export function getLatestRegimeInputSync() {
   return readLatest<RegimeInputSnapshotInput | null>("latest-regime-input.json", null);
 }
 
-export function getForecastSnapshotsSync(limit = 30_000) {
+export function getForecastSnapshotsSync(limit = MAX_FORECAST_ROWS) {
   return readLatest<ForecastSnapshotInput[]>("forecast-snapshots.json", []).slice(0, limit);
 }
 
-export function getForecastValidationsSync(limit = 30_000) {
+export function getForecastValidationsSync(limit = MAX_FORECAST_ROWS) {
   return readLatest<ForecastValidationInput[]>("forecast-validations.json", []).slice(0, limit);
 }
 
@@ -1023,6 +1182,7 @@ function sharedSignalCacheFromPayload(payload: unknown): SharedSignalCachePayloa
 export async function getLatestSharedSignalCache(): Promise<SharedSignalCachePayload | null> {
   const client = createSupabaseServerClient();
   if (client) {
+    const startedAtMs = Date.now();
     try {
       const { data, error } = await withSupabaseTimeout(
         Promise.resolve(
@@ -1037,16 +1197,41 @@ export async function getLatestSharedSignalCache(): Promise<SharedSignalCachePay
       );
       if (!error && data?.[0]?.payload) {
         const payload = sharedSignalCacheFromPayload(data[0].payload);
-        if (payload) return payload;
+        if (payload) {
+          reportStorageOperation({
+            table: "telemetry_logs",
+            rows: 1,
+            status: "success",
+            storageMode: "supabase",
+            operation: "read",
+            startedAtMs,
+            query: "latest signal_cache telemetry payload",
+          });
+          return payload;
+        }
       }
-    } catch {
-      writeStorageReport({
+      if (error) {
+        reportStorageOperation({
+          table: "telemetry_logs",
+          rows: 1,
+          status: "failed",
+          storageMode: fallbackStorageMode(true),
+          operation: "read",
+          startedAtMs,
+          query: "latest signal_cache telemetry payload",
+          error: error.message,
+        });
+      }
+    } catch (error) {
+      reportStorageOperation({
         table: "telemetry_logs",
         rows: 1,
         status: "failed",
-        storageMode: "local_fallback",
-        attemptedAt: new Date().toISOString(),
-        error: "Supabase select latest signal cache timed out; local fallback cache used.",
+        storageMode: fallbackStorageMode(true),
+        operation: "read",
+        startedAtMs,
+        query: "latest signal_cache telemetry payload",
+        error: error instanceof Error ? error.message : "Supabase select latest signal cache timed out; local fallback cache used.",
       });
     }
   }
@@ -1057,18 +1242,46 @@ export async function getLatestSharedSignalCache(): Promise<SharedSignalCachePay
 async function selectSupabaseRows<T>(table: string, orderBy: string, limit: number): Promise<T[]> {
   const client = createSupabaseServerClient();
   if (!client) return [];
+  const safeLimit = tableLimit(table, limit);
+  const queryLabel = `select ${table} order ${orderBy} limit ${safeLimit}`;
+  const startedAtMs = Date.now();
   try {
-    const { data, error } = await withSupabaseTimeout(Promise.resolve(client.from(table).select("*").order(orderBy, { ascending: false }).limit(limit)));
-    if (error || !data) return [];
-    return data as T[];
-  } catch {
-    writeStorageReport({
+    const { data, error } = await withSupabaseTimeout(
+      Promise.resolve(client.from(table).select(selectColumnsForTable(table)).order(orderBy, { ascending: false }).limit(safeLimit)),
+    );
+    if (error || !data) {
+      reportStorageOperation({
+        table,
+        rows: safeLimit,
+        status: "failed",
+        storageMode: fallbackStorageMode(true),
+        operation: "read",
+        startedAtMs,
+        query: queryLabel,
+        error: error?.message ?? "Supabase select returned no data.",
+      });
+      return [];
+    }
+    reportStorageOperation({
       table,
-      rows: limit,
+      rows: data.length,
+      status: "success",
+      storageMode: "supabase",
+      operation: "read",
+      startedAtMs,
+      query: queryLabel,
+    });
+    return data as T[];
+  } catch (error) {
+    reportStorageOperation({
+      table,
+      rows: safeLimit,
       status: "failed",
-      storageMode: "local_fallback",
-      attemptedAt: new Date().toISOString(),
-      error: `Supabase select from ${table} timed out; local fallback cache used.`,
+      storageMode: fallbackStorageMode(true),
+      operation: "read",
+      startedAtMs,
+      query: queryLabel,
+      error: error instanceof Error ? error.message : `Supabase select from ${table} timed out; local fallback cache used.`,
     });
     return [];
   }
@@ -1430,7 +1643,7 @@ export async function getLatestRawMetrics(limit = 80) {
   return rows.length ? rows.map(rawMetricFromRow) : getLatestRawMetricsSync(limit);
 }
 
-export async function getLatestEtfDailyFlows(limit = 20_000) {
+export async function getLatestEtfDailyFlows(limit = MAX_ETF_ROWS) {
   const rows = await selectSupabaseRows<ETFDailyFlowRow>("etf_daily_flows", "flow_date", limit);
   return rows.length ? rows.map(etfDailyFlowFromRow) : getLatestEtfDailyFlowsSync(limit);
 }
@@ -1470,12 +1683,12 @@ export async function getLatestRegimeInput() {
   return rows.length ? regimeInputFromRow(rows[0]) : getLatestRegimeInputSync();
 }
 
-export async function getLatestForecastSnapshots(limit = 30_000) {
+export async function getLatestForecastSnapshots(limit = MAX_FORECAST_ROWS) {
   const rows = await selectSupabaseRows<ForecastSnapshotDbRow>("forecast_snapshots", "forecast_timestamp", limit);
   return rows.length ? rows.map(forecastSnapshotFromRow) : getForecastSnapshotsSync(limit);
 }
 
-export async function getLatestForecastValidations(limit = 30_000) {
+export async function getLatestForecastValidations(limit = MAX_FORECAST_ROWS) {
   const rows = await selectSupabaseRows<ForecastValidationDbRow>("forecast_validations", "validated_at", limit);
   return rows.length ? rows.map(forecastValidationFromRow) : getForecastValidationsSync(limit);
 }
@@ -1521,17 +1734,17 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     forecastValidations,
   ] = await Promise.all([
     getLatestSourceHealth(),
-    getLatestRawEvents(300),
-    getLatestRawMetrics(500),
+    getLatestRawEvents(MAX_ADMIN_ROWS),
+    getLatestRawMetrics(MAX_ADMIN_ROWS),
     getLatestIngestionRun(),
     getLatestSchedulerRuns(48),
     getLatestTelemetryLogs(200),
-    getLatestMarketSnapshots(3_000),
-    getLatestEtfDailyFlows(20_000),
+    getLatestMarketSnapshots(1_000),
+    getLatestEtfDailyFlows(MAX_ETF_ROWS),
     getLatestLiquidityScore(),
     getLatestRegimeInput(),
-    getLatestForecastSnapshots(30_000),
-    getLatestForecastValidations(30_000),
+    getLatestForecastSnapshots(MAX_FORECAST_ROWS),
+    getLatestForecastValidations(MAX_FORECAST_ROWS),
   ]);
 
   if (sourceHealth.length) tryWriteLatest("source-health.json", sourceHealth);
@@ -1570,8 +1783,33 @@ export async function getSupabaseTableCounts(tableNames: string[]) {
 
   return Promise.all(
     tableNames.map(async (table) => {
-      const { count, error } = await client.from(table).select("*", { count: "exact", head: true });
-      return { table, count: count ?? null, error: error?.message };
+      const startedAtMs = Date.now();
+      try {
+        const { count, error } = await withSupabaseTimeout(Promise.resolve(client.from(table).select("id", { count: "planned", head: true })));
+        reportStorageOperation({
+          table,
+          rows: count ?? 0,
+          status: error ? "failed" : "success",
+          storageMode: error ? fallbackStorageMode(true) : "supabase",
+          operation: "count",
+          startedAtMs,
+          query: `planned count ${table}`,
+          error: error?.message,
+        });
+        return { table, count: count ?? null, error: error?.message };
+      } catch (error) {
+        reportStorageOperation({
+          table,
+          rows: 0,
+          status: "failed",
+          storageMode: fallbackStorageMode(true),
+          operation: "count",
+          startedAtMs,
+          query: `planned count ${table}`,
+          error: error instanceof Error ? error.message : "Supabase count timed out.",
+        });
+        return { table, count: null, error: error instanceof Error ? error.message : "Supabase count timed out." };
+      }
     }),
   );
 }

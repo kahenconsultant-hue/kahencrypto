@@ -375,6 +375,65 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
 
       <Card>
         <SectionTitle
+          icon={Database}
+          title="Storage Reliability"
+          description="وضعیت Supabase، fallback، timeout و slow query برای مسیرهای read/write پنهان نمی‌شود."
+        />
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Storage Mode</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.storageDiagnostics.storageMode}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Supabase Status</div>
+              <div className="mt-2">
+                <Badge variant={dashboard.storageDiagnostics.supabaseStatus === "connected" ? "default" : dashboard.storageDiagnostics.supabaseStatus === "degraded" ? "warning" : "danger"}>
+                  {dashboard.storageDiagnostics.supabaseStatus}
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Read Success</div>
+              <div className={`mt-1 text-lg font-medium ${scoreColor(dashboard.storageDiagnostics.readSuccessRate)}`}>{formatNumber(dashboard.storageDiagnostics.readSuccessRate, 0)}%</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Write Success</div>
+              <div className={`mt-1 text-lg font-medium ${scoreColor(dashboard.storageDiagnostics.writeSuccessRate)}`}>{formatNumber(dashboard.storageDiagnostics.writeSuccessRate, 0)}%</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Timeout / Fallback</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.storageDiagnostics.timeoutCount} / {dashboard.storageDiagnostics.fallbackCount}</div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3">
+              <div className="text-[11px] text-muted-foreground">Slow / Avg</div>
+              <div className="mt-1 text-xs leading-6">{dashboard.storageDiagnostics.slowQueryCount} / {formatNumber(dashboard.storageDiagnostics.averageQueryDurationMs, 0)}ms</div>
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">
+              <div className="mb-2 font-medium">Affected Tables</div>
+              <div className="flex flex-wrap gap-2">
+                {dashboard.storageDiagnostics.affectedTables.length ? dashboard.storageDiagnostics.affectedTables.map((table) => (
+                  <Badge key={table} variant="outline">{table}</Badge>
+                )) : <span className="text-muted-foreground">موردی ثبت نشده</span>}
+              </div>
+            </div>
+            <div className="rounded-md border bg-secondary/25 p-3 text-xs">
+              <div className="mb-2 font-medium">Last Storage Failure</div>
+              {dashboard.storageDiagnostics.lastStorageFailure ? (
+                <div className="leading-6 text-muted-foreground">
+                  {dashboard.storageDiagnostics.lastStorageFailure.table} / {dashboard.storageDiagnostics.lastStorageFailure.operation ?? "write"}:
+                  {" "}{dashboard.storageDiagnostics.lastStorageFailure.error ?? "failed"}
+                </div>
+              ) : <div className="text-muted-foreground">موردی ثبت نشده</div>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <SectionTitle
           icon={ShieldAlert}
           title="Integrity Dashboard"
           description="کنترل تناقض روایت، تورم confidence، stale signals، ورودی‌های missing و خروجی‌هایی که باید downgrade یا reject شوند."
@@ -986,9 +1045,9 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
             )) : <div className="text-muted-foreground">موردی ثبت نشده</div>}
           </div>
           <div className="rounded-md border bg-secondary/25 p-3 text-xs">
-            <div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" /> Storage Write Failures</div>
+            <div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" /> Storage Failures</div>
             {dashboard.failures.storageWriteFailures.length ? dashboard.failures.storageWriteFailures.slice(0, 8).map((failure) => (
-              <div key={`${failure.table}-${failure.attemptedAt}`} className="border-t py-2">{failure.table}: {failure.error ?? "failed"}</div>
+              <div key={`${failure.table}-${failure.operation ?? "write"}-${failure.attemptedAt}`} className="border-t py-2">{failure.table} / {failure.operation ?? "write"}: {failure.error ?? "failed"}</div>
             )) : <div className="text-muted-foreground">موردی ثبت نشده</div>}
           </div>
         </CardContent>

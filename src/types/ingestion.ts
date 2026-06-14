@@ -2,8 +2,9 @@ import type { AssetSymbol, DataPoint, DataQuality, NewsCategory, SignalGroup, So
 
 export type IngestionSourceType = "rss" | "api" | "websocket" | "scraper" | "social" | "filings";
 export type IngestionSourceStatus = "success" | "degraded" | "failed" | "api_key_missing" | "disabled";
-export type IngestionStorageMode = "supabase" | "local_fallback" | "memory";
+export type IngestionStorageMode = "supabase" | "degraded_supabase_fallback" | "local_fallback" | "memory";
 export type StorageWriteStatus = "success" | "failed" | "skipped";
+export type StorageOperation = "read" | "write" | "count" | "delete" | "hydrate";
 export type FreshnessStatus = "live" | "fresh" | "delayed" | "stale" | "stale_critical" | "unavailable";
 export type SourceAccessModel = "core_free" | "free_delayed" | "api_key_optional" | "premium_disabled" | "scraping_fallback";
 export type IntelligenceSourceClass = "core" | "optional" | "premium";
@@ -195,6 +196,11 @@ export interface StorageWriteReport {
   status: StorageWriteStatus;
   storageMode: IngestionStorageMode;
   attemptedAt: string;
+  operation?: StorageOperation;
+  durationMs?: number;
+  fallbackUsed?: boolean;
+  slowQuery?: boolean;
+  query?: string;
   error?: string;
 }
 

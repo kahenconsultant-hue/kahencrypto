@@ -225,8 +225,13 @@ export async function runIngestionFoundation(options: IngestionFoundationOptions
   const normalization = shouldProcessEvents ? normalizeAndClusterRawEvents(recentRawEvents) : { normalizedEvents: [], eventClusters: [], duplicatesDetected: 0 };
   const normalizedStore = shouldProcessEvents ? await persistNormalizedEvents(normalization.normalizedEvents) : { persisted: 0, storageMode: "memory" as const };
   const clusterStore = shouldProcessEvents ? await persistEventClusters(normalization.eventClusters) : { persisted: 0, storageMode: "memory" as const };
+  const primaryStorageModes = [eventStore.storageMode, metricStore.storageMode, etfDailyFlowStore.storageMode];
   const storageMode: IngestionStorageMode =
-    eventStore.storageMode === "supabase" || metricStore.storageMode === "supabase" || etfDailyFlowStore.storageMode === "supabase" ? "supabase" : "local_fallback";
+    primaryStorageModes.includes("supabase")
+      ? "supabase"
+      : primaryStorageModes.includes("degraded_supabase_fallback")
+        ? "degraded_supabase_fallback"
+        : "local_fallback";
   const sourceHealth = results.map((result) => healthFromCollectorOutput(result.output, previousHealth.get(result.output.source.id)));
   const healthToPersist = selectedSourceIds.size ? mergeStageHealth(previousHealth, sourceHealth) : sourceHealth;
   const healthStore = await persistSourceHealth(healthToPersist);
@@ -269,19 +274,23 @@ export async function runIngestionFoundation(options: IngestionFoundationOptions
   const logStore = await persistIngestionLogs(logs);
   const deadLetterStore = await persistDeadLetters(deadLetterEntries);
 
-  const finalStorageMode: IngestionStorageMode =
-    eventStore.storageMode === "supabase" ||
-    metricStore.storageMode === "supabase" ||
-    etfDailyFlowStore.storageMode === "supabase" ||
-    sourceDefinitionStore === "supabase" ||
-    healthStore === "supabase" ||
-    logStore === "supabase" ||
-    deadLetterStore === "supabase" ||
-    normalizedStore.storageMode === "supabase" ||
-    clusterStore.storageMode === "supabase" ||
-    marketSnapshotStore.storageMode === "supabase"
+  const allStorageModes = [
+    eventStore.storageMode,
+    metricStore.storageMode,
+    etfDailyFlowStore.storageMode,
+    sourceDefinitionStore,
+    healthStore,
+    logStore,
+    deadLetterStore,
+    normalizedStore.storageMode,
+    clusterStore.storageMode,
+    marketSnapshotStore.storageMode,
+  ];
+  const finalStorageMode: IngestionStorageMode = allStorageModes.includes("supabase")
       ? "supabase"
-      : "local_fallback";
+      : allStorageModes.includes("degraded_supabase_fallback")
+        ? "degraded_supabase_fallback"
+        : "local_fallback";
 
   const summary: IngestionRunSummary = {
     runId,

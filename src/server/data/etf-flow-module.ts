@@ -119,7 +119,7 @@ export function getEtfFlowSnapshotSync(asset: EtfFlowAsset): EtfFlowSnapshot {
 }
 
 export async function getEtfFlows(asset: EtfFlowAsset, _horizon: EtfFlowHorizon = "24h"): Promise<EtfFlowSnapshot> {
-  const records = await getLatestEtfDailyFlows(20_000);
+  const records = await getLatestEtfDailyFlows(1_200);
   const stored = snapshotFromRecords(asset, records);
   if (stored) return stored;
 

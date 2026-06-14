@@ -8,7 +8,15 @@ import { buildForecastSnapshots } from "@/server/analytics/forecast_snapshot_eng
 import { validateDueForecasts } from "@/server/analytics/forecast_validation_engine";
 import { getSignalSnapshot } from "@/server/analytics/market-signals";
 import { refreshSignalCache } from "@/server/data/signal-cache";
-import { persistForecastSnapshots, persistForecastValidations, persistIngestionRun, persistMarketSnapshots, persistSchedulerRun } from "@/storage/ingestion-store";
+import {
+  getLatestStorageWriteReportsSync,
+  persistDataHealthSnapshot,
+  persistForecastSnapshots,
+  persistForecastValidations,
+  persistIngestionRun,
+  persistMarketSnapshots,
+  persistSchedulerRun,
+} from "@/storage/ingestion-store";
 import type { IngestionRunSummary, SchedulerRunRecord, SchedulerStageRun } from "@/types/ingestion";
 
 const DEFAULT_STAGE_TIMEOUT_MS = 75_000;
@@ -300,7 +308,13 @@ function failedFusionStage(startedAt: string, error: unknown): SchedulerStageRun
 }
 
 function aggregateIngestionSummary(runId: string, startedAt: string, finishedAt: string, stages: SchedulerStageRun[], summaries: IngestionRunSummary[]): IngestionRunSummary {
-  const storageMode = summaries.some((summary) => summary.storageMode === "supabase") ? "supabase" : summaries.some((summary) => summary.storageMode === "local_fallback") ? "local_fallback" : "memory";
+  const storageMode = summaries.some((summary) => summary.storageMode === "supabase")
+    ? "supabase"
+    : summaries.some((summary) => summary.storageMode === "degraded_supabase_fallback")
+      ? "degraded_supabase_fallback"
+      : summaries.some((summary) => summary.storageMode === "local_fallback")
+        ? "local_fallback"
+        : "memory";
   return {
     runId,
     startedAt,
@@ -339,6 +353,29 @@ function staleSignalCount() {
     const freshness = resolveSignalFreshness(signal);
     return freshness.countsAgainstGlobalFreshness && (freshness.state === "stale" || freshness.state === "obsolete");
   }).length;
+}
+
+function buildSchedulerStorageDiagnostics() {
+  const reports = getLatestStorageWriteReportsSync(120);
+  const readReports = reports.filter((report) => report.operation === "read" || report.operation === "count" || report.operation === "hydrate");
+  const writeReports = reports.filter((report) => !report.operation || report.operation === "write");
+  const successRate = (items: typeof reports) => {
+    if (!items.length) return null;
+    return Math.round((items.filter((item) => item.status === "success").length / items.length) * 100);
+  };
+  const durations = reports.map((report) => report.durationMs).filter((duration): duration is number => typeof duration === "number");
+  const failures = reports.filter((report) => report.status !== "success");
+  return {
+    supabaseStatus: failures.some((report) => report.storageMode === "degraded_supabase_fallback" || report.storageMode === "local_fallback") ? "degraded" : "connected",
+    readSuccessRate: successRate(readReports),
+    writeSuccessRate: successRate(writeReports),
+    timeoutCount: reports.filter((report) => /timeout|timed out/i.test(report.error ?? "")).length,
+    fallbackCount: reports.filter((report) => report.fallbackUsed || report.storageMode === "degraded_supabase_fallback" || report.storageMode === "local_fallback").length,
+    slowQueryCount: reports.filter((report) => report.slowQuery).length,
+    averageQueryDurationMs: durations.length ? Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length) : null,
+    affectedTables: Array.from(new Set(failures.map((report) => report.table))).sort(),
+    lastStorageFailure: failures[0] ?? null,
+  };
 }
 
 type SchedulerRunOptions = Pick<SchedulerRunRecord, "schedulerSource" | "executionEnvironment">;
@@ -467,7 +504,32 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
   schedulerDebug("ingestion-run:persisted", { storageMode: ingestionStorageMode });
   schedulerRun.schedulerStorageMode = schedulerStorageMode;
   schedulerRun.ingestionStorageMode = ingestionStorageMode;
-  schedulerRun.storageMode = schedulerStorageMode === "supabase" || ingestionStorageMode === "supabase" ? "supabase" : "local_fallback";
+  schedulerRun.storageMode = schedulerStorageMode === "supabase" || ingestionStorageMode === "supabase"
+    ? "supabase"
+    : schedulerStorageMode === "degraded_supabase_fallback" || ingestionStorageMode === "degraded_supabase_fallback"
+      ? "degraded_supabase_fallback"
+      : "local_fallback";
+
+  await persistDataHealthSnapshot({
+    runId,
+    storageMode: schedulerRun.storageMode,
+    storageDiagnostics: buildSchedulerStorageDiagnostics(),
+    payload: {
+      schedulerStatus: schedulerRun.status,
+      schedulerSource: schedulerRun.schedulerSource,
+      executionEnvironment: schedulerRun.executionEnvironment,
+      failedStage: schedulerRun.failedStage,
+      staleSignals: schedulerRun.staleSignals,
+      successRate: schedulerRun.successRate,
+      stageStatuses: schedulerRun.stages.map((stage) => ({
+        stageId: stage.stageId,
+        status: stage.status,
+        durationMs: stage.durationMs,
+        failedSources: stage.failedSources,
+        degradedSources: stage.degradedSources,
+      })),
+    },
+  });
 
   return schedulerRun;
 }

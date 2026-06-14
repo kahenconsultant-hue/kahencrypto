@@ -31,6 +31,7 @@ const migrations = [
   "202605250008_data_foundation_contracts.sql",
   "202605250010_etf_daily_flows.sql",
   "202605250011_forecast_validation_center.sql",
+  "202606140001_storage_reliability_hardening.sql",
 ];
 
 function connectionConfig() {

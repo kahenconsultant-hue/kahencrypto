@@ -119,7 +119,12 @@ export async function GET() {
     forecastValidation: {
       snapshotsStored: forecastSnapshotWrite.persisted,
       validationsStored: forecastValidationWrite.persisted,
-      storageMode: forecastSnapshotWrite.storageMode === "supabase" || forecastValidationWrite.storageMode === "supabase" ? "supabase" : "local_fallback",
+      storageMode:
+        forecastSnapshotWrite.storageMode === "supabase" || forecastValidationWrite.storageMode === "supabase"
+          ? "supabase"
+          : forecastSnapshotWrite.storageMode === "degraded_supabase_fallback" || forecastValidationWrite.storageMode === "degraded_supabase_fallback"
+            ? "degraded_supabase_fallback"
+            : "local_fallback",
       note: "Forecast snapshots are generated only from the current C.M.I.P analysis state; no historical forecast backfill is created.",
     },
     backgroundIngestionScheduled: catchup.scheduled,

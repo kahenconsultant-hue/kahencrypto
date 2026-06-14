@@ -32,6 +32,7 @@ import type {
   RawMetricInput,
   SourceDefinition,
   SourceHealthSnapshot,
+  StorageWriteReport,
 } from "@/types/ingestion";
 
 export type AdminSourceStatus = "connected" | "degraded" | "disconnected";
@@ -322,6 +323,7 @@ export interface DataHealthDashboard {
   apiLogs: ApiLogRow[];
   correlationTable: CorrelationHealthRow[];
   scheduler: SchedulerDashboard;
+  storageDiagnostics: StorageDiagnostics;
   scores: DataQualityScores;
   failures: {
     failedSources: DataSourceHealthRow[];
@@ -331,6 +333,19 @@ export interface DataHealthDashboard {
     storageWriteFailures: ReturnType<typeof getLatestStorageWriteReportsSync>;
   };
   debug: DebugPayload;
+}
+
+export interface StorageDiagnostics {
+  storageMode: string;
+  supabaseStatus: "connected" | "degraded" | "disconnected";
+  readSuccessRate: number;
+  writeSuccessRate: number;
+  timeoutCount: number;
+  fallbackCount: number;
+  slowQueryCount: number;
+  averageQueryDurationMs: number;
+  lastStorageFailure: StorageWriteReport | null;
+  affectedTables: string[];
 }
 
 const marketCoverageMap: Record<IntelligenceAssetSymbol, Array<{ key: string; labelFa: string; signalKeys: string[] }>> = {
@@ -1168,6 +1183,45 @@ function buildCorrelationTable(): CorrelationHealthRow[] {
   }));
 }
 
+function successRateForReports(reports: StorageWriteReport[], operation: "read" | "write") {
+  const scoped = reports.filter((report) => (report.operation ?? "write") === operation && report.status !== "skipped");
+  if (!scoped.length) return 0;
+  return clampScore((scoped.filter((report) => report.status === "success").length / scoped.length) * 100);
+}
+
+function buildStorageDiagnostics(reports: StorageWriteReport[], schedulerStorageMode: string | null): StorageDiagnostics {
+  const failed = reports.filter((report) => report.status === "failed");
+  const fallback = reports.filter((report) => report.fallbackUsed || report.storageMode === "local_fallback" || report.storageMode === "degraded_supabase_fallback");
+  const timeout = reports.filter((report) => /timed out|timeout/i.test(report.error ?? ""));
+  const slow = reports.filter((report) => report.slowQuery);
+  const durations = reports.map((report) => report.durationMs).filter((duration): duration is number => typeof duration === "number");
+  const lastStorageFailure = failed
+    .slice()
+    .sort((left, right) => Date.parse(right.attemptedAt) - Date.parse(left.attemptedAt))[0] ?? null;
+  const affectedTables = Array.from(new Set([...failed, ...fallback, ...slow].map((report) => report.table))).sort();
+  const supabaseStatus: StorageDiagnostics["supabaseStatus"] =
+    reports.some((report) => report.storageMode === "supabase" && report.status === "success")
+      ? fallback.length || failed.length
+        ? "degraded"
+        : "connected"
+      : "disconnected";
+
+  return {
+    storageMode: fallback.some((report) => report.storageMode === "degraded_supabase_fallback")
+      ? "degraded_supabase_fallback"
+      : schedulerStorageMode ?? (supabaseStatus === "connected" ? "supabase" : "local_fallback"),
+    supabaseStatus,
+    readSuccessRate: successRateForReports(reports, "read"),
+    writeSuccessRate: successRateForReports(reports, "write"),
+    timeoutCount: timeout.length,
+    fallbackCount: fallback.length,
+    slowQueryCount: slow.length,
+    averageQueryDurationMs: Math.round(average(durations)),
+    lastStorageFailure,
+    affectedTables,
+  };
+}
+
 export function calculateOverallPlatformHealthScore(params: {
   analyticsQualityScore: number;
   operationalReliabilityScore: number;
@@ -1243,9 +1297,9 @@ function buildDebugPayload(params: {
 export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
   const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun, schedulerRuns] = await Promise.all([
     getLatestSourceHealth(),
-    getLatestRawEvents(500),
-    getLatestRawMetrics(500),
-    getLatestEtfDailyFlows(20_000),
+    getLatestRawEvents(100),
+    getLatestRawMetrics(100),
+    getLatestEtfDailyFlows(1_200),
     getLatestIngestionLogs(100),
     getLatestDeadLetters(100),
     getLatestIngestionRun(),
@@ -1270,7 +1324,9 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
   const correlationTable = buildCorrelationTable();
   const scheduler = buildSchedulerDashboard(schedulerRuns);
   const scores = buildScores({ dataSources, marketCoverage, engineHealth, scheduler, integrity });
-  const storageWriteFailures = getLatestStorageWriteReportsSync(50).filter((report) => report.status === "failed");
+  const storageReports = getLatestStorageWriteReportsSync(120);
+  const storageDiagnostics = buildStorageDiagnostics(storageReports, scheduler.storageMode);
+  const storageWriteFailures = storageReports.filter((report) => report.status === "failed");
   const latestRunDeadLetters = deadLetters.filter(
     (letter) =>
       (!lastIngestionRun?.runId || letter.runId === lastIngestionRun.runId) &&
@@ -1295,6 +1351,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     apiLogs,
     correlationTable,
     scheduler,
+    storageDiagnostics,
     scores,
     failures: {
       failedSources: dataSources.filter((source) => source.status === "disconnected" && source.enabled),

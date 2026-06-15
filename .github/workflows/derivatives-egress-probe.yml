@@ -1,0 +1,34 @@
+name: Derivatives Egress Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe Binance and Bybit derivatives egress
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run derivatives egress probe
+        run: node scripts/diagnostics/derivatives-egress-probe.mjs
+
+      - name: Upload probe artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-actions-derivatives-egress-probe
+          path: |
+            github_actions_derivatives_probe_result.json
+            github_actions_derivatives_probe_report.md
+          if-no-files-found: error

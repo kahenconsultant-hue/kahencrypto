@@ -1,5 +1,6 @@
 import type { AssetSymbol, SignalGroup } from "@/lib/types";
 import type { Collector, CollectorOutput, RawMetricInput, SourceDefinition } from "@/types/ingestion";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 type ExchangeProvider = "binance" | "bybit";
 type TrackedSymbol = "BTCUSDT" | "ETHUSDT" | "SOLUSDT";
@@ -10,6 +11,122 @@ const trackedSymbols: Array<{ symbol: TrackedSymbol; asset: AssetSymbol }> = [
   { symbol: "ETHUSDT", asset: "ETH" },
   { symbol: "SOLUSDT", asset: "SOL" },
 ];
+
+type ExchangeHttpFailureClassification =
+  | "none"
+  | "endpoint_removed"
+  | "endpoint_changed"
+  | "authentication_required"
+  | "geo_blocked"
+  | "cloudflare/security_blocked"
+  | "endpoint_blocked_from_vercel"
+  | "timeout"
+  | "parser_failure"
+  | "schema_mismatch"
+  | "rate_limited"
+  | "unknown";
+
+interface ExchangeHttpDiagnostic {
+  provider: ExchangeProvider | "unknown";
+  endpoint: string;
+  queryParams: Record<string, string>;
+  requestUrl: string;
+  httpStatus: number | null;
+  statusText: string | null;
+  responseHeaders: Record<string, string>;
+  responseBodyPreview: string | null;
+  timeoutMs: number;
+  durationMs: number;
+  vercelRegion: string | null;
+  executionEnvironment: string | null;
+  userAgent: string;
+  parserSuccess: boolean | null;
+  failureClassification: ExchangeHttpFailureClassification;
+  errorReason: string | null;
+  fetchedAt: string;
+}
+
+const exchangeHttpDiagnostics = new AsyncLocalStorage<ExchangeHttpDiagnostic[]>();
+
+function executionEnvironment() {
+  if (process.env.VERCEL_ENV) return process.env.VERCEL_ENV;
+  if (process.env.VERCEL) return "vercel";
+  return process.env.NODE_ENV ?? "local";
+}
+
+function vercelRegion() {
+  return process.env.VERCEL_REGION ?? process.env.AWS_REGION ?? process.env.NOW_REGION ?? null;
+}
+
+function providerFromUrl(url: string): ExchangeProvider | "unknown" {
+  if (url.includes("binance.com")) return "binance";
+  if (url.includes("bybit.com")) return "bybit";
+  return "unknown";
+}
+
+function redactedUrlParts(url: string) {
+  const parsed = new URL(url);
+  const queryParams: Record<string, string> = {};
+  for (const [key, value] of parsed.searchParams.entries()) {
+    queryParams[key] = /key|secret|token|authorization|password/i.test(key) ? "[redacted]" : value;
+  }
+  const safeUrl = `${parsed.origin}${parsed.pathname}`;
+  return { safeUrl, queryParams };
+}
+
+function headerSummary(headers: Headers) {
+  const allowed = [
+    "content-type",
+    "server",
+    "cf-ray",
+    "cf-mitigated",
+    "retry-after",
+    "x-mbx-used-weight",
+    "x-mbx-used-weight-1m",
+    "x-ratelimit-limit",
+    "x-ratelimit-remaining",
+    "x-bapi-limit",
+    "x-bapi-limit-status",
+    "x-bapi-limit-reset-timestamp",
+    "date",
+  ];
+  const summary: Record<string, string> = {};
+  for (const key of allowed) {
+    const value = headers.get(key);
+    if (value) summary[key] = value.slice(0, 180);
+  }
+  return summary;
+}
+
+function classifyHttpFailure(params: {
+  httpStatus: number | null;
+  headers?: Record<string, string>;
+  bodyPreview?: string | null;
+  errorReason?: string | null;
+  parserSuccess?: boolean | null;
+}): ExchangeHttpFailureClassification {
+  const { httpStatus, headers = {}, bodyPreview = "", errorReason = "", parserSuccess = null } = params;
+  const text = `${bodyPreview ?? ""} ${errorReason ?? ""} ${Object.entries(headers).map(([key, value]) => `${key}:${value}`).join(" ")}`.toLowerCase();
+  if (errorReason && /abort|timeout|timed out/i.test(errorReason)) return "timeout";
+  if (httpStatus === 429 || httpStatus === 418) return "rate_limited";
+  if (httpStatus === 401) return "authentication_required";
+  if (httpStatus === 404 || httpStatus === 410) return "endpoint_removed";
+  if (httpStatus === 451) return "geo_blocked";
+  if (httpStatus === 403) {
+    if (/cloudflare|cf-|challenge|captcha|bot|security|forbidden|access denied|blocked/i.test(text)) return "cloudflare/security_blocked";
+    if (process.env.VERCEL || process.env.VERCEL_ENV) return "endpoint_blocked_from_vercel";
+    return "geo_blocked";
+  }
+  if (typeof httpStatus === "number" && httpStatus >= 400 && httpStatus < 500) return "endpoint_changed";
+  if (typeof httpStatus === "number" && httpStatus >= 500) return "unknown";
+  if (parserSuccess === false) return "parser_failure";
+  if (httpStatus === null && errorReason) return "unknown";
+  return "none";
+}
+
+function pushHttpDiagnostic(diagnostic: ExchangeHttpDiagnostic) {
+  exchangeHttpDiagnostics.getStore()?.push(diagnostic);
+}
 
 type BinanceKline = [
   number,
@@ -37,17 +154,81 @@ type BybitKlineResponse = {
 async function fetchJson<T>(url: string): Promise<T | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const started = Date.now();
+  const userAgent = "CMIP/1.0 real ingestion exchange collector";
+  const { safeUrl, queryParams } = redactedUrlParts(url);
   try {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         accept: "application/json,text/plain,*/*",
-        "user-agent": "CMIP/1.0 real ingestion exchange collector",
+        "user-agent": userAgent,
       },
     });
-    if (!response.ok) return null;
-    return (await response.json()) as T;
-  } catch {
+    const text = await response.text();
+    const headers = headerSummary(response.headers);
+    const bodyPreview = text.slice(0, 500);
+    let parsed: T | null = null;
+    let parseError: string | null = null;
+    if (response.ok) {
+      try {
+        parsed = JSON.parse(text) as T;
+      } catch (error) {
+        parseError = error instanceof Error ? error.message : "JSON parse failed.";
+      }
+    }
+    pushHttpDiagnostic({
+      provider: providerFromUrl(url),
+      endpoint: safeUrl,
+      queryParams,
+      requestUrl: safeUrl,
+      httpStatus: response.status,
+      statusText: response.statusText || null,
+      responseHeaders: headers,
+      responseBodyPreview: bodyPreview,
+      timeoutMs: requestTimeoutMs,
+      durationMs: Date.now() - started,
+      vercelRegion: vercelRegion(),
+      executionEnvironment: executionEnvironment(),
+      userAgent,
+      parserSuccess: response.ok && parsed !== null,
+      failureClassification: classifyHttpFailure({
+        httpStatus: response.status,
+        headers,
+        bodyPreview,
+        errorReason: parseError,
+        parserSuccess: response.ok && parsed !== null,
+      }),
+      errorReason: response.ok ? parseError : response.statusText || `HTTP ${response.status}`,
+      fetchedAt: new Date().toISOString(),
+    });
+    if (!response.ok || parsed === null) return null;
+    return parsed;
+  } catch (error) {
+    const errorReason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    pushHttpDiagnostic({
+      provider: providerFromUrl(url),
+      endpoint: safeUrl,
+      queryParams,
+      requestUrl: safeUrl,
+      httpStatus: null,
+      statusText: null,
+      responseHeaders: {},
+      responseBodyPreview: null,
+      timeoutMs: requestTimeoutMs,
+      durationMs: Date.now() - started,
+      vercelRegion: vercelRegion(),
+      executionEnvironment: executionEnvironment(),
+      userAgent,
+      parserSuccess: false,
+      failureClassification: classifyHttpFailure({
+        httpStatus: null,
+        errorReason,
+        parserSuccess: false,
+      }),
+      errorReason,
+      fetchedAt: new Date().toISOString(),
+    });
     return null;
   } finally {
     clearTimeout(timeout);
@@ -536,53 +717,91 @@ function providerForSource(source: SourceDefinition): ExchangeProvider | null {
   return null;
 }
 
+function parserDiagnostics(rawMetrics: RawMetricInput[]) {
+  return rawMetrics.map((row) => {
+    const payload = row.rawPayload && typeof row.rawPayload === "object" ? row.rawPayload as Record<string, unknown> : {};
+    return {
+      provider: payload.provider ?? null,
+      endpoint: payload.endpoint ?? null,
+      symbol: payload.symbol ?? null,
+      category: payload.category ?? null,
+      futures: payload.futures ?? null,
+      metric: row.metric,
+      asset: row.asset,
+      quality: row.quality,
+      parserSuccess: Boolean(payload.parserSuccess),
+      fallbackUsed: Boolean(payload.fallbackUsed),
+      error: row.error ?? null,
+      failureClassification: row.error ? "parser_failure" : "none",
+    };
+  });
+}
+
 export const exchangeMarketCollector: Collector = {
   sourceType: "api",
   async collect(source: SourceDefinition): Promise<CollectorOutput> {
-    const started = Date.now();
-    const provider = providerForSource(source);
-    if (!provider) {
-      return {
-        source,
-        status: "failed",
-        fetchedAt: new Date().toISOString(),
-        latencyMs: 0,
-        rawEvents: [],
-        rawMetrics: [],
-        error: `Unsupported exchange source ${source.id}.`,
-      };
-    }
+    return exchangeHttpDiagnostics.run([], async () => {
+      const started = Date.now();
+      const provider = providerForSource(source);
+      if (!provider) {
+        return {
+          source,
+          status: "failed",
+          fetchedAt: new Date().toISOString(),
+          latencyMs: 0,
+          rawEvents: [],
+          rawMetrics: [],
+          error: `Unsupported exchange source ${source.id}.`,
+        };
+      }
 
-    try {
-      const rawMetrics = provider === "binance" ? await collectBinance(source) : await collectBybit(source);
-      const unavailable = rawMetrics.filter((row) => row.quality === "unavailable" || row.error).length;
-      const usable = rawMetrics.filter(isUsableMetric).length;
-      const fallbackUsed = rawMetrics.some((row) => Boolean((row.rawPayload as Record<string, unknown> | undefined)?.fallbackUsed));
-      const status = rawMetrics.length === 0 || usable === 0 ? "failed" : unavailable > 0 || fallbackUsed ? "degraded" : "success";
-      const fallbackSummary = fallbackUsed ? " Fallback source supplied one or more exchange metrics." : "";
-      return {
-        source,
-        status,
-        fetchedAt: new Date().toISOString(),
-        latencyMs: Date.now() - started,
-        rawEvents: [],
-        rawMetrics,
-        error: status === "failed"
-          ? `${source.name} did not return usable public market metrics.`
-          : status === "degraded"
-            ? `${source.name} completed with partial exchange coverage.${fallbackSummary}`
-            : undefined,
-      };
-    } catch (error) {
-      return {
-        source,
-        status: "failed",
-        fetchedAt: new Date().toISOString(),
-        latencyMs: Date.now() - started,
-        rawEvents: [],
-        rawMetrics: [],
-        error: error instanceof Error ? error.message : `${source.name} exchange collector failed.`,
-      };
-    }
+      try {
+        const rawMetrics = provider === "binance" ? await collectBinance(source) : await collectBybit(source);
+        const unavailable = rawMetrics.filter((row) => row.quality === "unavailable" || row.error).length;
+        const usable = rawMetrics.filter(isUsableMetric).length;
+        const fallbackUsed = rawMetrics.some((row) => Boolean((row.rawPayload as Record<string, unknown> | undefined)?.fallbackUsed));
+        const status = rawMetrics.length === 0 || usable === 0 ? "failed" : unavailable > 0 || fallbackUsed ? "degraded" : "success";
+        const fallbackSummary = fallbackUsed ? " Fallback source supplied one or more exchange metrics." : "";
+        return {
+          source,
+          status,
+          fetchedAt: new Date().toISOString(),
+          latencyMs: Date.now() - started,
+          rawEvents: [],
+          rawMetrics,
+          diagnostics: {
+            provider,
+            vercelRegion: vercelRegion(),
+            executionEnvironment: executionEnvironment(),
+            timeoutMs: requestTimeoutMs,
+            httpDiagnostics: exchangeHttpDiagnostics.getStore() ?? [],
+            parserDiagnostics: parserDiagnostics(rawMetrics),
+          },
+          error: status === "failed"
+            ? `${source.name} did not return usable public market metrics.`
+            : status === "degraded"
+              ? `${source.name} completed with partial exchange coverage.${fallbackSummary}`
+              : undefined,
+        };
+      } catch (error) {
+        return {
+          source,
+          status: "failed",
+          fetchedAt: new Date().toISOString(),
+          latencyMs: Date.now() - started,
+          rawEvents: [],
+          rawMetrics: [],
+          diagnostics: {
+            provider,
+            vercelRegion: vercelRegion(),
+            executionEnvironment: executionEnvironment(),
+            timeoutMs: requestTimeoutMs,
+            httpDiagnostics: exchangeHttpDiagnostics.getStore() ?? [],
+            parserDiagnostics: [],
+          },
+          error: error instanceof Error ? error.message : `${source.name} exchange collector failed.`,
+        };
+      }
+    });
   },
 };

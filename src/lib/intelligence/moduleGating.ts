@@ -59,11 +59,17 @@ export function capPublicConfidence(params: {
 export function forecastPublicBadgeState(input: ForecastPublicBadgeInput) {
   const conclusive = Math.max(0, input.accurate) + Math.max(0, input.incorrect);
   const accuracy = conclusive > 0 ? Math.round((input.accurate / conclusive) * 100) : null;
+  const labelFa =
+    conclusive === 0
+      ? "اعتبارسنجی forecast: هنوز برای نمایش عمومی دقت کافی ندارد"
+      : conclusive >= 100
+        ? `اعتبارسنجی forecast: ${accuracy}٪`
+        : `اعتبارسنجی forecast: در حال جمع‌آوری. نمونه قابل قضاوت: ${conclusive}`;
 
   return {
     conclusive,
     accuracy,
     shouldShowPublicAccuracy: conclusive >= 100,
-    labelFa: conclusive >= 100 ? `اعتبارسنجی forecast: ${accuracy}٪` : `اعتبارسنجی forecast در حال جمع‌آوری شواهد است. نمونه قابل قضاوت: ${conclusive}`,
+    labelFa,
   };
 }

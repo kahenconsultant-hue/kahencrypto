@@ -7,7 +7,7 @@ export const revalidate = 0;
 
 export default async function DashboardPage() {
   await ensureDashboardSignalCacheFresh();
-  const brief = buildPublicMarketBrief();
+  const brief = await buildPublicMarketBrief();
 
   return <PublicMarketBrief brief={brief} />;
 }

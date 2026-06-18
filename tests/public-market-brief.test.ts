@@ -45,6 +45,14 @@ test("forecast public accuracy excludes inconclusive and pending forecasts", () 
   assert.match(collecting.labelFa, /در حال جمع‌آوری/);
 });
 
+test("forecast badge avoids public accuracy language when no conclusive samples exist", () => {
+  const badge = forecastPublicBadgeState({ accurate: 0, incorrect: 0, inconclusive: 168, pending: 832 });
+  assert.equal(badge.conclusive, 0);
+  assert.equal(badge.accuracy, null);
+  assert.equal(badge.shouldShowPublicAccuracy, false);
+  assert.match(badge.labelFa, /هنوز برای نمایش عمومی دقت کافی ندارد/);
+});
+
 test("missing derivatives or volume data do not become fake zero scores", () => {
   assert.equal(volumeLiquidityScore({ volume24h: null, marketCap: 1_000_000 }), null);
   const result = weightedImpactScore([

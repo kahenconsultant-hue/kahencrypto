@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, CheckCircle2, CircleDot, ShieldAlert, Target, Waves } from "lucide-react";
+import { BarChart3, CheckCircle2, CircleDot, ShieldAlert, Target } from "lucide-react";
 import type { PublicAssetBrief, PublicDriver, PublicMarketBrief as PublicMarketBriefData } from "@/lib/intelligence/publicBriefBuilder";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -299,12 +299,6 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
             </div>
           </div>
         </div>
-        {brief.forecastBadge.conclusiveCount < 100 ? (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs leading-6 text-amber-100">
-            <AlertTriangle className="h-4 w-4" aria-hidden />
-            {brief.forecastBadge.statusFa}
-          </div>
-        ) : null}
       </section>
 
       <MarketVerdict brief={brief} />

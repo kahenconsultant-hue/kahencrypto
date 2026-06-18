@@ -252,6 +252,26 @@ export default async function AdminDataHealthPage({ searchParams }: { searchPara
               {dashboard.lastIngestionRun ? timeFa(dashboard.lastIngestionRun.finishedAt) : "ناموجود"}
             </div>
           </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">Forecast Snapshots / Due</div>
+            <div className="mt-1 text-xl font-medium">
+              {formatNumber(dashboard.forecastValidation.forecastSnapshotsCount, 0)} / {formatNumber(dashboard.forecastValidation.dueSnapshotsCount, 0)}
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">Forecast Validations / Inconclusive</div>
+            <div className="mt-1 text-xl font-medium">
+              {formatNumber(dashboard.forecastValidation.forecastValidationsCount, 0)} / {formatNumber(dashboard.forecastValidation.inconclusiveValidationsCount, 0)}
+            </div>
+          </div>
+          <div className="rounded-md border bg-secondary/25 p-3">
+            <div className="text-[11px] text-muted-foreground">Forecast Validation Storage</div>
+            <div className="mt-1 text-xs leading-6 text-foreground">
+              {dashboard.forecastValidation.validationStorageMode}
+              <br />
+              {timeFa(dashboard.forecastValidation.lastForecastValidationRun)}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

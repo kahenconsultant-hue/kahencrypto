@@ -28,7 +28,17 @@ import type {
   TelemetryLogInput,
 } from "@/types/ingestion";
 
-const INGESTION_STORE_DIR = process.env.CMIP_INGESTION_STORE_PATH ?? join(process.cwd(), ".cache", "cmip", "ingestion");
+function runtimeWritableDir(configuredPath: string | undefined, fallbackPath: string) {
+  if (process.env.VERCEL === "1") {
+    return configuredPath?.startsWith("/tmp") ? configuredPath : join("/tmp", "cmip", "ingestion");
+  }
+  return configuredPath ?? fallbackPath;
+}
+
+const INGESTION_STORE_DIR = runtimeWritableDir(
+  process.env.CMIP_INGESTION_STORE_PATH,
+  join(process.cwd(), ".cache", "cmip", "ingestion"),
+);
 
 export interface SharedSignalCachePayload {
   generatedAt: string;
@@ -1074,6 +1084,8 @@ type EventClusterRow = ReturnType<typeof eventClusterRow> & { id?: string; creat
 type MarketSnapshotRow = ReturnType<typeof marketSnapshotRow> & { id?: string; created_at?: string };
 type IntelligenceOutputRow = ReturnType<typeof intelligenceOutputRow> & { id?: string; created_at?: string };
 type TelemetryLogRow = ReturnType<typeof telemetryLogRow> & { id?: string; created_at?: string };
+type ForecastSnapshotDbRow = ReturnType<typeof forecastSnapshotRow> & { id?: string };
+type ForecastValidationDbRow = ReturnType<typeof forecastValidationRow> & { id?: string };
 
 function rawEventFromRow(row: RawEventRow): RawEventInput {
   return {
@@ -1130,6 +1142,55 @@ function intelligenceOutputFromRow(row: IntelligenceOutputRow): IntelligenceOutp
     calculations: row.calculations ?? {},
     payload: row.payload ?? {},
     generatedAt: row.generated_at,
+  };
+}
+
+function forecastSnapshotFromRow(row: ForecastSnapshotDbRow): ForecastSnapshotInput {
+  return {
+    id: row.id,
+    snapshotId: row.snapshot_id,
+    timestamp: row.forecast_timestamp,
+    asset: row.asset,
+    assetType: row.asset_type,
+    predictionHorizon: row.prediction_horizon as ForecastSnapshotInput["predictionHorizon"],
+    predictedDirection: row.predicted_direction as ForecastSnapshotInput["predictedDirection"],
+    predictedBias: row.predicted_bias,
+    predictedConfidence: row.predicted_confidence === null ? null : Number(row.predicted_confidence),
+    riskScore: row.risk_score === null ? null : Number(row.risk_score),
+    liquidityScore: row.liquidity_score === null ? null : Number(row.liquidity_score),
+    regime: row.regime,
+    mainDrivers: row.main_drivers ?? [],
+    priceAtPrediction: Number(row.price_at_prediction),
+    validationDate: row.validation_date,
+    runId: row.run_id,
+    engineContributions: row.engine_contributions ?? {},
+  };
+}
+
+function forecastValidationFromRow(row: ForecastValidationDbRow): ForecastValidationInput {
+  return {
+    id: row.id,
+    validationId: row.validation_id,
+    snapshotId: row.snapshot_id,
+    asset: row.asset,
+    assetType: row.asset_type,
+    predictionHorizon: row.prediction_horizon as ForecastValidationInput["predictionHorizon"],
+    predictionTimestamp: row.prediction_timestamp,
+    validationDate: row.validation_date,
+    validatedAt: row.validated_at,
+    predictedDirection: row.predicted_direction as ForecastValidationInput["predictedDirection"],
+    predictedConfidence: row.predicted_confidence === null ? null : Number(row.predicted_confidence),
+    priceAtPrediction: Number(row.price_at_prediction),
+    actualPrice: row.actual_price === null ? null : Number(row.actual_price),
+    realizedChangePct: row.realized_change_pct === null ? null : Number(row.realized_change_pct),
+    realizedDirection: row.realized_direction as ForecastValidationInput["realizedDirection"],
+    result: row.result as ForecastValidationInput["result"],
+    internalScore: row.internal_score === null ? null : Number(row.internal_score),
+    mainDrivers: row.main_drivers ?? [],
+    engineContributions: row.engine_contributions ?? {},
+    outcomeSummaryFa: row.outcome_summary_fa,
+    explanationFa: row.explanation_fa,
+    quality: row.quality as ForecastValidationInput["quality"],
   };
 }
 
@@ -1372,6 +1433,158 @@ export async function getLatestTelemetryLogs(limit = 100) {
   return rows.length ? rows.map(telemetryLogFromRow) : getLatestTelemetryLogsSync(limit);
 }
 
+export async function getLatestForecastSnapshots(limit = 2_000) {
+  const rows = await selectSupabaseRows<ForecastSnapshotDbRow>("forecast_snapshots", "forecast_timestamp", limit);
+  return rows.length ? rows.map(forecastSnapshotFromRow) : getForecastSnapshotsSync(limit);
+}
+
+export async function getLatestForecastValidations(limit = 2_000) {
+  const rows = await selectSupabaseRows<ForecastValidationDbRow>("forecast_validations", "validated_at", limit);
+  return rows.length ? rows.map(forecastValidationFromRow) : getForecastValidationsSync(limit);
+}
+
+export async function getDueForecastSnapshots(
+  now = new Date(),
+  limit = 2_000,
+  options: { includeMissingOutcomeInconclusive?: boolean } = {},
+) {
+  const client = createSupabaseServerClient();
+  if (!client) {
+    const existingValidations = new Map(getForecastValidationsSync().map((validation) => [validation.snapshotId, validation]));
+    return getForecastSnapshotsSync(limit)
+      .filter((snapshot) => Date.parse(snapshot.validationDate) <= now.getTime())
+      .filter((snapshot) => {
+        const validation = existingValidations.get(snapshot.snapshotId);
+        if (!validation) return true;
+        return Boolean(
+          options.includeMissingOutcomeInconclusive &&
+            validation.result === "inconclusive" &&
+            (validation.actualPrice === null || validation.quality === "insufficient_data"),
+        );
+      })
+      .slice(0, limit);
+  }
+
+  try {
+    const [{ data: snapshots, error: snapshotError }, { data: validations, error: validationError }] = await Promise.all([
+      withSupabaseTimeout(
+        Promise.resolve(
+          client
+            .from("forecast_snapshots")
+            .select("*")
+            .lte("validation_date", now.toISOString())
+            .order("validation_date", { ascending: true })
+            .limit(limit),
+        ),
+      ),
+      withSupabaseTimeout(
+        Promise.resolve(
+          client
+            .from("forecast_validations")
+            .select("validation_id,snapshot_id,result,quality,actual_price")
+            .order("validated_at", { ascending: false })
+            .limit(30_000),
+        ),
+      ),
+    ]);
+    if (snapshotError || validationError || !snapshots) return [];
+    const validationsBySnapshot = new Map(
+      (validations ?? []).map((validation) => [validation.snapshot_id as string, validation as Record<string, unknown>]),
+    );
+    return (snapshots as ForecastSnapshotDbRow[])
+      .map(forecastSnapshotFromRow)
+      .filter((snapshot) => {
+        const validation = validationsBySnapshot.get(snapshot.snapshotId);
+        if (!validation) return true;
+        return Boolean(
+          options.includeMissingOutcomeInconclusive &&
+            validation.result === "inconclusive" &&
+            (validation.actual_price === null || validation.quality === "insufficient_data"),
+        );
+      });
+  } catch (error) {
+    writeStorageReport({
+      table: "forecast_snapshots",
+      rows: limit,
+      status: "failed",
+      storageMode: "local_fallback",
+      attemptedAt: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "Supabase due forecast snapshot query failed; local fallback cache used.",
+    });
+    const existingValidations = new Map(getForecastValidationsSync().map((validation) => [validation.snapshotId, validation]));
+    return getForecastSnapshotsSync(limit)
+      .filter((snapshot) => Date.parse(snapshot.validationDate) <= now.getTime())
+      .filter((snapshot) => {
+        const validation = existingValidations.get(snapshot.snapshotId);
+        if (!validation) return true;
+        return Boolean(
+          options.includeMissingOutcomeInconclusive &&
+            validation.result === "inconclusive" &&
+            (validation.actualPrice === null || validation.quality === "insufficient_data"),
+        );
+      });
+  }
+}
+
+export async function saveForecastValidation(validation: ForecastValidationInput) {
+  return persistForecastValidations([validation]);
+}
+
+export async function getForecastValidationSummary(now = new Date()) {
+  const client = createSupabaseServerClient();
+  const fallbackSnapshots = getForecastSnapshotsSync();
+  const fallbackValidations = getForecastValidationsSync();
+  if (!client) {
+    const existingValidationIds = new Set(fallbackValidations.map((validation) => validation.validationId));
+    const due = fallbackSnapshots.filter((snapshot) => Date.parse(snapshot.validationDate) <= now.getTime() && !existingValidationIds.has(`validation:${snapshot.snapshotId}`));
+    return {
+      forecastSnapshotsCount: fallbackSnapshots.length,
+      dueSnapshotsCount: due.length,
+      forecastValidationsCount: fallbackValidations.length,
+      inconclusiveValidationsCount: fallbackValidations.filter((validation) => validation.result === "inconclusive").length,
+      lastForecastValidationRun: fallbackValidations[0]?.validatedAt ?? null,
+      validationStorageMode: "local_fallback" as IngestionStorageMode,
+    };
+  }
+
+  try {
+    const [snapshotsCount, validationsCount, inconclusiveCount, latestValidation, dueSnapshots] = await Promise.all([
+      withSupabaseTimeout(Promise.resolve(client.from("forecast_snapshots").select("id", { count: "exact", head: true }))),
+      withSupabaseTimeout(Promise.resolve(client.from("forecast_validations").select("id", { count: "exact", head: true }))),
+      withSupabaseTimeout(Promise.resolve(client.from("forecast_validations").select("id", { count: "exact", head: true }).eq("result", "inconclusive"))),
+      withSupabaseTimeout(
+        Promise.resolve(
+          client
+            .from("forecast_validations")
+            .select("validated_at")
+            .order("validated_at", { ascending: false })
+            .limit(1),
+        ),
+      ),
+      getDueForecastSnapshots(now, 5_000),
+    ]);
+    return {
+      forecastSnapshotsCount: snapshotsCount.count ?? 0,
+      dueSnapshotsCount: dueSnapshots.length,
+      forecastValidationsCount: validationsCount.count ?? 0,
+      inconclusiveValidationsCount: inconclusiveCount.count ?? 0,
+      lastForecastValidationRun: latestValidation.data?.[0]?.validated_at ?? null,
+      validationStorageMode: snapshotsCount.error || validationsCount.error || inconclusiveCount.error || latestValidation.error ? "local_fallback" as IngestionStorageMode : "supabase" as IngestionStorageMode,
+    };
+  } catch {
+    const existingValidationIds = new Set(fallbackValidations.map((validation) => validation.validationId));
+    const due = fallbackSnapshots.filter((snapshot) => Date.parse(snapshot.validationDate) <= now.getTime() && !existingValidationIds.has(`validation:${snapshot.snapshotId}`));
+    return {
+      forecastSnapshotsCount: fallbackSnapshots.length,
+      dueSnapshotsCount: due.length,
+      forecastValidationsCount: fallbackValidations.length,
+      inconclusiveValidationsCount: fallbackValidations.filter((validation) => validation.result === "inconclusive").length,
+      lastForecastValidationRun: fallbackValidations[0]?.validatedAt ?? null,
+      validationStorageMode: "local_fallback" as IngestionStorageMode,
+    };
+  }
+}
+
 let runtimeStoreHydratedAt = 0;
 
 export async function hydrateRuntimeStoreFromSupabase(force = false) {
@@ -1379,13 +1592,15 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     return { hydrated: false, reason: "recently_hydrated" as const };
   }
 
-  const [sourceHealth, rawEvents, rawMetrics, latestRun, schedulerRuns, telemetryLogs] = await Promise.all([
+  const [sourceHealth, rawEvents, rawMetrics, latestRun, schedulerRuns, telemetryLogs, forecastSnapshots, forecastValidations] = await Promise.all([
     getLatestSourceHealth(),
     getLatestRawEvents(300),
     getLatestRawMetrics(500),
     getLatestIngestionRun(),
     getLatestSchedulerRuns(48),
     getLatestTelemetryLogs(200),
+    getLatestForecastSnapshots(2_000),
+    getLatestForecastValidations(2_000),
   ]);
 
   if (sourceHealth.length) tryWriteLatest("source-health.json", sourceHealth);
@@ -1394,6 +1609,8 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
   if (latestRun) tryWriteLatest("latest-ingestion-run.json", latestRun);
   if (schedulerRuns.length) tryWriteLatest("latest-scheduler-runs.json", schedulerRuns);
   if (telemetryLogs.length) tryWriteLatest("latest-telemetry-logs.json", telemetryLogs);
+  if (forecastSnapshots.length) tryWriteLatest("forecast-snapshots.json", forecastSnapshots);
+  if (forecastValidations.length) tryWriteLatest("forecast-validations.json", forecastValidations);
 
   runtimeStoreHydratedAt = Date.now();
   return {
@@ -1402,6 +1619,8 @@ export async function hydrateRuntimeStoreFromSupabase(force = false) {
     rawEvents: rawEvents.length,
     rawMetrics: rawMetrics.length,
     schedulerRuns: schedulerRuns.length,
+    forecastSnapshots: forecastSnapshots.length,
+    forecastValidations: forecastValidations.length,
     latestRun: Boolean(latestRun),
   };
 }

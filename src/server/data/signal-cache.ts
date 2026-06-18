@@ -5,7 +5,14 @@ import { fetchCurrentDataPoints, requiredSignalKeys } from "@/server/data/adapte
 import { getLatestSharedSignalCache, persistSharedSignalCache, type SharedSignalCachePayload } from "@/storage/ingestion-store";
 
 export const SIGNAL_CACHE_TTL_MINUTES = 30;
-const SIGNAL_CACHE_PATH = process.env.CMIP_SIGNAL_CACHE_PATH ?? join(process.cwd(), ".cache", "cmip", "latest-signals.json");
+function runtimeWritableSignalCachePath(configuredPath: string | undefined) {
+  if (process.env.VERCEL === "1") {
+    return configuredPath?.startsWith("/tmp") ? configuredPath : join("/tmp", "cmip", "latest-signals.json");
+  }
+  return configuredPath ?? join(process.cwd(), ".cache", "cmip", "latest-signals.json");
+}
+
+const SIGNAL_CACHE_PATH = runtimeWritableSignalCachePath(process.env.CMIP_SIGNAL_CACHE_PATH);
 
 type CachePayload = {
   generatedAt: string;

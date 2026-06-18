@@ -4,7 +4,7 @@ import { resolveSignalFreshness, signalFreshnessClassification } from "@/health/
 import { REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
 import { runDerivedSignalProcessing } from "@/server/analytics/derived-signal-engine";
 import { buildForecastSnapshots } from "@/server/analytics/forecast_snapshot_engine";
-import { validateDueForecasts } from "@/server/analytics/forecast_validation_engine";
+import { validateDueForecastsFromStorage } from "@/server/analytics/forecast_validation_engine";
 import { getSignalSnapshot } from "@/server/analytics/market-signals";
 import { refreshSignalCache } from "@/server/data/signal-cache";
 import { persistForecastSnapshots, persistForecastValidations, persistIngestionRun, persistSchedulerRun } from "@/storage/ingestion-store";
@@ -368,7 +368,7 @@ export async function runStagedScheduledIngestion(trigger: SchedulerRunRecord["t
     rootCause: "Cron used to run ingestion, cache refresh and derived processing as one monolithic HTTP response with a large payload; the hardened route records stage results and returns a compact scheduler summary.",
   };
 
-  const forecastValidations = validateDueForecasts(new Date(finishedAt));
+  const forecastValidations = await validateDueForecastsFromStorage(new Date(finishedAt));
   const forecastSnapshots = buildForecastSnapshots(runId, new Date(finishedAt));
   await persistForecastValidations(forecastValidations);
   await persistForecastSnapshots(forecastSnapshots);

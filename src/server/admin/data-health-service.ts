@@ -16,6 +16,7 @@ import { simulateSchedulerCycles } from "@/server/ingestion/scheduler";
 import {
   getLatestDeadLetters,
   getLatestEtfDailyFlows,
+  getForecastValidationSummary,
   getLatestIngestionLogs,
   getLatestIngestionRun,
   getLatestRawEvents,
@@ -318,6 +319,14 @@ export interface DataHealthDashboard {
   apiLogs: ApiLogRow[];
   correlationTable: CorrelationHealthRow[];
   scheduler: SchedulerDashboard;
+  forecastValidation: {
+    forecastSnapshotsCount: number;
+    dueSnapshotsCount: number;
+    forecastValidationsCount: number;
+    inconclusiveValidationsCount: number;
+    lastForecastValidationRun: string | null;
+    validationStorageMode: string;
+  };
   scores: DataQualityScores;
   failures: {
     failedSources: DataSourceHealthRow[];
@@ -1237,7 +1246,7 @@ function buildDebugPayload(params: {
 }
 
 export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
-  const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun, schedulerRuns] = await Promise.all([
+  const [sourceHealth, rawEvents, rawMetrics, etfDailyFlows, logs, deadLetters, lastIngestionRun, schedulerRuns, forecastValidation] = await Promise.all([
     getLatestSourceHealth(),
     getLatestRawEvents(500),
     getLatestRawMetrics(500),
@@ -1246,6 +1255,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     getLatestDeadLetters(100),
     getLatestIngestionRun(),
     getLatestSchedulerRuns(48),
+    getForecastValidationSummary(),
   ]);
 
   const signalSnapshot = getSignalSnapshot();
@@ -1290,6 +1300,7 @@ export async function getDataHealthDashboard(): Promise<DataHealthDashboard> {
     apiLogs,
     correlationTable,
     scheduler,
+    forecastValidation,
     scores,
     failures: {
       failedSources: dataSources.filter((source) => source.status === "disconnected" && source.enabled),

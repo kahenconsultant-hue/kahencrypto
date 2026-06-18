@@ -6,6 +6,7 @@ import { getMarketRegimeReport } from "@/server/analytics/market-regime-engine";
 import { getRiskReport } from "@/server/analytics/risk-engine";
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
 import { getSeriesHistory, getSeriesSignal, supportedEngineAssets, type SeriesKey } from "@/server/analytics/market-signals";
+import { getLatestRawMetricsSync } from "@/storage/ingestion-store";
 import type { ForecastDirection, ForecastPredictionHorizon, ForecastSnapshotInput } from "@/types/ingestion";
 
 const horizonMs: Record<ForecastPredictionHorizon, number> = {
@@ -52,6 +53,9 @@ function latestReferenceValue(asset: IntelligenceAssetSymbol) {
   const latest = history.at(-1);
   if (latest && Number.isFinite(latest.value)) return latest.value;
 
+  const storedPrice = latestStoredReferenceValue(asset);
+  if (storedPrice !== null) return storedPrice;
+
   const signal = getSeriesSignal(asset as SeriesKey);
   if (signal?.history?.length) {
     const fallback = signal.history.filter((item) => Number.isFinite(item.value)).at(-1);
@@ -59,6 +63,32 @@ function latestReferenceValue(asset: IntelligenceAssetSymbol) {
   }
 
   return null;
+}
+
+const directReferenceMetricsByAsset: Partial<Record<IntelligenceAssetSymbol, string[]>> = {
+  BTC: ["price_usd"],
+  ETH: ["price_usd"],
+  SOL: ["price_usd"],
+  USDT: ["supply_change_7d_pct", "total_stablecoin_market_cap_usd"],
+};
+
+function metricTimestampValue(metric: { timestamp: string | null }) {
+  const parsed = metric.timestamp ? Date.parse(metric.timestamp) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function latestStoredReferenceValue(asset: IntelligenceAssetSymbol) {
+  const metricNames = directReferenceMetricsByAsset[asset] ?? [];
+  if (!metricNames.length) return null;
+
+  const metrics = getLatestRawMetricsSync(500)
+    .filter((metric) => metric.asset === asset || (asset === "USDT" && metric.asset === "Stablecoins"))
+    .filter((metric) => metricNames.includes(metric.metric))
+    .filter((metric) => typeof metric.value === "number" && Number.isFinite(metric.value))
+    .filter((metric) => metric.quality !== "unavailable" && metric.quality !== "estimated")
+    .sort((left, right) => metricTimestampValue(right) - metricTimestampValue(left));
+
+  return metrics[0]?.value ?? null;
 }
 
 function engineContributionsForProfile(profile: ReturnType<typeof getAssetImpactProfiles>[number]) {

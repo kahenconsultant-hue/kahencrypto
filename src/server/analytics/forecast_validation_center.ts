@@ -99,6 +99,11 @@ export function getForecastValidationCenter() {
   const snapshots = getForecastSnapshotsSync();
   const validations = getForecastValidationsSync();
   const scoredValidations = validations.filter((validation) => validation.internalScore !== null);
+  const inconclusiveValidations = validations.filter((validation) => validation.result === "inconclusive");
+  const validatedSnapshotIds = new Set(validations.map((validation) => validation.snapshotId));
+  const pendingValidationCount = snapshots.filter(
+    (snapshot) => Date.parse(snapshot.validationDate) <= Date.now() && !validatedSnapshotIds.has(snapshot.snapshotId),
+  ).length;
   const accuracy24h = accuracy(byHorizon(validations, "24H"));
   const accuracy7d = accuracy(byHorizon(validations, "7D"));
   const averageForecastConfidence = confidenceAverage(validations.length ? validations : snapshots);
@@ -207,13 +212,15 @@ export function getForecastValidationCenter() {
 
   return {
     generatedAt: new Date().toISOString(),
-    status: snapshots.length ? validations.length ? "active" : "collecting" : "no_forecasts_yet",
+    status: snapshots.length ? validations.length ? "active" : pendingValidationCount ? "pending_validation" : "collecting" : "no_forecasts_yet",
     summary: {
       overallAccuracy24h: accuracy24h.value,
       overallAccuracy7d: accuracy7d.value,
       forecastsValidated: validations.length,
+      inconclusiveForecasts: inconclusiveValidations.length,
       scoredForecasts: scoredValidations.length,
       currentValidationWindow: nextValidation?.validationDate ?? null,
+      pendingValidationCount,
       averageForecastConfidence,
       bestPerformingAsset: assetRanking.best?.name ?? null,
       worstPerformingAsset: assetRanking.worst?.name ?? null,
@@ -231,4 +238,3 @@ export function getForecastValidationCenter() {
     noSyntheticAccuracy: true,
   };
 }
-

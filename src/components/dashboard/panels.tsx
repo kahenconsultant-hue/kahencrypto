@@ -991,6 +991,14 @@ export function ForecastValidationCenterPanel() {
   const center = getForecastValidationCenter();
   const maxTrend = Math.max(1, ...center.trend.map((item) => item.overall ?? 0));
   const hasValidated = center.summary.forecastsValidated > 0;
+  const statusLabel =
+    hasValidated
+      ? "Validation فعال"
+      : center.status === "pending_validation"
+        ? "در انتظار اجرای validation"
+        : center.snapshotsStored
+          ? "در حال جمع‌آوری"
+          : "بدون forecast ثبت‌شده";
 
   return (
     <Card className="overflow-hidden border-primary/30 bg-card/95">
@@ -1004,10 +1012,12 @@ export function ForecastValidationCenterPanel() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={hasValidated ? "success" : center.snapshotsStored ? "warning" : "muted"}>
-            {hasValidated ? "Validation فعال" : center.snapshotsStored ? "در حال جمع‌آوری" : "بدون forecast ثبت‌شده"}
+            {statusLabel}
           </Badge>
           <Badge variant="outline">{center.snapshotsStored} snapshot</Badge>
           <Badge variant="outline">{center.summary.forecastsValidated} forecast معتبرسنجی‌شده</Badge>
+          <Badge variant="outline">{center.summary.inconclusiveForecasts} inconclusive</Badge>
+          <Badge variant="outline">{center.summary.pendingValidationCount} pending</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1016,6 +1026,8 @@ export function ForecastValidationCenterPanel() {
             ["Accuracy 24H", accuracyText(center.summary.overallAccuracy24h), center.summary.overallAccuracy24h],
             ["Accuracy 7D", accuracyText(center.summary.overallAccuracy7d), center.summary.overallAccuracy7d],
             ["Forecast Count", `${center.summary.forecastsValidated}`, null],
+            ["Inconclusive", `${center.summary.inconclusiveForecasts}`, null],
+            ["Pending", `${center.summary.pendingValidationCount}`, null],
             ["Best Asset", center.summary.bestPerformingAsset ?? "در انتظار", null],
             ["Worst Asset", center.summary.worstPerformingAsset ?? "در انتظار", null],
             ["Best Engine", center.summary.bestEngine ?? "در انتظار", null],

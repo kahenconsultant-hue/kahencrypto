@@ -1,7 +1,7 @@
 import { apiJson } from "@/lib/api-response";
 import { getFreshnessReportSync } from "@/health/freshness-engine";
 import { buildForecastSnapshots } from "@/server/analytics/forecast_snapshot_engine";
-import { validateDueForecasts } from "@/server/analytics/forecast_validation_engine";
+import { validateDueForecastsFromStorage } from "@/server/analytics/forecast_validation_engine";
 import { REFRESH_INTERVAL_MINUTES } from "@/server/analytics/market-signals";
 import { getSignalCacheStatusSync, loadSharedSignalCache, refreshSignalCache } from "@/server/data/signal-cache";
 import { runStagedScheduledIngestion } from "@/server/ingestion/scheduler";
@@ -103,7 +103,7 @@ export async function GET() {
 
   const refresh = await withRefreshTimeout(refreshSignalCache());
   const forecastRunId = `refresh:${refresh.generatedAt}`;
-  const forecastValidations = validateDueForecasts(new Date(refresh.generatedAt));
+  const forecastValidations = await validateDueForecastsFromStorage(new Date(refresh.generatedAt));
   const forecastSnapshots = buildForecastSnapshots(forecastRunId, new Date(refresh.generatedAt));
   const [forecastValidationWrite, forecastSnapshotWrite] = await Promise.all([
     persistForecastValidations(forecastValidations),

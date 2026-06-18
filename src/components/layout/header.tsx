@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Braces, Radio, Search } from "lucide-react";
+import { Bell, Braces, FlaskConical, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -9,7 +9,7 @@ export function Header() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="success">هوش زنده بازار</Badge>
+            <Badge variant="success">گزارش بروز شده بازار</Badge>
             <Badge variant="outline">فارسی راست‌چین</Badge>
             <Badge variant="warning">بدون سیگنال معامله</Badge>
           </div>
@@ -23,13 +23,16 @@ export function Header() {
             جست‌وجو در خبرها، همبستگی‌ها، هشدارها
           </div>
           <Button variant="outline">
-            <Radio className="h-4 w-4" aria-hidden />
-            پایش لحظه‌ای
-          </Button>
-          <Button variant="outline">
             <Bell className="h-4 w-4" aria-hidden />
-            ۸+ هشدار فعال
+            هشدارها
           </Button>
+          <Link
+            href="/audit"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border bg-card px-3 text-xs font-bold text-foreground transition-colors hover:bg-muted"
+          >
+            <FlaskConical className="h-4 w-4" aria-hidden />
+            Audit
+          </Link>
           <Link
             href="/api/v1/overview"
             className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90"

@@ -10,6 +10,7 @@ import {
   CircleDollarSign,
   DatabaseZap,
   Gauge,
+  FlaskConical,
   LayoutDashboard,
   Landmark,
   LineChart,
@@ -20,7 +21,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", label: "داشبورد", icon: LayoutDashboard },
+  { href: "/", label: "Market Brief", icon: LayoutDashboard },
+  { href: "/audit", label: "Intelligence Lab", icon: FlaskConical },
   { href: "/assets/btc", label: "BTC", icon: Bitcoin },
   { href: "/assets/eth", label: "ETH", icon: Activity },
   { href: "/assets/sol", label: "SOL", icon: Gauge },
@@ -73,8 +75,8 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-5 rounded-md border bg-background/50 p-3 text-xs leading-6 text-muted-foreground">
-        <div className="font-bold text-foreground">پوشش دارایی‌ها</div>
-        <p>BTC, ETH, SOL, USDT, DXY, Gold, Nasdaq, US10Y, Fed</p>
+        <div className="font-bold text-foreground">فهرست پایش بازار ایران</div>
+        <p>USDT, BTC, TRX, ETH, TON, SOL, XRP, DOGE, BNB, ADA</p>
       </div>
     </aside>
   );

@@ -39,7 +39,7 @@ function MarketVerdict({ brief }: { brief: PublicMarketBriefData }) {
             <Target className="h-5 w-5 text-primary" aria-hidden />
             جمع‌بندی بازار
           </CardTitle>
-          <CardDescription>{brief.marketVerdict.summaryFa}</CardDescription>
+          <CardDescription>{brief.marketVerdict.humanized.human_summary}</CardDescription>
         </div>
         <Badge variant={brief.globalConfidence >= 45 ? "success" : "warning"}>{brief.dataModeFa}</Badge>
       </CardHeader>
@@ -48,7 +48,7 @@ function MarketVerdict({ brief }: { brief: PublicMarketBriefData }) {
           <HumanReportBlock {...brief.marketVerdict.humanized} />
         </div>
         {[
-          ["رژیم بازار", brief.marketVerdict.regimeFa],
+          ["فضای بازار", brief.marketVerdict.regimeFa],
           ["وضعیت نقدینگی", brief.marketVerdict.liquidityStateFa],
           ["سطح ریسک", brief.marketVerdict.riskLevelFa],
           ["فشار کلان", brief.marketVerdict.macroPressureFa],
@@ -177,7 +177,7 @@ function InvalidationWatch({ brief }: { brief: PublicMarketBriefData }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldAlert className="h-4 w-4 text-amber-300" aria-hidden />
-            شروط ابطال
+            شروط بازنگری
           </CardTitle>
         </CardHeader>
         <CardContent>

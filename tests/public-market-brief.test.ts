@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { TARGET_ASSETS } from "../src/lib/assets/targetAssets";
 import { capAssetConfidenceByPublicQuality, classifyAssetBias, etfFlowScore, volumeLiquidityScore, weightedImpactScore } from "../src/lib/intelligence/assetScoring";
-import { humanizeReportBlock, renderHumanizedBlockText, validateHumanizedBlock } from "../src/lib/intelligence/humanReport";
+import { HUMANIZER_VERSION, humanizeReportBlock, renderHumanizedBlockText, validateHumanizedBlock, validateHumanizedMeaningDiversity } from "../src/lib/intelligence/humanReport";
 import { forecastPublicBadgeState, publicModuleStatus, shouldRenderPublicModule } from "../src/lib/intelligence/moduleGating";
 
 test("target asset registry contains exactly the Iran-relevant public watchlist", () => {
@@ -90,21 +90,59 @@ test("public confidence caps prevent deep-data-limited assets from overclaiming"
 test("humanized report blocks are valid and render human explanation before technical details", () => {
   const block = humanizeReportBlock(
     { impactScore: -12, confidence: 64, coverage: 72, driversFa: ["مومنتوم قیمت: فشارزا"], invalidationFa: "اگر محرک‌ها تغییر کنند، سناریو بازنگری می‌شود." },
-    { kind: "asset", titleFa: "TRX — ترون", statusFa: "خنثی", confidence: 64, coverage: 72, impactScore: -12 },
+    { kind: "asset", titleFa: "TRX — ترون", assetSymbol: "TRX", statusFa: "خنثی", confidence: 64, coverage: 72, impactScore: -12 },
   );
+  assert.equal(HUMANIZER_VERSION, "cmip-humanizer-v1.1");
   assert.equal(validateHumanizedBlock(block), true);
+  assert.match(block.watch_next, /بروزرسانی بعدی/);
   assert.match(block.non_advisory_note, /سیگنال خرید یا فروش نیست/);
 
   const rendered = renderHumanizedBlockText(block);
-  assert.ok(rendered.indexOf("۱. خلاصه انسانی") < rendered.indexOf("۵. جزئیات فنی"));
-  assert.ok(rendered.indexOf("۵. جزئیات فنی") < rendered.indexOf("۶. جزئیات Audit"));
+  assert.ok(rendered.indexOf("۱. خلاصه انسانی") < rendered.indexOf("۴. برای رصد بعدی"));
+  assert.ok(rendered.indexOf("۴. برای رصد بعدی") < rendered.indexOf("۶. جزئیات فنی"));
+  assert.ok(rendered.indexOf("۶. جزئیات فنی") < rendered.indexOf("۷. جزئیات Audit"));
+});
+
+test("humanizer v1.1 does not echo raw engine jargon in human sections", () => {
+  const block = humanizeReportBlock(
+    {
+      impactScore: -4,
+      confidence: 63,
+      coverage: 80,
+      driversFa: ["مومنتوم قیمت: خنثی / نیازمند تأیید", "نقدشوندگی حجم: فشارزا", "داده عمیق محدود است"],
+    },
+    { kind: "asset", titleFa: "TON — تون", assetSymbol: "TON", confidence: 63, coverage: 80, impactScore: -4 },
+  );
+  const humanText = [block.human_summary, block.user_meaning, block.reasoning, block.watch_next].join("\n");
+  for (const forbidden of ["فشارزا", "سناریویی", "ابطال", "پروکسی", "ریسک افزایشی", "اثر کلی", "رژیم بازار", "نیازمند تأیید", "داده عمیق محدود است"]) {
+    assert.equal(humanText.includes(forbidden), false, `human text still contains raw jargon: ${forbidden}`);
+  }
+  assert.match(block.reasoning, /حرکت قیمت|حجم معاملات|داده/);
+});
+
+test("asset user meanings are not repeated across the public watchlist", () => {
+  const blocks = TARGET_ASSETS.map((asset, index) =>
+    humanizeReportBlock(
+      { impactScore: index % 3 === 0 ? -4 : index % 3 === 1 ? -16 : 14, confidence: 66, coverage: 78, driversFa: ["مومنتوم قیمت: خنثی / نیازمند تأیید", "نقدشوندگی حجم: خنثی / نیازمند تأیید"] },
+      { kind: "asset", titleFa: `${asset.symbol} — ${asset.persianName}`, assetSymbol: asset.symbol, assetNameFa: asset.persianName, confidence: 66, coverage: 78, impactScore: index % 3 === 0 ? -4 : index % 3 === 1 ? -16 : 14 },
+    ),
+  );
+  const diversity = validateHumanizedMeaningDiversity(blocks);
+  assert.equal(diversity.valid, true, `user meanings are too repetitive: ${diversity.maxSimilarity}`);
 });
 
 test("public market brief component no longer contains obvious raw customer-facing terms", () => {
   const source = readFileSync(new URL("../src/components/public/PublicMarketBrief.tsx", import.meta.url), "utf8");
-  for (const forbidden of ["N/A", "source health", "raw logs", "scenario invalidation", "fallback active", "validation weak", "پوشش / اطمینان", "وضعیت / Bias", "اقدام در public"]) {
+  for (const forbidden of ["N/A", "source health", "raw logs", "scenario invalidation", "fallback active", "validation weak", "پوشش / اطمینان", "وضعیت / Bias", "اقدام در public", "شروط ابطال", "رژیم بازار"]) {
     assert.equal(source.includes(forbidden), false, `public component still contains raw visible term: ${forbidden}`);
   }
   assert.match(source, /پوشش داده:/);
   assert.match(source, /اطمینان تحلیلی:/);
+});
+
+test("public brief builder avoids raw public-facing jargon outside audit details", () => {
+  const source = readFileSync(new URL("../src/lib/intelligence/publicBriefBuilder.ts", import.meta.url), "utf8");
+  for (const forbidden of ["در وضعیت سناریویی خوانده می‌شود", "فشارزا", "نیازمند تأیید", "داده عمیق محدود است", "رژیم بازار", "ریسک افزایشی"]) {
+    assert.equal(source.includes(forbidden), false, `public brief builder still emits raw visible term: ${forbidden}`);
+  }
 });

@@ -44,8 +44,8 @@ const biasLabels: Record<string, string> = {
   bearish: "منفی",
   neutral: "خنثی",
   mixed: "دوگانه",
-  pressure: "فشارزا",
-  supportive: "حمایتی",
+  pressure: "فشار منفی",
+  supportive: "بهبوددهنده",
 };
 
 const toneLabels: Record<string, string> = {
@@ -95,6 +95,17 @@ function labelOrRaw(map: Record<string, string>, value?: string | null) {
   return map[value] ?? value;
 }
 
+function humanReadableUiText(value: string) {
+  return value
+    .replace(/رژیم بازار/g, "فضای بازار")
+    .replace(/فشارزا/g, "فشار منفی")
+    .replace(/نیازمند تأیید/g, "در انتظار روشن‌تر شدن")
+    .replace(/داده عمیق محدود است/g, "داده‌های عمیق بازار کامل نیستند")
+    .replace(/سناریویی/g, "محتاطانه")
+    .replace(/ابطال/g, "بازنگری")
+    .replace(/پروکسی/g, "داده غیرمستقیم");
+}
+
 function PersianList({ items, icon = "dot" }: { items?: string[]; icon?: "dot" | "warn" | "check" }) {
   if (!items?.length) {
     return <p className="rounded-md border bg-secondary/25 p-3 text-xs leading-6 text-muted-foreground">{emptyState}</p>;
@@ -107,7 +118,7 @@ function PersianList({ items, icon = "dot" }: { items?: string[]; icon?: "dot" |
           {icon === "warn" ? <AlertTriangle className="mt-1 h-3.5 w-3.5 flex-none text-amber-300" aria-hidden /> : null}
           {icon === "check" ? <ListChecks className="mt-1 h-3.5 w-3.5 flex-none text-primary" aria-hidden /> : null}
           {icon === "dot" ? <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-primary/70" /> : null}
-          <span>{item}</span>
+          <span>{humanReadableUiText(item)}</span>
         </li>
       ))}
     </ul>
@@ -147,7 +158,7 @@ function SignalBlock({ title, value }: { title: string; value?: string }) {
   return (
     <div className="rounded-md border bg-secondary/25 p-3">
       <div className="metric-label">{title}</div>
-      <p className="mt-2 text-xs leading-6 text-muted-foreground">{value || emptyState}</p>
+      <p className="mt-2 text-xs leading-6 text-muted-foreground">{value ? humanReadableUiText(value) : emptyState}</p>
     </div>
   );
 }
@@ -163,7 +174,7 @@ function HorizonPanel({ intelligence }: { intelligence: HorizonIntelligence }) {
               ساختار پیش‌بینی سناریومحور
             </CardTitle>
             <CardDescription>
-              {intelligence.horizonLabelFa} · رژیم بازار: {labelOrRaw(regimeLabels, intelligence.regime)}
+              {intelligence.horizonLabelFa} · فضای بازار: {labelOrRaw(regimeLabels, intelligence.regime)}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -321,7 +332,7 @@ export function AssetDashboard({ assetKey }: { assetKey: keyof typeof assetIntel
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <SignalBlock title="محرک‌های اصلی" value={directionalImpact.mainDrivers.slice(0, 3).join(" | ")} />
               <SignalBlock title="محرک‌های مخالف" value={directionalImpact.opposingDrivers.slice(0, 3).join(" | ")} />
-              <SignalBlock title="شرط ابطال" value={directionalImpact.invalidationCondition} />
+              <SignalBlock title="شرط بازنگری" value={directionalImpact.invalidationCondition} />
             </div>
             <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
               {directionalImpact.scoreFormula} · {directionalImpact.confidence.available ? `اطمینان ${directionalImpact.confidence.score}٪` : directionalImpact.confidence.explanation}

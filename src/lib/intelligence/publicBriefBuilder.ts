@@ -182,21 +182,21 @@ function liquidityDirectionFromScore(score: number | null, pressureThreshold = -
 }
 
 function liquidityDirectionFa(direction: LiquidityLayerDirection) {
-  if (direction === "pressure") return "فشارزا";
-  if (direction === "supportive") return "حمایتی";
-  if (direction === "neutral") return "خنثی / بدون تأیید قوی";
-  return "دوگانه / نیازمند تأیید";
+  if (direction === "pressure") return "تحت فشار";
+  if (direction === "supportive") return "بهبوددهنده";
+  if (direction === "neutral") return "خنثی / بدون نشانه قوی";
+  return "دوگانه / در انتظار روشن‌تر شدن";
 }
 
 function liquidityNarrative(params: { total: LiquidityLayerDirection; stablecoin: LiquidityLayerDirection }) {
   if (params.total === "pressure" && params.stablecoin === "neutral") {
-    return "وضعیت نقدینگی کل: فشارزا. نقدینگی استیبل‌کوین: خنثی / بدون تأیید قوی. فشار اصلی بیشتر از ETF، حجم یا سایر لایه‌های نقدینگی می‌آید.";
+    return "وضعیت نقدینگی کل: تحت فشار. نقدینگی استیبل‌کوین: خنثی / بدون نشانه قوی. فشار اصلی بیشتر از ETF، حجم یا سایر لایه‌های نقدینگی می‌آید.";
   }
   if (params.stablecoin === "pressure") {
-    return "نقدینگی استیبل‌کوین: فشارزا. روند استیبل‌کوین‌ها ضعف نقدینگی نقدی را تقویت می‌کند.";
+    return "نقدینگی استیبل‌کوین: تحت فشار. روند استیبل‌کوین‌ها ضعف نقدینگی نقدی را تقویت می‌کند.";
   }
   if (params.stablecoin === "supportive") {
-    return "نقدینگی استیبل‌کوین: حمایتی. روند استیبل‌کوین‌ها نشانه بهبود نقدینگی نقدی را تقویت می‌کند.";
+    return "نقدینگی استیبل‌کوین: بهبوددهنده. روند استیبل‌کوین‌ها نشانه بهبود نقدینگی نقدی را تقویت می‌کند.";
   }
   return `وضعیت نقدینگی کل: ${liquidityDirectionFa(params.total)}. نقدینگی استیبل‌کوین: ${liquidityDirectionFa(params.stablecoin)}.`;
 }
@@ -322,7 +322,7 @@ function publicDataLabel(asset: AssetRegistryItem, params: { priceDataAvailable:
   if (asset.symbol === "USDT") return "داده شبکه/ناشر محدود است";
   if (!params.priceDataAvailable) return "داده قیمت ناموجود";
   if (params.sentimentOnly) return "فقط پایش خبری/سنتیمنت";
-  if (params.deepDataLimited) return "داده عمیق محدود است";
+  if (params.deepDataLimited) return "داده‌های عمیق بازار کامل نیستند";
   return "بروز شده";
 }
 
@@ -444,10 +444,10 @@ function assetConfidence(asset: AssetRegistryItem, signals: SignalMap, assetMark
 
 function factorDriverText(factorItem: PublicFactorScore, weak = false) {
   if (factorItem.score === null) return `${factorItem.labelFa}: ناموجود`;
-  if (weak) return `${factorItem.labelFa} محدود: نیازمند تأیید با قیمت و حجم`;
+  if (weak) return `${factorItem.labelFa} محدود: در انتظار روشن‌تر شدن با قیمت و حجم`;
   const neutralThreshold = ["usdt_supply_trend", "stablecoin_liquidity", "market_liquidity_context"].includes(factorItem.key) ? 25 : 15;
-  if (Math.abs(factorItem.score) < neutralThreshold) return `${factorItem.labelFa}: خنثی / نیازمند تأیید`;
-  return `${factorItem.labelFa}: ${factorItem.score > 0 ? "حمایتی" : "فشارزا"}`;
+  if (Math.abs(factorItem.score) < neutralThreshold) return `${factorItem.labelFa}: خنثی / در انتظار روشن‌تر شدن`;
+  return `${factorItem.labelFa}: ${factorItem.score > 0 ? "بهبوددهنده" : "فشار منفی"}`;
 }
 
 function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMarketData: PublicMarketData | undefined): BuiltAssetBrief {
@@ -496,7 +496,7 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
         ]
       : availableDrivers.length
         ? [
-            dataLabel === "داده عمیق محدود است"
+            dataLabel === "داده‌های عمیق بازار کامل نیستند"
               ? "قیمت و مومنتوم عمومی موجود است؛ داده‌های عمیق مثل مشتقات، آنچین یا جریان شبکه محدود هستند."
               : dataLabel,
             ...availableDrivers.slice(0, 3),
@@ -525,7 +525,7 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
       coverage: weighted.coverage,
       driversFa,
       invalidationFa,
-      dataQualityLabelFa: deepDataLimited ? "داده عمیق محدود است" : coverageLabelFa(weighted.coverage),
+      dataQualityLabelFa: deepDataLimited ? "داده‌های عمیق بازار کامل نیستند" : coverageLabelFa(weighted.coverage),
     },
   );
 
@@ -540,7 +540,7 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
       confidence,
       dataCoverage: weighted.coverage,
       coverageLabelFa: coverageLabelFa(weighted.coverage),
-      mainDriverFa: availableDrivers[0] ?? (priceDataAvailable ? "داده عمیق محدود است؛ محرک غالب عمومی قطعی نیست." : "داده قیمت ناموجود؛ نتیجه‌گیری جهت‌دار مجاز نیست."),
+      mainDriverFa: availableDrivers[0] ?? (priceDataAvailable ? "داده‌های عمیق بازار کامل نیستند؛ محرک غالب عمومی قطعی نیست." : "داده قیمت ناموجود؛ نتیجه‌گیری جهت‌دار مجاز نیست."),
       driversFa,
       invalidationFa,
       freshnessLabelFa: asset.symbol === "USDT" ? "داده شبکه/ناشر محدود است" : dataLabel === "بروز شده" ? signalFreshnessLabel(priceSignal) : dataLabel,
@@ -678,28 +678,28 @@ export function buildDriverLabel(driverType: "macro" | "stablecoin" | "etf" | "s
   const suffix = strengthFa ? ` ${strengthFa}` : "";
   const labels = {
     macro: {
-      supportive: `کلان: حمایتی${suffix}`,
-      pressure: `کلان: فشارزا${suffix}`,
-      neutral: "کلان: خنثی / بدون تأیید قوی",
-      mixed: "کلان: دوگانه / نیازمند تأیید",
+      supportive: `کلان: بهبوددهنده${suffix}`,
+      pressure: `کلان: فشار منفی${suffix}`,
+      neutral: "کلان: خنثی / بدون نشانه قوی",
+      mixed: "کلان: دوگانه / در انتظار روشن‌تر شدن",
     },
     stablecoin: {
-      supportive: `نقدینگی استیبل‌کوین: حمایتی${suffix}`,
-      pressure: `نقدینگی استیبل‌کوین: فشارزا${suffix}`,
-      neutral: "نقدینگی استیبل‌کوین: خنثی / بدون تأیید قوی",
-      mixed: "نقدینگی استیبل‌کوین: دوگانه / نیازمند تأیید",
+      supportive: `نقدینگی استیبل‌کوین: بهبوددهنده${suffix}`,
+      pressure: `نقدینگی استیبل‌کوین: فشار منفی${suffix}`,
+      neutral: "نقدینگی استیبل‌کوین: خنثی / بدون نشانه قوی",
+      mixed: "نقدینگی استیبل‌کوین: دوگانه / در انتظار روشن‌تر شدن",
     },
     etf: {
-      supportive: `ETF بیت‌کوین و اتریوم: حمایتی${suffix}`,
-      pressure: `ETF بیت‌کوین و اتریوم: فشارزا${suffix}`,
+      supportive: `ETF بیت‌کوین و اتریوم: بهبوددهنده${suffix}`,
+      pressure: `ETF بیت‌کوین و اتریوم: فشار منفی${suffix}`,
       neutral: "ETF بیت‌کوین و اتریوم: خنثی",
-      mixed: "ETF بیت‌کوین و اتریوم: دوگانه / نیازمند تأیید",
+      mixed: "ETF بیت‌کوین و اتریوم: دوگانه / در انتظار روشن‌تر شدن",
     },
     sentiment: {
-      supportive: `سنتیمنت: حمایتی${suffix}`,
-      pressure: `سنتیمنت: فشارزا${suffix}`,
+      supportive: `سنتیمنت: بهبوددهنده${suffix}`,
+      pressure: `سنتیمنت: فشار منفی${suffix}`,
       neutral: "سنتیمنت: خنثی",
-      mixed: "سنتیمنت: دوگانه / نیازمند تأیید",
+      mixed: "سنتیمنت: دوگانه / در انتظار روشن‌تر شدن",
     },
     derivatives: {
       supportive: "فیوچرز/اهرم: کاهش فشار",
@@ -759,7 +759,7 @@ function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerS
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("macro", direction, strengthFromScore(macroScore)),
       direction,
-      directionFa: direction === "supportive" ? "حمایتی" : direction === "pressure" ? "فشارزا" : "دوگانه",
+      directionFa: direction === "supportive" ? "بهبوددهنده" : direction === "pressure" ? "فشار منفی" : "دوگانه",
       affectedAssets: ["BTC", "ETH", "SOL", "DXY", "Gold", "US10Y"],
       confidence: Math.round(Math.min(80, Math.abs(macroScore) + 35)),
       explanationFa:
@@ -767,7 +767,7 @@ function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerS
           ? "ترکیب دلار/بازده اوراق برای دارایی‌های پرریسک فشارساز است."
           : direction === "supportive"
             ? "محرک‌های کلان فشار شدیدی نشان نمی‌دهند و می‌توانند فضای ریسک را آرام‌تر کنند."
-          : "محرک‌های کلان هم‌جهت نیستند و برای نتیجه‌گیری قوی نیاز به تأیید بیشتر دارند.",
+          : "محرک‌های کلان هم‌جهت نیستند و برای نتیجه‌گیری قوی باید داده‌های بعدی روشن‌تر شوند.",
       invalidationFa: "اگر DXY و US10Y در دو بروزرسانی متوالی خلاف جهت فعلی حرکت کنند، خوانش کلان بازنگری می‌شود.",
     }));
   }
@@ -777,7 +777,7 @@ function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerS
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("stablecoin", direction, strengthFromScore(stableScore)),
       direction,
-      directionFa: direction === "supportive" ? "حمایتی" : direction === "pressure" ? "فشارزا" : "خنثی",
+      directionFa: direction === "supportive" ? "بهبوددهنده" : direction === "pressure" ? "فشار منفی" : "خنثی",
       affectedAssets: assets.map((asset) => asset.symbol),
       confidence: Math.round(Math.min(82, Math.abs(stableScore) + 38)),
       explanationFa:
@@ -796,12 +796,12 @@ function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerS
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("etf", direction, "moderate"),
       direction,
-      directionFa: direction === "supportive" ? "حمایتی" : direction === "pressure" ? "فشارزا" : "خنثی",
+      directionFa: direction === "supportive" ? "بهبوددهنده" : direction === "pressure" ? "فشار منفی" : "خنثی",
       affectedAssets: ["BTC", "ETH"],
       confidence: 62,
       explanationFa:
         direction === "pressure"
-          ? "جریان خالص ETF برای BTC/ETH فشارزا خوانده می‌شود؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند."
+          ? "جریان خالص ETF برای BTC/ETH نقش فشار منفی دارد؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند."
           : direction === "supportive"
             ? "جریان خالص ETF برای BTC/ETH نقش حمایتی دارد؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند."
             : "جریان ETF برای BTC/ETH فعلاً جهت قوی ندارد؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند.",
@@ -813,7 +813,7 @@ function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerS
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("sentiment", sentiment > 0 ? "supportive" : "pressure", strengthFromScore(sentiment)),
       direction: sentiment > 0 ? "supportive" : "pressure",
-      directionFa: sentiment > 0 ? "حمایتی" : "فشارزا",
+      directionFa: sentiment > 0 ? "بهبوددهنده" : "فشار منفی",
       affectedAssets: ["BTC", "ETH", "SOL", "USDT"],
       confidence: Math.round(Math.min(78, Math.abs(sentiment) + 35)),
       explanationFa: "فقط خبرهای با ارتباط بازار کافی وارد جمع‌بندی عمومی می‌شوند؛ خوراک کامل خبر در بخش بررسی فنی است.",
@@ -967,9 +967,9 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       : riskScore >= 80
         ? "ریسک بحرانی"
         : riskScore >= 65
-          ? "ریسک بالا"
-          : riskScore >= 45
-            ? "ریسک افزایشی"
+        ? "ریسک بالا"
+        : riskScore >= 45
+            ? "ریسک رو به افزایش"
             : riskScore >= 25
               ? "ریسک متوسط"
               : "ریسک پایین";
@@ -977,10 +977,10 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const marketSummaryFa =
     globalConfidence < 40
       ? "پوشش و اعتماد به کیفیت تحلیل برای سناریوی قطعی کافی نیست؛ گزارش فقط وضعیت داده و محرک‌های قابل پایش را نشان می‌دهد."
-      : `بازار در وضعیت سناریویی خوانده می‌شود. ${liquidityExplanationFa}`;
+      : `بازار هنوز تصویر قطعی ندارد. ${liquidityExplanationFa}`;
   const marketVerdictHumanized = humanizeReportBlock(
     {
-      statusFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "سناریوی قطعی مجاز نیست" : "رژیم بازار با داده محدود")),
+      statusFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "نتیجه قطعی مجاز نیست" : "فضای کلی بازار با داده محدود")),
       confidence: globalConfidence,
       coverage: globalCoverage,
       impactScore: macroScore,
@@ -990,7 +990,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     {
       kind: "market",
       titleFa: "جمع‌بندی بازار",
-      statusFa: String(regime.regimeFa ?? regime.labelFa ?? "رژیم بازار با داده محدود"),
+      statusFa: String(regime.regimeFa ?? regime.labelFa ?? "فضای کلی بازار با داده محدود"),
       confidence: globalConfidence,
       coverage: globalCoverage,
       impactScore: macroScore,
@@ -1011,7 +1011,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     targetUniverseLabelFa: TARGET_ASSET_UNIVERSE_LABEL_FA,
     marketVerdict: {
       regime: String(regime.regime ?? regime.currentRegime ?? "limited"),
-      regimeFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "سناریوی قطعی مجاز نیست" : "رژیم بازار با داده محدود")),
+      regimeFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "نتیجه قطعی مجاز نیست" : "فضای کلی بازار با داده محدود")),
       liquidityState: String(liquidity.state ?? liquidity.classification ?? "limited"),
       liquidityStateFa,
       liquidityExplanationFa,
@@ -1053,8 +1053,8 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       },
       humanizer_version: HUMANIZER_VERSION,
       generated_at: generatedAt,
-      data_quality_status: globalCoverage >= 75 ? "پوشش داده مناسب" : globalCoverage >= 50 ? "پوشش داده متوسط" : "داده ناقص یا نیازمند تأیید",
+      data_quality_status: globalCoverage >= 75 ? "پوشش داده مناسب" : globalCoverage >= 50 ? "پوشش داده متوسط" : "داده ناقص یا در انتظار روشن‌تر شدن",
     },
-    disclaimerFa: "این گزارش سیگنال خرید یا فروش نیست. خروجی C.M.I.P فقط برای تحلیل رژیم بازار، ریسک، نقدینگی و سناریوهای محتمل استفاده می‌شود.",
+    disclaimerFa: "این گزارش سیگنال خرید یا فروش نیست. خروجی C.M.I.P فقط برای تحلیل فضای بازار، ریسک، نقدینگی و سناریوهای محتمل استفاده می‌شود.",
   };
 }

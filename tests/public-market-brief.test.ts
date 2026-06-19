@@ -164,7 +164,8 @@ test("public market brief component no longer contains obvious raw customer-faci
   assert.match(source, /پوشش داده:/);
   assert.match(source, /اطمینان تحلیلی:/);
   assert.match(source, /assetIconMap/);
-  assert.match(source, /assetPairs/);
+  assert.match(source, /lg:grid-cols-5/);
+  assert.equal(source.includes("assetPairs"), false);
   assert.equal(source.includes("خلاصه انسانی"), false);
 });
 

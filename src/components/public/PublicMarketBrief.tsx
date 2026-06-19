@@ -377,7 +377,6 @@ function AnalysisEngineScores({ brief }: { brief: PublicMarketBriefData }) {
 }
 
 function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
-  const assetPairs = Array.from({ length: Math.ceil(assets.length / 2) }, (_, index) => assets.slice(index * 2, index * 2 + 2));
   return (
     <Card className={reportCardClass}>
       <CardHeader>
@@ -387,39 +386,38 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {assetPairs.map((pair, pairIndex) => (
-            <div key={`asset-pair-${pairIndex}`} className="rounded-[15px] border border-[#26334a] bg-[#0f1724]/85 p-2.5">
-              <div className="grid grid-cols-2 gap-2">
-                {pair.map((asset) => (
-                  <div key={asset.symbol} className="min-w-0 rounded-[12px] border border-[#2b3850] bg-[#111a28]/80 p-2">
-                    <div className="flex items-center gap-2">
-                      {assetIcon(asset.symbol)}
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-black text-[#eef3fc]">{asset.symbol}</div>
-                        <div className="truncate text-[11px] text-[#9aa8bd]">{asset.persianName}</div>
-                      </div>
-                    </div>
-                    <Badge className="mt-2 max-w-full justify-center truncate text-[10px]" variant={asset.confidence < 45 || asset.dataCoverage < 50 ? "warning" : "outline"}>
-                      {asset.biasFa}
-                    </Badge>
-                    <div className="mt-2 grid gap-1 text-[11px] leading-5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={mutedTextClass}>اثر</span>
-                        <span className={cn("font-black tabular-nums", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "ناموجود" : formatNumber(asset.impactScore, 0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={mutedTextClass}>اعتماد</span>
-                        <span className="font-bold tabular-nums text-[#eef3fc]">{percent(asset.confidence)}</span>
-                      </div>
-                      <Progress value={asset.confidence} className="h-1.5 bg-[#263044]" indicatorClassName={confidenceTone(asset.confidence)} />
-                      <div className="truncate text-[10px] text-[#9aa8bd]" title={asset.coverageLabelFa}>
-                        {asset.coverageLabelFa}
-                      </div>
-                      <div className="line-clamp-2 min-h-10 text-[10px] leading-5 text-[#aab6ca]">{asset.mainDriverFa}</div>
-                    </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {assets.map((asset) => (
+            <div key={asset.symbol} className="min-w-0 rounded-[15px] border border-[#2b3850] bg-[#0f1724]/90 p-3 shadow-[0_10px_24px_-22px_rgba(0,0,0,0.9)]">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  {assetIcon(asset.symbol)}
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-black text-[#eef3fc]">{asset.symbol}</div>
+                    <div className="truncate text-[11px] text-[#9aa8bd]">{asset.persianName}</div>
                   </div>
-                ))}
+                </div>
+                <span className={cn("shrink-0 text-sm font-black tabular-nums", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "—" : formatNumber(asset.impactScore, 0)}</span>
+              </div>
+
+              <Badge className="mt-3 w-full justify-center whitespace-normal px-2 py-1 text-[10px] leading-5" variant={asset.confidence < 45 || asset.dataCoverage < 50 ? "warning" : "outline"}>
+                {asset.biasFa}
+              </Badge>
+
+              <div className="mt-3 space-y-2 text-[11px] leading-5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={mutedTextClass}>اعتماد تحلیل</span>
+                  <span className="font-bold tabular-nums text-[#eef3fc]">{percent(asset.confidence)}</span>
+                </div>
+                <Progress value={asset.confidence} className="h-1.5 bg-[#263044]" indicatorClassName={confidenceTone(asset.confidence)} />
+                <div className="flex items-start justify-between gap-2">
+                  <span className={mutedTextClass}>پوشش</span>
+                  <span className="max-w-[112px] text-left leading-5 text-[#cfd8ea]">{asset.coverageLabelFa}</span>
+                </div>
+                <div className="rounded-[10px] border border-[#26334a] bg-[#111a28]/80 p-2">
+                  <div className="mb-1 text-[10px] font-bold text-[#8f9bb0]">محرک اصلی</div>
+                  <div className="text-[10px] leading-5 text-[#aab6ca]">{asset.mainDriverFa}</div>
+                </div>
               </div>
             </div>
           ))}

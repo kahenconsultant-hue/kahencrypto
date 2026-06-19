@@ -3,6 +3,7 @@ import { AlertTriangle, BarChart3, Brain, DatabaseZap, Gauge, ListChecks, RadioT
 import { assetIntelligence, categoryLabels, getNewsItems } from "@/lib/production-data";
 import type { AssetIntelligence, HorizonIntelligence, SourceSignal } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { HumanReportBlock } from "@/components/reporting/HumanReportBlock";
 import { Badge } from "@/components/ui/badge";
 import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { Metric } from "@/components/ui/metric";
@@ -10,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs } from "@/components/ui/tabs";
 import { assetStatusKey, dataSourceStatusLabels, moduleDataSourceStatus } from "@/lib/data-source-status";
 import { formatNumber } from "@/lib/utils";
+import { humanizeReportBlock } from "@/lib/intelligence/humanReport";
 import { generateAssetImpactProfile } from "@/server/analytics/asset-impact-engine";
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
 import { summarizeImpactForAsset } from "@/server/ai/pipeline";
@@ -260,6 +262,28 @@ export function AssetDashboard({ assetKey }: { assetKey: keyof typeof assetIntel
   const news = getNewsItems()
     .filter((item) => item.impacts.some((impact) => impact.asset === asset.symbol))
     .slice(0, 8);
+  const assetHumanized = humanizeReportBlock(
+    {
+      statusFa: labelOrRaw(biasLabels, directionalImpact.directionalBias),
+      impactScore: directionalImpact.impactScore,
+      confidence: directionalImpact.confidence.available ? directionalImpact.confidence.score : null,
+      coverage: directionalImpact.confidence.available ? directionalImpact.confidence.score : null,
+      driversFa: directionalImpact.mainDrivers,
+      invalidationFa: directionalImpact.invalidationCondition,
+    },
+    {
+      kind: "asset",
+      titleFa: `${asset.symbol} — ${asset.titleFa}`,
+      statusFa: labelOrRaw(biasLabels, directionalImpact.directionalBias),
+      impactScore: directionalImpact.impactScore,
+      confidence: directionalImpact.confidence.available ? directionalImpact.confidence.score : null,
+      coverage: directionalImpact.confidence.available ? directionalImpact.confidence.score : null,
+      driversFa: directionalImpact.mainDrivers,
+      invalidationFa: directionalImpact.invalidationCondition,
+      reasoningFa: directionalImpact.traderInterpretation,
+      userMeaningFa: "این صفحه جزئیات بیشتری از گزارش عمومی نشان می‌دهد، اما خروجی همچنان سیگنال معامله نیست و باید همراه با کیفیت داده خوانده شود.",
+    },
+  );
   const tabs = asset.horizons
     ? [
         { value: "short", label: "کوتاه‌مدت: ۷ روز آینده", content: <HorizonPanel intelligence={asset.horizons.short} /> },
@@ -288,8 +312,9 @@ export function AssetDashboard({ assetKey }: { assetKey: keyof typeof assetIntel
             </Link>
           </div>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm leading-8 text-muted-foreground">{asset.aiInterpretation || emptyState}</p>
+        <CardContent className="space-y-4">
+          <HumanReportBlock {...assetHumanized} />
+          <p className="text-sm leading-8 text-muted-foreground">{asset.aiInterpretation || "توضیح تکمیلی انسانی برای این دارایی هنوز کامل نیست؛ بخش بالا جمع‌بندی قابل اتکای فعلی را نشان می‌دهد."}</p>
           <div className="mt-4 rounded-md border bg-secondary/25 p-3">
             <div className="metric-label">هوش جهت‌دار از موتور امتیازدهی</div>
             <p className="mt-2 text-sm leading-7 text-muted-foreground">{directionalImpact.traderInterpretation}</p>

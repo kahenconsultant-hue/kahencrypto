@@ -260,7 +260,7 @@ function MainAlertsDashboard({ brief }: { brief: PublicMarketBriefData }) {
 function LiquidityDashboard({ brief }: { brief: PublicMarketBriefData }) {
   const liquidity = brief.operationalDashboard.liquidity;
   return (
-    <Card className={reportCardClass}>
+    <Card className={cn(reportCardClass, "self-start")}>
       <CardHeader>
         <SectionTitle
           icon={<Waves className="h-5 w-5" aria-hidden />}
@@ -286,19 +286,25 @@ function LiquidityDashboard({ brief }: { brief: PublicMarketBriefData }) {
             </div>
           </div>
         </div>
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 min-[900px]:grid-cols-5">
           {liquidity.engines.map((engine) => (
-            <div key={engine.id} className={nestedPanelClass}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black text-[#eef3fc]">{engine.labelFa}</span>
-                <Badge variant={engine.statusFa === "فعال" ? "success" : engine.statusFa === "فعال با محدودیت" ? "warning" : "muted"}>
+            <div key={engine.id} className={cn(nestedPanelClass, "min-h-[172px]")}>
+              <div className="space-y-2">
+                <span className="block min-h-10 text-sm font-black leading-6 text-[#eef3fc]">{engine.labelFa}</span>
+                <Badge className="max-w-full whitespace-normal px-2 py-1 text-center text-[10px] leading-4" variant={engine.statusFa === "فعال" ? "success" : engine.statusFa === "فعال با محدودیت" ? "warning" : "muted"}>
                   {engine.statusFa}
                 </Badge>
               </div>
-              <div className="mt-2 text-xl font-black tabular-nums text-[#f5c842]">{engine.score === null ? "ناموجود" : `${formatNumber(engine.score, 0)}/100`}</div>
-              <div className="mt-2 space-y-1 text-[11px] leading-5 text-[#aab6ca]">
-                <div>پوشش داده: {engine.coverage === null ? "ناموجود" : percent(engine.coverage)}</div>
-                <div>اعتماد لایه: {engine.confidence === null ? "ناموجود" : percent(engine.confidence)}</div>
+              <div className="mt-3 text-2xl font-black tabular-nums text-[#f5c842]">{engine.score === null ? "ناموجود" : `${formatNumber(engine.score, 0)}/100`}</div>
+              <div className="mt-3 space-y-2 border-t border-[#26334a] pt-3 text-[11px] leading-5 text-[#aab6ca]">
+                <div className="flex items-center justify-between gap-2">
+                  <span>پوشش داده</span>
+                  <span className="font-bold tabular-nums text-[#cfd8ea]">{engine.coverage === null ? "ناموجود" : percent(engine.coverage)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>اعتماد لایه</span>
+                  <span className="font-bold tabular-nums text-[#cfd8ea]">{engine.confidence === null ? "ناموجود" : percent(engine.confidence)}</span>
+                </div>
               </div>
             </div>
           ))}
@@ -311,7 +317,7 @@ function LiquidityDashboard({ brief }: { brief: PublicMarketBriefData }) {
 function ActiveEdgesDashboard({ brief }: { brief: PublicMarketBriefData }) {
   const edges = brief.operationalDashboard.activeEdges;
   return (
-    <Card className={reportCardClass}>
+    <Card className={cn(reportCardClass, "self-start")}>
       <CardHeader>
         <SectionTitle
           icon={<GitBranch className="h-5 w-5" aria-hidden />}
@@ -359,7 +365,7 @@ function AnalysisEngineScores({ brief }: { brief: PublicMarketBriefData }) {
           subtitle="امتیازها کیفیت وضعیت فعلی موتور را نشان می‌دهند، نه قطعیت جهت قیمت."
         />
       </CardHeader>
-      <CardContent className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+      <CardContent className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {engines.map((engine) => (
           <div key={engine.id} className={nestedPanelClass}>
             <div className="min-h-10 text-xs font-black leading-5 text-[#eef3fc]">{engine.labelFa}</div>
@@ -603,7 +609,7 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
       <MarketVerdict brief={brief} />
       <OperationalDashboard brief={brief} />
       <MainAlertsDashboard brief={brief} />
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="grid items-start gap-4">
         <LiquidityDashboard brief={brief} />
         <ActiveEdgesDashboard brief={brief} />
       </section>

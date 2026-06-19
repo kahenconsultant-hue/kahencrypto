@@ -32,9 +32,32 @@ function directionVariant(direction: PublicDriver["direction"]): "success" | "wa
 }
 
 const reportCardClass =
-  "rounded-[18px] border-[#2f3d58] bg-[rgba(24,34,50,0.72)] shadow-[0_12px_28px_-18px_rgba(0,0,0,0.85)]";
-const nestedPanelClass = "rounded-[16px] border border-[#2f3d58] bg-[#101722]/75 p-3";
+  "rounded-[18px] border border-[#26334a] bg-[#131c2a]/90 shadow-[0_14px_30px_-22px_rgba(0,0,0,0.9)]";
+const nestedPanelClass = "rounded-[14px] border border-[#26334a] bg-[#0f1724]/85 p-3";
 const goldTextClass = "text-[#f5c842]";
+const mutedTextClass = "text-[#9aa8bd]";
+
+const assetIconMap: Record<string, { icon: string; tone: string }> = {
+  USDT: { icon: "₮", tone: "border-emerald-400/45 bg-emerald-400/12 text-emerald-200" },
+  BTC: { icon: "₿", tone: "border-amber-400/45 bg-amber-400/12 text-amber-200" },
+  TRX: { icon: "T", tone: "border-red-400/45 bg-red-400/12 text-red-200" },
+  ETH: { icon: "Ξ", tone: "border-sky-400/45 bg-sky-400/12 text-sky-200" },
+  TON: { icon: "◈", tone: "border-cyan-400/45 bg-cyan-400/12 text-cyan-200" },
+  SOL: { icon: "S", tone: "border-violet-400/45 bg-violet-400/12 text-violet-200" },
+  XRP: { icon: "X", tone: "border-slate-300/45 bg-slate-300/12 text-slate-100" },
+  DOGE: { icon: "Ð", tone: "border-yellow-400/45 bg-yellow-400/12 text-yellow-200" },
+  BNB: { icon: "◆", tone: "border-orange-400/45 bg-orange-400/12 text-orange-200" },
+  ADA: { icon: "A", tone: "border-blue-400/45 bg-blue-400/12 text-blue-200" },
+};
+
+function assetIcon(symbol: string) {
+  const item = assetIconMap[symbol] ?? { icon: symbol.slice(0, 1), tone: "border-[#344560] bg-[#111a28] text-[#eef3fc]" };
+  return (
+    <span className={cn("inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-black", item.tone)}>
+      {item.icon}
+    </span>
+  );
+}
 
 function SectionTitle({
   icon,
@@ -49,8 +72,8 @@ function SectionTitle({
     <div className="mb-3 flex items-start gap-3 border-r-4 border-[#f5c842] pr-3">
       <div className="mt-1 text-[#f5c842]">{icon}</div>
       <div>
-        <h2 className="text-lg font-black text-[#eef3fc] md:text-xl">{title}</h2>
-        {subtitle ? <p className="mt-1 text-xs leading-6 text-[#aab6ca]">{subtitle}</p> : null}
+        <h2 className="text-base font-black text-[#eef3fc] md:text-lg">{title}</h2>
+        {subtitle ? <p className={cn("mt-1 text-[12px] leading-6", mutedTextClass)}>{subtitle}</p> : null}
       </div>
     </div>
   );
@@ -78,8 +101,8 @@ function MetricTile({
   return (
     <div className={nestedPanelClass}>
       <div className="text-[11px] font-semibold uppercase tracking-wide text-[#8f9bb0]">{label}</div>
-      <div className={cn("mt-2 text-2xl font-black tabular-nums", color)}>{value}</div>
-      {detail ? <div className="mt-1 text-[11px] leading-5 text-[#aab6ca]">{detail}</div> : null}
+      <div className={cn("mt-2 text-xl font-black tabular-nums md:text-2xl", color)}>{value}</div>
+      {detail ? <div className={cn("mt-1 text-[11px] leading-5", mutedTextClass)}>{detail}</div> : null}
     </div>
   );
 }
@@ -249,7 +272,7 @@ function LiquidityDashboard({ brief }: { brief: PublicMarketBriefData }) {
         <div className="grid gap-3 md:grid-cols-[180px_1fr]">
           <div className={nestedPanelClass}>
             <div className="text-[11px] text-[#8f9bb0]">امتیاز نقدینگی</div>
-            <div className={cn("mt-2 text-4xl font-black tabular-nums", scoreTone(liquidity.score))}>
+            <div className={cn("mt-2 text-3xl font-black tabular-nums md:text-4xl", scoreTone(liquidity.score))}>
               {liquidity.score === null ? "ناموجود" : `${formatNumber(liquidity.score, 0)}`}
             </div>
             <div className="mt-1 text-xs text-[#aab6ca]">{liquidity.labelFa}</div>
@@ -340,7 +363,7 @@ function AnalysisEngineScores({ brief }: { brief: PublicMarketBriefData }) {
         {engines.map((engine) => (
           <div key={engine.id} className={nestedPanelClass}>
             <div className="min-h-10 text-xs font-black leading-5 text-[#eef3fc]">{engine.labelFa}</div>
-            <div className={cn("mt-2 text-2xl font-black tabular-nums", scoreTone(engine.score))}>{engine.score === null ? "ناموجود" : `${formatNumber(engine.score, 0)}`}</div>
+            <div className={cn("mt-2 text-xl font-black tabular-nums", scoreTone(engine.score))}>{engine.score === null ? "ناموجود" : `${formatNumber(engine.score, 0)}`}</div>
             <div className="mt-2 text-[11px] leading-5 text-[#aab6ca]">
               <div>{engine.statusFa}</div>
               <div>پوشش: {engine.coverage === null ? "ناموجود" : percent(engine.coverage)}</div>
@@ -354,49 +377,53 @@ function AnalysisEngineScores({ brief }: { brief: PublicMarketBriefData }) {
 }
 
 function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
+  const assetPairs = Array.from({ length: Math.ceil(assets.length / 2) }, (_, index) => assets.slice(index * 2, index * 2 + 2));
   return (
     <Card className={reportCardClass}>
       <CardHeader>
         <div>
-          <CardTitle className="text-[#eef3fc]">جدول فشرده ۱۰ دارایی</CardTitle>
-          <CardDescription>تمام دارایی‌های فهرست پایش ایران نمایش داده می‌شوند؛ عوامل نامرتبط از گزارش عمومی حذف شده‌اند.</CardDescription>
+          <CardTitle className="text-base text-[#eef3fc] md:text-lg">جدول فشرده ۱۰ دارایی</CardTitle>
+          <CardDescription className={mutedTextClass}>تمام دارایی‌های فهرست پایش ایران نمایش داده می‌شوند؛ عوامل نامرتبط از گزارش عمومی حذف شده‌اند.</CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
-          <thead className="text-xs text-[#8f9bb0]">
-            <tr className="border-b border-[#2f3d58]">
-              <th className="px-3 py-2 text-right">دارایی</th>
-              <th className="px-3 py-2 text-right">وضعیت / برداشت</th>
-              <th className="px-3 py-2 text-right">امتیاز اثر</th>
-              <th className="px-3 py-2 text-right">اطمینان</th>
-              <th className="px-3 py-2 text-right">پوشش داده</th>
-              <th className="px-3 py-2 text-right">محرک اصلی</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assets.map((asset) => (
-              <tr key={asset.symbol} className="border-b border-[#2f3d58] last:border-b-0">
-                <td className="px-3 py-3">
-                  <div className="font-black text-[#eef3fc]">{asset.symbol}</div>
-                  <div className="text-xs text-[#8f9bb0]">{asset.persianName}</div>
-                </td>
-                <td className="px-3 py-3">
-                  <Badge variant={asset.confidence < 45 || asset.dataCoverage < 50 ? "warning" : "outline"}>{asset.biasFa}</Badge>
-                </td>
-                <td className={cn("px-3 py-3 font-black", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "بدون عدد عمومی" : formatNumber(asset.impactScore, 0)}</td>
-                <td className="px-3 py-3">
-                  <div className="flex min-w-24 items-center gap-2">
-                    <Progress value={asset.confidence} className="w-20" indicatorClassName={confidenceTone(asset.confidence)} />
-                    <span className="text-xs">{percent(asset.confidence)}</span>
+      <CardContent>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {assetPairs.map((pair, pairIndex) => (
+            <div key={`asset-pair-${pairIndex}`} className="rounded-[15px] border border-[#26334a] bg-[#0f1724]/85 p-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                {pair.map((asset) => (
+                  <div key={asset.symbol} className="min-w-0 rounded-[12px] border border-[#2b3850] bg-[#111a28]/80 p-2">
+                    <div className="flex items-center gap-2">
+                      {assetIcon(asset.symbol)}
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-black text-[#eef3fc]">{asset.symbol}</div>
+                        <div className="truncate text-[11px] text-[#9aa8bd]">{asset.persianName}</div>
+                      </div>
+                    </div>
+                    <Badge className="mt-2 max-w-full justify-center truncate text-[10px]" variant={asset.confidence < 45 || asset.dataCoverage < 50 ? "warning" : "outline"}>
+                      {asset.biasFa}
+                    </Badge>
+                    <div className="mt-2 grid gap-1 text-[11px] leading-5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={mutedTextClass}>اثر</span>
+                        <span className={cn("font-black tabular-nums", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "ناموجود" : formatNumber(asset.impactScore, 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={mutedTextClass}>اعتماد</span>
+                        <span className="font-bold tabular-nums text-[#eef3fc]">{percent(asset.confidence)}</span>
+                      </div>
+                      <Progress value={asset.confidence} className="h-1.5 bg-[#263044]" indicatorClassName={confidenceTone(asset.confidence)} />
+                      <div className="truncate text-[10px] text-[#9aa8bd]" title={asset.coverageLabelFa}>
+                        {asset.coverageLabelFa}
+                      </div>
+                      <div className="line-clamp-2 min-h-10 text-[10px] leading-5 text-[#aab6ca]">{asset.mainDriverFa}</div>
+                    </div>
                   </div>
-                </td>
-                <td className="px-3 py-3 text-xs text-muted-foreground">{asset.coverageLabelFa}</td>
-                <td className="max-w-72 px-3 py-3 text-xs leading-6 text-muted-foreground">{asset.mainDriverFa}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -406,14 +433,20 @@ function AssetBriefCard({ asset }: { asset: PublicAssetBrief }) {
   return (
     <Card className={cn("flex h-full flex-col", reportCardClass)}>
       <CardHeader className="items-start">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <span className="text-base text-[#eef3fc]">{asset.symbol}</span>
-            <span className="text-xs text-[#8f9bb0]">{asset.persianName}</span>
-          </CardTitle>
-          <CardDescription>{asset.statusFa}</CardDescription>
+        <div className="flex items-start gap-3">
+          {assetIcon(asset.symbol)}
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <span className="text-base text-[#eef3fc]">{asset.symbol}</span>
+              <span className="text-xs text-[#8f9bb0]">{asset.persianName}</span>
+            </CardTitle>
+            <CardDescription>{asset.statusFa}</CardDescription>
+          </div>
         </div>
-        <Badge variant={asset.confidence < 45 ? "warning" : "outline"}>{asset.freshnessLabelFa}</Badge>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={asset.confidence < 45 ? "warning" : "outline"}>{asset.freshnessLabelFa}</Badge>
+          <Badge variant="muted">{percent(asset.confidence)}</Badge>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
         <HumanReportBlock {...asset.humanized} compact />
@@ -548,7 +581,7 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
               <Badge variant="outline">{brief.dataModeFa}</Badge>
               <Badge variant="warning">بدون سیگنال معامله</Badge>
             </div>
-            <h1 className="text-3xl font-black text-[#eef3fc] md:text-4xl">گزارش فشرده وضعیت بازار کریپتو</h1>
+            <h1 className="text-2xl font-black text-[#eef3fc] md:text-3xl">گزارش فشرده وضعیت بازار کریپتو</h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-[#aab6ca]">
               {brief.targetUniverseLabelFa} · {brief.updateFrequencyLabel}
             </p>
@@ -578,7 +611,7 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
       </section>
       <AnalysisEngineScores brief={brief} />
       <AssetOverviewTable assets={brief.assets} />
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-3 lg:grid-cols-2">
         {brief.assets.map((asset) => (
           <AssetBriefCard key={asset.symbol} asset={asset} />
         ))}

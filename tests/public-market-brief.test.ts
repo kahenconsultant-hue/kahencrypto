@@ -109,7 +109,7 @@ test("humanized report blocks are valid and render human explanation before tech
   assert.match(block.human_summary, /ترون|TRX/);
 
   const rendered = renderHumanizedBlockText(block);
-  assert.ok(rendered.indexOf("۱. خلاصه انسانی") < rendered.indexOf("۴. برای رصد بعدی"));
+  assert.ok(rendered.indexOf("۱. روایت بازار") < rendered.indexOf("۴. برای رصد بعدی"));
   assert.ok(rendered.indexOf("۴. برای رصد بعدی") < rendered.indexOf("۶. جزئیات فنی"));
   assert.ok(rendered.indexOf("۶. جزئیات فنی") < rendered.indexOf("۷. جزئیات Audit"));
 });
@@ -163,6 +163,9 @@ test("public market brief component no longer contains obvious raw customer-faci
   }
   assert.match(source, /پوشش داده:/);
   assert.match(source, /اطمینان تحلیلی:/);
+  assert.match(source, /assetIconMap/);
+  assert.match(source, /assetPairs/);
+  assert.equal(source.includes("خلاصه انسانی"), false);
 });
 
 test("public brief builder avoids raw public-facing jargon outside audit details", () => {

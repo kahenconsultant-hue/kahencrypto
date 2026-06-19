@@ -49,9 +49,9 @@ export function HumanReportBlock(props: HumanReportBlockProps) {
   }
 
   return (
-    <div className={cn("space-y-3 text-xs leading-6", props.className)}>
+    <div className={cn("space-y-3 text-[12px] leading-6", props.className)}>
       <section>
-        <div className="font-black text-foreground">۱. خلاصه انسانی</div>
+        <div className="font-black text-foreground">۱. روایت بازار</div>
         <p className="mt-1 text-muted-foreground">{props.human_summary}</p>
       </section>
       <section>

@@ -531,7 +531,7 @@ export function humanizeReportBlock(rawBlock: unknown, context: HumanReportConte
 
 export function renderHumanizedBlockText(block: HumanizedReportBlock) {
   return [
-    `۱. خلاصه انسانی\n${block.human_summary}`,
+    `۱. روایت بازار\n${block.human_summary}`,
     `۲. معنی برای کاربر\n${block.user_meaning}`,
     `۳. دلیل\n${block.reasoning}`,
     `۴. برای رصد بعدی\n${block.watch_next}`,

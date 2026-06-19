@@ -658,7 +658,7 @@ export function getSourcesForAsset(asset: IntelligenceAssetSymbol, horizon?: Tim
         reliabilityScore: source.priorityScore,
         updateFrequency: `هر ${Math.max(1, Math.round(source.pollingIntervalSeconds / 60))} دقیقه`,
         currentStatus: "unavailable",
-        notes: "این منبع در registry تولیدی ثبت شده است؛ وضعیت واقعی آن از source health و آخرین اجرای ingestion خوانده می‌شود.",
+        notes: "این منبع در registry تولیدی ثبت شده است؛ وضعیت واقعی آن از سلامت منبع و آخرین اجرای ingestion بررسی می‌شود.",
       } satisfies IntelligenceSourceConfig;
     })
     .filter((source) => !horizon || source.horizonRelevance.includes(horizon));

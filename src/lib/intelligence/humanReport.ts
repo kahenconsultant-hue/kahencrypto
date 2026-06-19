@@ -1,7 +1,8 @@
 import { clamp } from "@/lib/intelligence/moduleGating";
+import { impactStatusLabelFa } from "@/lib/intelligence/assetScoring";
 
-export const HUMANIZER_VERSION = "cmip-humanizer-v1.1";
-export const NON_ADVISORY_NOTE = "این تحلیل سیگنال خرید یا فروش نیست؛ فقط خلاصه وضعیت فعلی بازار بر اساس داده‌های موجود است.";
+export const HUMANIZER_VERSION = "cmip-humanizer-v1.2";
+export const NON_ADVISORY_NOTE = "این گزارش توصیه مالی نیست؛ فقط وضعیت فعلی بازار را خلاصه می‌کند.";
 
 export type HumanizedReportBlock = {
   human_summary: string;
@@ -62,6 +63,11 @@ const forbiddenHumanJargon = [
   "اثر کلی",
   "رژیم بازار",
   "این بخش معنی عملی وضعیت فعلی را نشان می‌دهد",
+  "اکنون با این برداشت خوانده می‌شود",
+  "خوانده می‌شود",
+  "برداشت فعلی بیشتر به دلیل نامشخص بودن حرکت قیمت",
+  "این عامل با داده‌های مستقل دیگر هم‌جهت می‌شود یا نه",
+  "سناریوی ابطال",
 ];
 
 const assetPersianNames: Record<string, string> = {
@@ -77,26 +83,9 @@ const assetPersianNames: Record<string, string> = {
   ADA: "کاردانو",
 };
 
-const assetGroupLabel: Record<string, string> = {
-  USDT: "شاخص نقدینگی و ثبات",
-  BTC: "دارایی مرجع بازار",
-  ETH: "دارایی زیرساختی و ریسک‌پذیر",
-  TRX: "دارایی پرداخت و شبکه انتقال تتر",
-  TON: "دارایی اکوسیستمی",
-  SOL: "دارایی بتای بالا",
-  XRP: "دارایی حساس به خبرهای مقرراتی",
-  DOGE: "دارایی سفته‌بازانه و احساسی",
-  BNB: "دارایی وابسته به اکوسیستم صرافی",
-  ADA: "دارایی اکوسیستمی با پوشش سبک‌تر",
-};
-
 export function impactInterpretationFa(score: number | null | undefined) {
   if (typeof score !== "number" || !Number.isFinite(score)) return "اثر عددی عمومی در دسترس نیست";
-  if (score >= 30) return "فشار مثبت قابل توجه";
-  if (score >= 10) return "فشار مثبت ملایم";
-  if (score >= -9) return "تقریباً خنثی";
-  if (score >= -29) return "فشار منفی ملایم";
-  return "فشار منفی قابل توجه";
+  return impactStatusLabelFa(score);
 }
 
 export function confidenceInterpretationFa(confidence: number | null | undefined) {
@@ -136,18 +125,25 @@ export function validateHumanizedBlock(block: Partial<HumanizedReportBlock> | nu
   return humanSections.every((section) => !forbiddenHumanJargon.some((term) => section.includes(term)));
 }
 
-export function validateHumanizedMeaningDiversity(blocks: Pick<HumanizedReportBlock, "user_meaning">[]) {
+export function validateHumanizedMeaningDiversity(blocks: Pick<HumanizedReportBlock, "user_meaning">[] | Pick<HumanizedReportBlock, "user_meaning" | "reasoning">[]) {
   const meanings = blocks.map((block) => normalizeForSimilarity(block.user_meaning)).filter(Boolean);
-  if (meanings.length < 2) return { valid: true, maxSimilarity: 0 };
+  const reasonings = blocks.map((block) => "reasoning" in block ? normalizeForSimilarity(block.reasoning) : "").filter(Boolean);
+  if (meanings.length < 2 && reasonings.length < 2) return { valid: true, maxSimilarity: 0, maxMeaningSimilarity: 0, maxReasoningSimilarity: 0 };
 
-  let maxSimilarity = 0;
-  for (let i = 0; i < meanings.length; i += 1) {
-    for (let j = i + 1; j < meanings.length; j += 1) {
-      maxSimilarity = Math.max(maxSimilarity, similarityRatio(meanings[i], meanings[j]));
+  const maxFor = (values: string[]) => {
+    let maxSimilarity = 0;
+    for (let i = 0; i < values.length; i += 1) {
+      for (let j = i + 1; j < values.length; j += 1) {
+        maxSimilarity = Math.max(maxSimilarity, similarityRatio(values[i], values[j]));
+      }
     }
-  }
+    return maxSimilarity;
+  };
+  const maxMeaningSimilarity = maxFor(meanings);
+  const maxReasoningSimilarity = maxFor(reasonings);
+  const maxSimilarity = Math.max(maxMeaningSimilarity, maxReasoningSimilarity);
 
-  return { valid: maxSimilarity <= 0.4, maxSimilarity };
+  return { valid: maxSimilarity <= 0.35, maxSimilarity, maxMeaningSimilarity, maxReasoningSimilarity };
 }
 
 function coerceNumber(value: unknown): number | null {
@@ -179,8 +175,8 @@ function similarityRatio(a: string, b: string) {
 
 function impactHumanSentence(score: number | null | undefined) {
   if (typeof score !== "number" || !Number.isFinite(score)) return "داده عددی کافی برای برداشت جهت‌دار وجود ندارد.";
-  if (score >= 30) return "فشار مثبت قابل توجه دیده می‌شود، ولی همچنان نباید به‌عنوان سیگنال معامله تفسیر شود.";
-  if (score >= 10) return "نشانه‌های مثبت ملایم دیده می‌شود، اما برای قضاوت محکم‌تر باید داده‌های بعدی هم‌جهت باشند.";
+  if (score >= 30) return "فشار مثبت قابل توجه دیده می‌شود، اما این به معنی توصیه معامله نیست.";
+  if (score >= 10) return "نشانه‌های مثبت ملایم دیده می‌شود، اما باید در بروزرسانی‌های بعدی هم ادامه پیدا کند.";
   if (score >= -9) return "وضعیت فعلی تقریباً خنثی است و هنوز جهت مشخصی دیده نمی‌شود.";
   if (score >= -29) return "فشار منفی ملایم دیده می‌شود، اما هنوز آن‌قدر قوی نیست که نتیجه قطعی بدهد.";
   return "فشار منفی قابل توجه است و ریسک بازار بالا رفته است.";
@@ -207,12 +203,12 @@ function readableDriver(driver: string) {
   const state = sanitizeHumanText(rawState || "");
   if (/رژیم|فضای کلی بازار/.test(label)) return "فضای کلی بازار";
   if (/مومنتوم|قیمت/.test(label)) {
-    if (/فشار|منفی/.test(state)) return "ضعف حرکت قیمت";
+    if (/فشار|منفی/.test(state)) return "قیمت هنوز قدرت صعودی واضح نشان نمی‌دهد";
     if (/حمایت|مثبت/.test(state)) return "بهبود حرکت قیمت";
-    return "نامشخص بودن حرکت قیمت";
+    return "قیمت هنوز جهت روشن و قوی ندارد";
   }
   if (/حجم|نقدشوندگی/.test(label)) {
-    if (/فشار|منفی/.test(state)) return "نبود حمایت قوی از حجم معاملات";
+    if (/فشار|منفی/.test(state)) return "حجم معاملات حمایت قوی ایجاد نکرده";
     if (/حمایت|مثبت/.test(state)) return "حمایت بهتر از سمت حجم معاملات";
     return "حجم معاملات بدون پیام روشن";
   }
@@ -222,7 +218,7 @@ function readableDriver(driver: string) {
     return "نبود پیام قوی از سمت استیبل‌کوین‌ها";
   }
   if (/ETF/.test(label)) {
-    if (/فشار|منفی/.test(state)) return "خروج یا ضعف جریان ETF";
+    if (/فشار|منفی/.test(state)) return "جریان ETF فعلاً به نفع بازار نیست";
     if (/حمایت|مثبت/.test(state)) return "حمایت جریان ETF";
     return "خنثی بودن جریان ETF";
   }
@@ -232,7 +228,7 @@ function readableDriver(driver: string) {
     return "هم‌جهت نبودن محرک‌های کلان";
   }
   if (/خبر|سنتیمنت|روایت|اکوسیستم|رگولاتوری/.test(label)) {
-    if (/فشار|منفی/.test(state)) return "فضای خبری ضعیف‌تر";
+    if (/فشار|منفی/.test(state)) return "خبر یا سنتیمنت معتبر جهت مثبت قوی نداده";
     if (/حمایت|مثبت/.test(state)) return "خبر یا فضای ذهنی بهتر بازار";
     return "خبرهای بدون جهت روشن";
   }
@@ -243,7 +239,12 @@ function readableDriver(driver: string) {
 
 function sanitizeHumanText(value: string) {
   return value
-    .replace(/در وضعیت سناریویی خوانده می‌شود/g, "با برداشت محتاطانه خوانده می‌شود")
+    .replace(/در وضعیت سناریویی خوانده می‌شود/g, "فعلاً باید با احتیاط بررسی شود")
+    .replace(/اکنون با این برداشت خوانده می‌شود/g, "برداشت فعلی این است")
+    .replace(/خوانده می‌شود/g, "بررسی می‌شود")
+    .replace(/برداشت فعلی بیشتر به دلیل نامشخص بودن حرکت قیمت/g, "دلیل اصلی این است که قیمت هنوز قدرت صعودی واضح نشان نمی‌دهد")
+    .replace(/این عامل با داده‌های مستقل دیگر هم‌جهت می‌شود یا نه/g, "قیمت، حجم و خبرها هم‌جهت می‌شوند یا نه")
+    .replace(/سناریوی ابطال/g, "شرط بازنگری")
     .replace(/رژیم بازار با داده محدود/g, "فضای کلی بازار با داده ناقص")
     .replace(/رژیم بازار/g, "فضای کلی بازار")
     .replace(/اثر کلی بازار/g, "برداشت کلی")
@@ -255,7 +256,7 @@ function sanitizeHumanText(value: string) {
     .replace(/نیازمند تأیید/g, "در انتظار روشن‌تر شدن")
     .replace(/داده عمیق محدود است/g, "داده‌های عمیق بازار کامل نیست")
     .replace(/این دارایی را باید در کنار محرک‌های کلان، نقدینگی و کیفیت داده خواند/g, "این دارایی باید با چند داده مستقل بررسی شود")
-    .replace(/خروجی به‌تنهایی برای تصمیم‌گیری کافی نیست/g, "این برداشت برای تصمیم‌گیری مستقل کافی نیست")
+    .replace(/خروجی به‌تنهایی برای تصمیم‌گیری کافی نیست/g, "این گزارش فقط یک خلاصه از وضعیت فعلی است")
     .replace(/این بخش معنی عملی وضعیت فعلی را نشان می‌دهد/g, "این بخش برداشت قابل فهم وضعیت فعلی را توضیح می‌دهد");
 }
 
@@ -274,14 +275,31 @@ function sentenceList(items: string[]) {
   return `${items.slice(0, -1).join("، ")} و ${items[items.length - 1]}`;
 }
 
-function assetSummary(context: HumanReportContext, impactScore: number | null, drivers: string[]) {
+function assetSummary(context: HumanReportContext, impactScore: number | null) {
   const symbol = symbolFromContext(context);
-  const name = assetNameFromContext(context);
-  if (symbol === "USDT") {
-    return "تتر در این گزارش به‌عنوان نشانه نقدینگی و ثبات بازار سنجیده می‌شود، نه دارایی مناسب برداشت صعودی یا نزولی.";
-  }
-  const group = symbol ? assetGroupLabel[symbol] : undefined;
-  return sanitizeHumanText(`${name}${group ? ` به‌عنوان ${group}` : ""} اکنون با این برداشت خوانده می‌شود: ${impactHumanSentence(impactScore)}`);
+  const status = impactStatusLabelFa(impactScore);
+  if (symbol === "USDT") return "تتر شاخص نقدینگی و ثبات بازار است؛ جهت سرمایه‌گذاری برای آن موضوع اصلی این گزارش نیست.";
+  const summaries: Record<string, string> = {
+    BTC: impactScore !== null && impactScore <= -10
+      ? "بیت‌کوین کمی تحت فشار است؛ ETF، دلار و بازده اوراق باید با هم رصد شوند."
+      : "بیت‌کوین فعلاً جهت روشن ندارد؛ ETF، دلار و بازده اوراق هنوز پیام واحدی نمی‌دهند.",
+    ETH: impactScore !== null && impactScore <= -10
+      ? "اتریوم کمی متمایل به ضعف است؛ جریان ETF و Nasdaq هنوز حمایت قوی نشان نمی‌دهند."
+      : "اتریوم فعلاً خنثی است؛ ETF، Nasdaq و حجم معاملات باید کنار هم دیده شوند.",
+    TRX: "ترون فعلاً خنثی است؛ حجم و زمینه استفاده از تتر روی TRON هنوز نشانه مثبت قوی نمی‌دهند.",
+    TON: "تون فعلاً به خبرهای اکوسیستم وابسته است؛ قیمت و حجم هنوز تأیید قوی نداده‌اند.",
+    SOL: "سولانا هنوز به ریسک‌پذیری بازار حساس است؛ حجم و فیوچرز باید با احتیاط دنبال شوند.",
+    XRP: "ریپل فعلاً به خبرهای مقرراتی و واکنش قیمت وابسته است؛ جهت قوی هنوز دیده نمی‌شود.",
+    DOGE: "دوج‌کوین فعلاً موج احساسی یا حجم غیرعادی قدرتمند ندارد.",
+    BNB: "بی‌ان‌بی فعلاً به خبرهای اکوسیستم Binance و حجم معاملات حساس است.",
+    ADA: "کاردانو فعلاً با داده سبک‌تری بررسی می‌شود؛ مومنتوم و خبرهای اکوسیستم هنوز باید بهتر شوند.",
+    DXY: "شاخص دلار هنوز باید کنار بازده اوراق و واکنش کریپتو رصد شود.",
+    Gold: "طلا بیشتر نشانه فضای احتیاط بازار است و به‌تنهایی پیام مستقیم برای کریپتو نمی‌دهد.",
+    Nasdaq: "نزدک فعلاً شاخص مهم اشتهای ریسک است؛ واکنش بیت‌کوین و اتریوم باید کنار آن دیده شود.",
+    US10Y: "بازده ۱۰ ساله آمریکا هنوز یکی از فشارسنج‌های اصلی برای دارایی‌های ریسکی است.",
+  };
+  if (symbol && summaries[symbol]) return summaries[symbol];
+  return `${assetNameFromContext(context)} فعلاً ${status} است و باید با داده‌های بعدی دوباره سنجیده شود.`;
 }
 
 function assetMeaning(context: HumanReportContext, confidence: number | null, coverage: number | null, impactScore: number | null) {
@@ -291,16 +309,16 @@ function assetMeaning(context: HumanReportContext, confidence: number | null, co
     return "برای کاربر عادی، تغییر وضعیت تتر بیشتر درباره کیفیت نقدینگی و ریسک ثبات بازار مهم است، نه انتخاب جهت قیمت.";
   }
   const assetSpecificMeaning: Record<string, string> = {
-    BTC: "برای بیت‌کوین، برداشت فعلی بیشتر به رابطه ETF، دلار و بازده اوراق وابسته است؛ تغییر این سه مورد می‌تواند نگاه بازار را سریع عوض کند.",
+    BTC: "برای بیت‌کوین، تصمیم عجولانه پرریسک است؛ ETF، دلار و بازده اوراق هنوز باید با هم هم‌جهت شوند.",
     ETH: "برای اتریوم، کاربر باید جداگانه ببیند آیا ETF، Nasdaq و حجم معاملات یک پیام مشترک می‌دهند یا هر کدام مسیر متفاوتی دارند.",
-    TRX: "برای ترون، پیام اصلی از ترکیب حجم معاملات و نقش شبکه TRON در جابه‌جایی تتر می‌آید؛ بدون بهبود این دو، برداشت محتاطانه‌تر است.",
-    TON: "برای تون، اهمیت اصلی در خبرهای اکوسیستم و واکنش واقعی بازار است؛ خبر بدون رشد حجم یا قیمت نباید پررنگ شود.",
+    TRX: "برای ترون، تا وقتی حجم و زمینه استفاده از USDT روی TRON بهتر نشود، نمی‌شود برداشت مثبت‌تری داشت.",
+    TON: "برای تون، معیار اصلی وضعیت اکوسیستم و پذیرش آن در معاملات است؛ تا زمانی که حجم یا تقاضای تازه دیده نشود، بهتر است صرفاً رصد شود.",
     SOL: "برای سولانا، کاربر باید بداند این دارایی معمولاً به ریسک‌پذیری بازار حساس‌تر است؛ حجم و رفتار فیوچرز می‌توانند برداشت را تغییر دهند.",
-    XRP: "برای ریپل، خبرهای مقرراتی و واکنش قیمت باید با هم دیده شوند؛ فقط یکی از این دو برای برداشت قوی کافی نیست.",
+    XRP: "در ریپل، محرک اصلی از مسیر پرونده‌های قانونی و رفتار قیمت می‌آید؛ بدون واکنش واقعی بازار به خبر، وزن تحلیل پایین می‌ماند.",
     DOGE: "برای دوج‌کوین، موج احساسی و حجم غیرعادی مهم‌تر از تحلیل‌های سنگین‌تر است؛ نبود این دو یعنی بهتر است فقط دنبال شود.",
     BNB: "برای بی‌ان‌بی، ریسک و خبرهای اکوسیستم Binance کنار حجم معاملات تعیین‌کننده‌ترند؛ ضعف در یکی از این دو می‌تواند برداشت را محتاط کند.",
-    ADA: "برای کاردانو، تغییر مومنتوم و خبرهای اکوسیستم باید همزمان بهتر شوند؛ در غیر این صورت برداشت محتاطانه باقی می‌ماند.",
-    DXY: "برای شاخص دلار، کاربر باید ببیند قدرت دلار فشار بیشتری روی دارایی‌های ریسکی می‌گذارد یا آرام‌تر می‌شود.",
+    ADA: "برای کاردانو، نشانه مهم ترکیب رشد قیمت با فعالیت اکوسیستم است؛ اگر این دو کنار هم نیایند، نگاه پایشی می‌ماند.",
+    DXY: "برای شاخص دلار، باید دید قدرت دلار فشار بیشتری روی دارایی‌های ریسکی می‌گذارد یا آرام‌تر می‌شود.",
     Gold: "برای طلا، معنی اصلی در تشخیص فضای احتیاط بازار است؛ رشد طلا همیشه برای کریپتو مثبت نیست و باید کنار دلار و خبرهای ریسک‌گریزی خوانده شود.",
     Nasdaq: "برای نزدک، پیام اصلی درباره اشتهای ریسک در دارایی‌های فناوری است؛ اگر نزدک ضعیف شود، بیت‌کوین و اتریوم هم معمولاً حساس‌تر می‌شوند.",
     US10Y: "برای بازده ۱۰ ساله آمریکا، نکته مهم فشار نرخ بهره بر دارایی‌های ریسکی است؛ افزایش آن می‌تواند تحمل ریسک در کریپتو را کمتر کند.",
@@ -335,7 +353,7 @@ function assetMeaning(context: HumanReportContext, confidence: number | null, co
   if (symbol === "BTC") return "برای بیت‌کوین، نبود جهت روشن یعنی باید همزمان جریان ETF، دلار و بازده اوراق را دنبال کرد.";
   if (symbol === "ETH") return "برای اتریوم، برداشت خنثی یعنی باید واکنش آن به Nasdaq، ETF و حجم معاملات جداگانه بررسی شود.";
   if (symbol === "TRX") return "برای ترون، نبود جهت روشن یعنی حجم معاملات و زمینه استفاده از تتر روی شبکه TRON مهم‌ترین نقاط رصد هستند.";
-  if (symbol === "TON") return "برای تون، برداشت فعلی بیشتر به معنی انتظار برای خبر معتبر اکوسیستم و تأیید آن در قیمت و حجم است.";
+  if (symbol === "TON") return "برای تون، وضعیت فعلی بیشتر به معنی انتظار برای خبر معتبر اکوسیستم و تأیید آن در قیمت و حجم است.";
   if (symbol === "SOL") return "برای سولانا، خنثی بودن یعنی باید دید ریسک‌پذیری بازار و حجم معاملات دوباره هم‌جهت می‌شوند یا نه.";
   if (symbol === "XRP") return "برای ریپل، نبود جهت روشن یعنی خبرهای مقرراتی و واکنش قیمت باید با هم دیده شوند.";
   if (symbol === "DOGE") return "برای دوج‌کوین، وضعیت خنثی یعنی موج احساسی یا حجم غیرعادی هنوز پیام کافی نداده است.";
@@ -370,7 +388,7 @@ function assetReasoning(context: HumanReportContext, drivers: string[], coverage
   const symbol = symbolFromContext(context);
   if (symbol === "USDT") {
     const reasons = driverReasons(drivers, ["ثبات قیمت تتر", "روند عرضه USDT", "وضعیت ارزش بازار استیبل‌کوین‌ها"]);
-    return `برداشت فعلی از تتر بر پایه ${sentenceList(reasons)} شکل گرفته است. داده‌های شبکه یا ناشر فقط وقتی معتبرند که منبع مستقیم داشته باشند.`;
+    return `دلیل اصلی درباره تتر، ${sentenceList(reasons)} است. داده‌های شبکه یا ناشر فقط وقتی معتبرند که منبع مستقیم داشته باشند.`;
   }
   const fallback = symbol === "BTC" || symbol === "ETH"
     ? ["حرکت قیمت", "جریان ETF در صورت وجود", "فضای کلان مثل دلار و نرخ بهره"]
@@ -378,21 +396,38 @@ function assetReasoning(context: HumanReportContext, drivers: string[], coverage
       ? ["حرکت قیمت", "حجم معاملات", "زمینه شبکه TRON و استفاده از تتر"]
       : ["حرکت قیمت", "حجم معاملات", "خبر یا فضای ذهنی بازار"];
   const reasons = driverReasons(drivers, fallback);
-  const missingNote = coverage !== null && coverage < 75 ? " بخشی از داده‌های عمیق‌تر بازار هنوز کامل نیست، بنابراین برداشت با احتیاط خوانده می‌شود." : "";
-  return `برداشت فعلی بیشتر به دلیل ${sentenceList(reasons)} شکل گرفته است.${missingNote}`;
+  const missingNote = coverage !== null && coverage < 75 ? " داده‌های عمیق مثل مشتقات یا آنچین هم هنوز کامل نیستند." : "";
+  const reasonText = sentenceList(reasons);
+  const assetSpecificReasoning: Record<string, string> = {
+    BTC: `درباره بیت‌کوین، قیمت هنوز نقش رهبری بازار را با قدرت نشان نداده و حجم هم پشتوانه قاطعی نمی‌دهد. ETF، دلار و بازده اوراق می‌توانند این برداشت را در بروزرسانی بعدی عوض کنند.${missingNote}`,
+    ETH: `در اتریوم، نبود شتاب قیمتی و کم‌رنگ بودن حجم با حساسیت آن به Nasdaq و جریان ETF ترکیب شده است. به همین دلیل حمایت بازار هنوز محکم دیده نمی‌شود.${missingNote}`,
+    TRX: `برای ترون، حجم معاملات و زمینه استفاده از تتر روی TRON هنوز پیام حمایتی روشنی نداده‌اند. اگر تقاضای شبکه یا حجم بهتر نشود، برداشت مثبت سخت‌تر می‌شود.${missingNote}`,
+    TON: `در تون، خبر اکوسیستم بدون واکنش روشن در قیمت و حجم وزن زیادی ندارد. فعلاً بازار هنوز نشان نداده که روایت TON به تقاضای واقعی تبدیل شده است.${missingNote}`,
+    SOL: `در سولانا، حساسیت بالاتر به ریسک بازار باعث می‌شود حجم و رفتار فیوچرز مهم‌تر شوند. حرکت قیمت بدون پشتوانه حجمی می‌تواند ناپایدار بماند.${missingNote}`,
+    XRP: `برای ریپل، خبرهای حقوقی یا مقرراتی فقط وقتی وزن پیدا می‌کنند که قیمت و حجم هم واکنش نشان دهند. فعلاً این تأیید همزمان قوی دیده نمی‌شود.${missingNote}`,
+    DOGE: `در دوج‌کوین، نبود موج اجتماعی پرقدرت و نبود حجم غیرعادی باعث می‌شود حرکت فعلی وزن زیادی نگیرد. این دارایی بیشتر با رفتار جمعی بازار تغییر می‌کند.${missingNote}`,
+    BNB: `در بی‌ان‌بی، رفتار قیمت باید کنار ریسک اکوسیستم Binance و حجم معاملات سنجیده شود. فعلاً این ترکیب حمایت قاطع یا فشار قطعی نمی‌سازد.${missingNote}`,
+    ADA: `برای کاردانو، شتاب قیمت و خبرهای اکوسیستم باید همزمان بهتر شوند. وقتی یکی از این دو کم‌رنگ باشد، تحلیل بیشتر حالت پایشی پیدا می‌کند.${missingNote}`,
+    DXY: `برای شاخص دلار، نکته اصلی این است که قدرت یا ضعف دلار چگونه به دارایی‌های ریسکی منتقل می‌شود. این متغیر باید کنار بازده اوراق دیده شود.${missingNote}`,
+    Gold: `برای طلا، باید جدا کرد که حرکت آن از ریسک‌گریزی بازار آمده یا از نوسان عادی دارایی امن. به همین دلیل اثر آن روی کریپتو مستقیم و ساده نیست.${missingNote}`,
+    Nasdaq: `برای نزدک، کیفیت اشتهای ریسک در سهام فناوری اهمیت دارد. اگر این شاخص حمایت ندهد، بیت‌کوین و اتریوم هم معمولاً شکننده‌تر می‌شوند.${missingNote}`,
+    US10Y: `برای بازده ۱۰ ساله آمریکا، افزایش نرخ‌ها می‌تواند هزینه نگهداری دارایی‌های ریسکی را بالا ببرد. اثر آن باید کنار دلار و واکنش قیمت کریپتو سنجیده شود.${missingNote}`,
+  };
+  if (symbol && assetSpecificReasoning[symbol]) return assetSpecificReasoning[symbol];
+  return `دلیل اصلی این است که ${reasonText}.${missingNote}`;
 }
 
 function assetWatchNext(context: HumanReportContext, drivers: string[]) {
   const symbol = symbolFromContext(context);
   if (symbol === "USDT") return "برای بروزرسانی بعدی، ثبات قیمت تتر، تغییر عرضه USDT و خبرهای معتبر درباره ناشر یا شبکه انتقال باید دنبال شود.";
-  if (symbol === "BTC") return "برای بروزرسانی بعدی، جریان ETF بیت‌کوین، تغییر DXY/US10Y، حجم معاملات و حرکت قیمت باید زیر نظر باشد.";
+  if (symbol === "BTC") return "در بروزرسانی بعدی باید ETF بیت‌کوین، تغییر DXY/US10Y، حجم معاملات و حرکت قیمت با هم بررسی شوند.";
   if (symbol === "ETH") return "برای بروزرسانی بعدی، جریان ETF اتریوم، وضعیت Nasdaq، حجم معاملات و حرکت قیمت اتریوم مهم‌ترند.";
   if (symbol === "TRX") return "برای بروزرسانی بعدی، حجم معاملات TRX، تغییر قیمت و هر داده معتبر درباره استفاده از USDT روی شبکه TRON باید دنبال شود.";
   if (symbol === "DOGE") return "برای بروزرسانی بعدی، تغییر حجم، حرکت قیمت و موج‌های خبری یا اجتماعی مرتبط باید دنبال شود.";
   if (symbol === "BNB") return "برای بروزرسانی بعدی، خبرهای اکوسیستم Binance، حجم معاملات و تغییر حرکت قیمت BNB مهم‌ترند.";
   if (symbol === "XRP") return "برای بروزرسانی بعدی، خبرهای مقرراتی، حجم معاملات و تغییر حرکت قیمت XRP باید زیر نظر باشد.";
   if (symbol === "TON") return "برای بروزرسانی بعدی، خبرهای اکوسیستم TON، حجم معاملات و تغییر حرکت قیمت باید بررسی شود.";
-  if (symbol === "SOL") return "برای بروزرسانی بعدی، حجم معاملات، حرکت قیمت و نشانه‌های ریسک در بازار فیوچرز سولانا باید دنبال شود.";
+  if (symbol === "SOL") return "در بروزرسانی بعدی باید حجم معاملات، حرکت قیمت و نشانه‌های ریسک در بازار فیوچرز سولانا دنبال شود.";
   if (symbol === "ADA") return "برای بروزرسانی بعدی، حرکت قیمت، حجم معاملات و خبرهای اکوسیستم کاردانو باید زیر نظر باشد.";
   if (symbol === "DXY") return "برای بروزرسانی بعدی، تغییر شاخص دلار، بازده اوراق و واکنش بیت‌کوین و اتریوم باید دنبال شود.";
   if (symbol === "Gold") return "برای بروزرسانی بعدی، تغییر طلا، شدت خبرهای ریسک‌گریز و رفتار دلار باید کنار هم بررسی شود.";
@@ -405,8 +440,8 @@ function assetWatchNext(context: HumanReportContext, drivers: string[]) {
 function driverSummary(context: HumanReportContext) {
   const title = context.titleFa ?? "این محرک";
   const direction = context.directionFa ?? context.statusFa ?? "";
-  if (/حمایت|مثبت|بهتر/.test(direction)) return `${title} فعلاً می‌تواند کمی از فشار بازار کم کند، اما برای برداشت محکم باید در داده‌های بعدی هم ادامه پیدا کند.`;
-  if (/فشار|ریسک|منفی/.test(direction)) return `${title} فعلاً نشانه‌ای از سخت‌تر شدن شرایط بازار می‌دهد و باید با سایر داده‌ها سنجیده شود.`;
+  if (/حمایت|مثبت|بهتر/.test(direction)) return `${title} فعلاً می‌تواند کمی از فشار بازار کم کند، اما باید در داده‌های بعدی هم ادامه پیدا کند.`;
+  if (/فشار|ریسک|منفی/.test(direction)) return `${title} فعلاً شرایط بازار را سخت‌تر می‌کند و باید کنار قیمت و حجم سنجیده شود.`;
   return sanitizeHumanText(`${title} فعلاً پیام یک‌دست و روشن برای بازار نمی‌دهد.`);
 }
 
@@ -416,14 +451,14 @@ function driverMeaning(context: HumanReportContext) {
   if (/استیبل/.test(title)) return "برای کاربر عادی یعنی کیفیت نقدینگی نقدی بازار هنوز یکی از نقاط اصلی رصد است.";
   if (/کلان|دلار|اوراق/.test(title)) return "برای کاربر عادی یعنی فضای دلار، نرخ بهره و دارایی‌های ریسکی می‌تواند روی رمزارزها فشار یا آرامش ایجاد کند.";
   if (/سنتیمنت|خبر/.test(title)) return "برای کاربر عادی یعنی خبرهای مهم می‌توانند برداشت بازار را تغییر دهند، اما خبر ضعیف یا تکراری کافی نیست.";
-  return "برای کاربر عادی یعنی این عامل فقط بخشی از تصویر بازار است و باید کنار بقیه داده‌ها خوانده شود.";
+  return "برای کاربر عادی یعنی این عامل فقط بخشی از تصویر بازار است و باید کنار بقیه داده‌ها بررسی شود.";
 }
 
 function marketSummary(rawBlock: Record<string, unknown>, context: HumanReportContext, impactScore: number | null, confidence: number | null) {
   const summary = coerceString(rawBlock.summaryFa) ?? context.reasoningFa;
   if (summary && !containsForbiddenHumanJargon(summary)) return summary;
   if (confidence !== null && confidence < 45) return "بازار هنوز تصویر روشنی نمی‌دهد و بهتر است فعلاً با نگاه احتیاطی دنبال شود.";
-  return sanitizeHumanText(`در نمای کلی بازار، ${impactHumanSentence(impactScore)} چند محرک اصلی باید همزمان بررسی شوند، چون یک داده تنها برای برداشت نهایی کافی نیست.`);
+  return "بازار کریپتو فعلاً جهت قطعی ندارد. نقدینگی تحت فشار است و جریان ETF هم حمایت قوی نشان نمی‌دهد. بنابراین وضعیت کلی بیشتر احتیاطی است تا صعودی یا نزولی قطعی.";
 }
 
 function containsForbiddenHumanJargon(value: string) {
@@ -453,13 +488,13 @@ export function humanizeReportBlock(rawBlock: unknown, context: HumanReportConte
       : context.kind === "market"
         ? "برای بروزرسانی بعدی، تغییر دلار، بازده اوراق، نقدینگی استیبل‌کوین و جریان ETF باید کنار هم بررسی شوند."
         : context.kind === "driver"
-          ? "در بروزرسانی بعدی باید دید این عامل با قیمت، حجم یا داده‌های مستقل دیگر هم‌جهت می‌شود یا نه."
+          ? "در بروزرسانی بعدی باید دید آیا قیمت، حجم و خبرها هم‌جهت می‌شوند یا نه."
           : "در بروزرسانی بعدی، تغییر داده‌های اصلی و کیفیت پوشش باید دنبال شود.");
 
   return {
     human_summary:
       context.kind === "asset"
-        ? assetSummary(context, impactScore, drivers)
+        ? assetSummary(context, impactScore)
         : context.kind === "driver"
           ? driverSummary(context)
           : context.kind === "market"

@@ -687,7 +687,7 @@ function geopoliticalShockAlert(): SmartAlert | null {
     timeframe: "24h",
     affectedAssets: ["BTC", "ETH", "SOL", "USDT", "Gold", "DXY"],
     titleFa: "ریسک ژئوپلیتیک روی نقشه دارایی‌ها فعال شده است",
-    reasoningFa: `امتیاز ریسک ژئوپلیتیک ${geopolitical.toFixed(0)}/100 است و هم‌زمان Gold ${gold.toFixed(2)}٪، DXY ${dxy.toFixed(2)}٪ و VIX ${vix.toFixed(2)}٪ تغییر کرده‌اند. این ترکیب معمولاً دارایی‌های دفاعی را تقویت و دارایی‌های پرریسک مثل SOL و ETH را حساس‌تر می‌کند؛ نقش BTC فقط وقتی شبیه hedge خوانده می‌شود که همبستگی BTC/Gold آن را تأیید کند.`,
+    reasoningFa: `امتیاز ریسک ژئوپلیتیک ${geopolitical.toFixed(0)}/100 است و هم‌زمان Gold ${gold.toFixed(2)}٪، DXY ${dxy.toFixed(2)}٪ و VIX ${vix.toFixed(2)}٪ تغییر کرده‌اند. این ترکیب معمولاً دارایی‌های دفاعی را تقویت و دارایی‌های پرریسک مثل SOL و ETH را حساس‌تر می‌کند؛ نقش BTC فقط وقتی شبیه hedge در نظر گرفته می‌شود که همبستگی BTC/Gold آن را تأیید کند.`,
     triggerCondition: "geopolitical_event_score >= 58 + at least two defensive confirmations from Gold/DXY/VIX/BTC",
     evidence: [`geopolitical score ${geopolitical.toFixed(0)}/100`, `Gold ${gold.toFixed(2)}٪`, `DXY ${dxy.toFixed(2)}٪`, `VIX ${vix.toFixed(2)}٪`, correlationConfirmation.explanation],
     causalChain: `خبر/ریسک ژئوپلیتیک ↑ → تقاضای دفاعی برای Gold/DXY یا نوسان ↑ → کاهش اشتهای ریسک در ETH/SOL و ابهام در روایت BTC. ${correlationConfirmation.explanation}`,

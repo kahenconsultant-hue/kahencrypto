@@ -13,7 +13,12 @@ import {
   weightedImpactScore,
   type PublicFactorScore,
 } from "@/lib/intelligence/assetScoring";
-import { HUMANIZER_VERSION, humanizeReportBlock, type HumanizedReportBlock } from "@/lib/intelligence/humanReport";
+import {
+  HUMANIZER_VERSION,
+  humanizeReportBlock,
+  validateHumanizedMeaningDiversity,
+  type HumanizedReportBlock,
+} from "@/lib/intelligence/humanReport";
 import { capPublicConfidence, clamp, forecastPublicBadgeState } from "@/lib/intelligence/moduleGating";
 import {
   getDashboardForecastValidationCenter,
@@ -162,16 +167,16 @@ const liveQualities = new Set(["live", "partial_live", "delayed", "proxy"]);
 let marketDataCache: { expiresAt: number; data: PublicMarketDataMap } | null = null;
 
 const ASSET_INVALIDATION_FA: Record<TargetAssetSymbol, string> = {
-  USDT: "سناریوی ابطال: اگر peg پایدار بماند، عرضه USDT بهبود یابد و خبر معتبر جدید درباره ریسک شبکه/ناشر ثبت نشود، ریسک تتر باید بازنگری شود.",
-  BTC: "سناریوی ابطال: اگر DXY/US10Y آرام شوند و جریان ETF بیت‌کوین در دو بروزرسانی متوالی مثبت شود، سناریوی فشار بیت‌کوین تضعیف می‌شود.",
-  TRX: "سناریوی ابطال: اگر قیمت و حجم TRX بهتر شود و داده‌های مرتبط با نقدینگی شبکه/USDT روی TRON تأییدکننده باشند، خوانش خنثی باید بازنگری شود.",
-  ETH: "سناریوی ابطال: اگر ETF اتریوم و Nasdaq همزمان بهبود نشان دهند، سناریوی فشار اتریوم باید بازنگری شود.",
-  TON: "سناریوی ابطال: اگر خبرهای اکوسیستم TON با رشد قیمت و حجم تأیید شوند، خوانش خنثی یا فشار محدود باید بازنگری شود.",
-  SOL: "سناریوی ابطال: اگر مومنتوم قیمت و حجم سولانا با کاهش ریسک فیوچرز همراه شود، سناریوی فشار سولانا تضعیف می‌شود.",
-  XRP: "سناریوی ابطال: اگر خبرهای رگولاتوری XRP مثبت شوند و همزمان مومنتوم قیمت بهبود یابد، سناریوی فشار تضعیف می‌شود.",
-  DOGE: "سناریوی ابطال: اگر سنتیمنت مثبت DOGE با افزایش حجم و شکست مومنتوم تأیید شود، خوانش خنثی باید بازنگری شود.",
-  BNB: "سناریوی ابطال: اگر ریسک اکوسیستم Binance کاهش یابد و حجم/مومنتوم BNB بهتر شود، سناریوی فشار BNB تضعیف می‌شود.",
-  ADA: "سناریوی ابطال: اگر مومنتوم ADA و سنتیمنت اکوسیستم همزمان بهتر شوند، خوانش خنثی باید بازنگری شود.",
+  USDT: "شرط بازنگری: اگر peg پایدار بماند، عرضه USDT بهبود یابد و خبر معتبر جدید درباره ریسک شبکه/ناشر ثبت نشود، ریسک تتر باید بازنگری شود.",
+  BTC: "شرط بازنگری: اگر DXY/US10Y آرام شوند و جریان ETF بیت‌کوین در دو بروزرسانی متوالی مثبت شود، سناریوی فشار بیت‌کوین تضعیف می‌شود.",
+  TRX: "شرط بازنگری: اگر قیمت و حجم TRX بهتر شود و داده‌های مرتبط با نقدینگی شبکه/USDT روی TRON تأییدکننده باشند، برداشت خنثی باید بازنگری شود.",
+  ETH: "شرط بازنگری: اگر ETF اتریوم و Nasdaq همزمان بهبود نشان دهند، سناریوی فشار اتریوم باید بازنگری شود.",
+  TON: "شرط بازنگری: اگر خبرهای اکوسیستم TON با رشد قیمت و حجم تأیید شوند، برداشت خنثی یا فشار محدود باید بازنگری شود.",
+  SOL: "شرط بازنگری: اگر مومنتوم قیمت و حجم سولانا با کاهش ریسک فیوچرز همراه شود، سناریوی فشار سولانا تضعیف می‌شود.",
+  XRP: "شرط بازنگری: اگر خبرهای رگولاتوری XRP مثبت شوند و همزمان مومنتوم قیمت بهبود یابد، سناریوی فشار تضعیف می‌شود.",
+  DOGE: "شرط بازنگری: اگر سنتیمنت مثبت DOGE با افزایش حجم و شکست مومنتوم تأیید شود، برداشت خنثی باید بازنگری شود.",
+  BNB: "شرط بازنگری: اگر ریسک اکوسیستم Binance کاهش یابد و حجم/مومنتوم BNB بهتر شود، سناریوی فشار BNB تضعیف می‌شود.",
+  ADA: "شرط بازنگری: اگر مومنتوم ADA و سنتیمنت اکوسیستم همزمان بهتر شوند، برداشت خنثی باید بازنگری شود.",
 };
 
 function liquidityDirectionFromScore(score: number | null, pressureThreshold = -25, supportiveThreshold = 25): LiquidityLayerDirection {
@@ -472,7 +477,8 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
     hasAssetSpecificDeepData,
     networkIssuerDataMissing,
   });
-  const biasFa = classifyAssetBias(asset, weighted.impactScore, confidence, weighted.coverage);
+  const publicImpactScore = weighted.coverage < 50 && !priceDataAvailable ? null : weighted.impactScore;
+  const biasFa = classifyAssetBias(asset, publicImpactScore, confidence, weighted.coverage);
   const availableDrivers = factors
     .filter((factorItem) => factorItem.available)
     .sort((a, b) => Math.abs(b.score ?? 0) * b.weight - Math.abs(a.score ?? 0) * a.weight)
@@ -482,8 +488,7 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
   const priceSignal = prefixedSignal(signals, asset.symbol, "trend_24h");
   const dataLabel = publicDataLabel(asset, { priceDataAvailable, stablecoinDataAvailable, sentimentOnly, deepDataLimited });
   const lowCoverageLiteLabel = asset.coverageTier === "lite" && weighted.coverage < 50 && priceDataAvailable ? "فقط پایش خبری/مومنتوم محدود" : dataLabel;
-  const statusFa = asset.symbol === "USDT" ? "پایش ثبات/ریسک" : weighted.coverage < 50 ? lowCoverageLiteLabel : biasFa;
-  const publicImpactScore = weighted.coverage < 50 && !priceDataAvailable ? null : weighted.impactScore;
+  const statusFa = asset.symbol === "USDT" ? "پایش ثبات/ریسک" : weighted.coverage < 50 && publicImpactScore === null ? lowCoverageLiteLabel : biasFa;
   const invalidationFa = ASSET_INVALIDATION_FA[asset.symbol];
   const driversFa =
     asset.symbol === "USDT"
@@ -892,6 +897,10 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const risk = asRecord(getDashboardRiskReport());
   const assetBuilds = TARGET_ASSETS.map((asset) => buildAssetBrief(asset, signals, marketData[asset.symbol]));
   const assets = assetBuilds.map((asset) => asset.brief);
+  const humanizedDiversity = validateHumanizedMeaningDiversity(assets.map((asset) => asset.humanized));
+  if (!humanizedDiversity.valid) {
+    console.warn("CMIP humanizer v1.2 repetition warning", humanizedDiversity);
+  }
   const averageCoverage = Math.round(assets.reduce((sum, asset) => sum + asset.dataCoverage, 0) / Math.max(1, assets.length));
   const averageConfidence = Math.round(assets.reduce((sum, asset) => sum + asset.confidence, 0) / Math.max(1, assets.length));
   const sourceHealthCoverage = sourceHealthCoverageFrom(reliability);
@@ -977,7 +986,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const marketSummaryFa =
     globalConfidence < 40
       ? "پوشش و اعتماد به کیفیت تحلیل برای سناریوی قطعی کافی نیست؛ گزارش فقط وضعیت داده و محرک‌های قابل پایش را نشان می‌دهد."
-      : `بازار هنوز تصویر قطعی ندارد. ${liquidityExplanationFa}`;
+      : "بازار کریپتو فعلاً جهت قطعی ندارد. نقدینگی تحت فشار است و جریان ETF هم حمایت قوی نشان نمی‌دهد. بنابراین وضعیت کلی بیشتر احتیاطی است تا صعودی یا نزولی قطعی.";
   const marketVerdictHumanized = humanizeReportBlock(
     {
       statusFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "نتیجه قطعی مجاز نیست" : "فضای کلی بازار با داده محدود")),
@@ -1055,6 +1064,6 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       generated_at: generatedAt,
       data_quality_status: globalCoverage >= 75 ? "پوشش داده مناسب" : globalCoverage >= 50 ? "پوشش داده متوسط" : "داده ناقص یا در انتظار روشن‌تر شدن",
     },
-    disclaimerFa: "این گزارش سیگنال خرید یا فروش نیست. خروجی C.M.I.P فقط برای تحلیل فضای بازار، ریسک، نقدینگی و سناریوهای محتمل استفاده می‌شود.",
+    disclaimerFa: "این گزارش توصیه مالی نیست؛ فقط وضعیت فعلی بازار را خلاصه می‌کند.",
   };
 }

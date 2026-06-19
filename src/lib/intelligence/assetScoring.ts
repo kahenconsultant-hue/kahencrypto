@@ -118,14 +118,22 @@ export function weightedImpactScore(factors: PublicFactorScore[]) {
   };
 }
 
+export function impactStatusLabelFa(impactScore: number | null) {
+  if (impactScore === null || !Number.isFinite(impactScore)) return "داده محدود";
+  if (impactScore >= 30) return "مثبت واضح";
+  if (impactScore >= 20) return "مثبت ملایم";
+  if (impactScore >= 10) return "خنثی متمایل به مثبت";
+  if (impactScore >= -9) return "خنثی";
+  if (impactScore >= -19) return "خنثی متمایل به منفی";
+  if (impactScore >= -29) return "احتیاطی / فشار منفی ملایم";
+  return "منفی واضح";
+}
+
 export function classifyAssetBias(asset: AssetRegistryItem, impactScore: number | null, confidence: number, coverage: number) {
   if (!asset.allowPriceBias) return "پایش ثبات/ریسک";
-  if (coverage < 50) return "فقط پایش";
-  if (confidence < 45 || impactScore === null) return "سناریویی / داده محدود";
-  if (impactScore >= 25) return "مثبت";
-  if (impactScore <= -25) return "منفی";
-  if (Math.abs(impactScore) <= 12) return "خنثی";
-  return "دوگانه / در حال گذار";
+  void confidence;
+  void coverage;
+  return impactStatusLabelFa(impactScore);
 }
 
 export function coverageLabelFa(coverage: number) {

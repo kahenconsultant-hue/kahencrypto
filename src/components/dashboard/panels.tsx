@@ -802,7 +802,7 @@ export function MarketRegimePanel() {
           </div>
         </div>
         <div className="rounded-md border bg-secondary/35 p-3">
-          <div className="metric-label">سناریوی ابطال</div>
+          <div className="metric-label">شرط بازنگری</div>
           <p className="mt-2 text-xs leading-7 text-muted-foreground">{marketRegime.invalidationFa}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {marketRegime.affectedAssets.map((asset) => (
@@ -2245,7 +2245,7 @@ export function DataQualityPanel() {
               <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
                 {String(status) === "estimated"
                   ? "این ماژول فقط در حالت توسعه از مقدار برآوردی با محدودیت استفاده می‌کند؛ در تولید، بدون منبع معتبر مقدار «ناموجود» نمایش داده می‌شود."
-                  : "وضعیت این ماژول از ثبت منابع و اتصال‌های داده خوانده می‌شود."}
+                  : "وضعیت این ماژول از ثبت منابع و اتصال‌های داده بررسی می‌شود."}
               </p>
             </div>
           ))}

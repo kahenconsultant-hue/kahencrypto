@@ -48,7 +48,7 @@ export function strictLiquidityNarrative(params: {
       ? ` این برداشت با محدودیت داده همراه است: ${params.missingInputs.slice(0, 4).join("، ") || "داده کهنه"}${params.staleCount ? ` و ${params.staleCount} سیگنال stale` : ""}.`
       : "";
   if (params.score !== null && params.score <= 20) {
-    return `طبقه‌بندی سخت‌گیرانه نقدینگی: ${params.labelFa} با امتیاز ${scoreText}. این وضعیت نباید خنثی یا حمایتی تفسیر شود؛ تا وقتی رشد استیبل‌کوین، حجم اسپات، ETF Flow یا Exchange Flow تأیید ندهند، هر رشد قیمت شکننده‌تر خوانده می‌شود.${qualityText}`;
+    return `طبقه‌بندی سخت‌گیرانه نقدینگی: ${params.labelFa} با امتیاز ${scoreText}. این وضعیت نباید خنثی یا حمایتی تفسیر شود؛ تا وقتی رشد استیبل‌کوین، حجم اسپات، ETF Flow یا Exchange Flow تأیید ندهند، هر رشد قیمت شکننده‌تر ارزیابی می‌شود.${qualityText}`;
   }
   if (params.score !== null && params.score <= 40) {
     return `طبقه‌بندی سخت‌گیرانه نقدینگی: ${params.labelFa} با امتیاز ${scoreText}. نقدینگی هنوز برای روایت expansion کافی نیست و فقط در صورت بهبود هم‌زمان استیبل‌کوین، اسپات و فشار دلار/نرخ می‌تواند بهتر شود.${qualityText}`;

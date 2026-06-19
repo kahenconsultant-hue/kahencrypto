@@ -354,7 +354,7 @@ export function deriveLiquidityRegimeV2(params: {
       : regime === "tightening"
         ? `${label}: فشار دلار/نرخ با ضعف یکی از لایه‌های نقدینگی کریپتو هم‌زمان شده است. ${layerSummary}. این خروجی expansion نیست و confidence با پوشش داده سقف‌گذاری شده است.`
         : regime === "stressed"
-          ? `${label}: چند لایه ساختاری ضعیف است یا حرکت بیشتر به leverage وابسته شده است. ${layerSummary}. تا وقتی اسپات، استیبل‌کوین یا ETF تأیید ندهند، هر رشد قیمت شکننده‌تر خوانده می‌شود.`
+          ? `${label}: چند لایه ساختاری ضعیف است یا حرکت بیشتر به leverage وابسته شده است. ${layerSummary}. تا وقتی اسپات، استیبل‌کوین یا ETF تأیید ندهند، هر رشد قیمت شکننده‌تر ارزیابی می‌شود.`
           : `${label}: سیگنال‌ها بین لایه‌های نقدینگی هم‌جهت نیستند یا ETF/Exchange Flow ناموجود است. ${layerSummary}. نتیجه directional قوی مجاز نیست مگر دو منبع مستقل دیگر هم‌سو شوند.`;
 
   return { regime, confidence, bottlenecks, confirmations, narrativeFa };

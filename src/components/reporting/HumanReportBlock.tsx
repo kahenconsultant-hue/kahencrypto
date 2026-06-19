@@ -9,11 +9,25 @@ export type HumanReportBlockProps = HumanizedReportBlock & {
 
 function detailRows(details: Record<string, unknown>) {
   return Object.entries(details).map(([key, value]) => (
-    <div key={key} className="rounded-md border bg-background/35 p-2">
+    <div key={key} className="rounded-md border border-border/55 bg-background/25 p-2">
       <div className="text-[10px] font-bold text-muted-foreground">{key}</div>
       <div className="mt-1 text-xs leading-6 text-foreground">{Array.isArray(value) ? value.join("، ") : String(value)}</div>
     </div>
   ));
+}
+
+function DetailDisclosure(props: { title: string; details: Record<string, unknown>; compact?: boolean; defaultOpen?: boolean }) {
+  return (
+    <details className="group rounded-md border border-border/55 bg-muted/10 p-2" open={props.defaultOpen}>
+      <summary className="cursor-pointer list-none text-[11px] font-black text-muted-foreground marker:hidden">
+        <span className="inline-flex items-center gap-2">
+          <span>{props.title}</span>
+          <span className="text-[10px] font-medium text-muted-foreground/70">برای مشاهده باز کنید</span>
+        </span>
+      </summary>
+      <div className={cn("mt-2 grid gap-2", props.compact ? "grid-cols-1" : "md:grid-cols-2")}>{detailRows(props.details)}</div>
+    </details>
+  );
 }
 
 export function HumanReportBlock(props: HumanReportBlockProps) {
@@ -60,15 +74,11 @@ export function HumanReportBlock(props: HumanReportBlockProps) {
           <span className="rounded-sm border bg-muted/35 px-2 py-1 text-[10px] text-muted-foreground">{props.risk_label}</span>
         </div>
       </section>
-      <section>
-        <div className="font-black text-foreground">۶. جزئیات فنی</div>
-        <div className={cn("mt-2 grid gap-2", props.compact ? "grid-cols-1" : "md:grid-cols-2")}>{detailRows(props.technical_details)}</div>
-      </section>
-      <section>
-        <div className="font-black text-foreground">۷. جزئیات Audit</div>
-        <div className={cn("mt-2 grid gap-2", props.compact ? "grid-cols-1" : "md:grid-cols-2")}>{detailRows(props.audit_details)}</div>
-      </section>
-      <p className="rounded-md border bg-secondary/25 p-2 text-[11px] leading-5 text-muted-foreground">{props.non_advisory_note}</p>
+      <DetailDisclosure title="۶. جزئیات فنی" details={props.technical_details} compact={props.compact} />
+      <DetailDisclosure title="۷. جزئیات Audit" details={props.audit_details} compact={props.compact} />
+      {!props.compact ? (
+        <p className="rounded-md border bg-secondary/20 p-2 text-[11px] leading-5 text-muted-foreground">{props.non_advisory_note}</p>
+      ) : null}
     </div>
   );
 }

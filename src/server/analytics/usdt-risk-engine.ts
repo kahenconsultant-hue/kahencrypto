@@ -77,7 +77,7 @@ export function getUsdtRiskCenter() {
     missingInputs,
     summaryFa:
       dataCoveragePercent < 50
-        ? "ریسک USDT با داده ناقص خوانده می‌شود: عرضه USDT و روند کل استیبل‌کوین‌ها موجود است، اما تمرکز TRON/ERC20، ذخایر ناشر و جریان صرافی‌ها منبع مستقیم ندارند؛ بنابراین score محافظه‌کارانه و با confidence محدود نمایش داده می‌شود."
+        ? "ریسک USDT با داده ناقص ارزیابی می‌شود: عرضه USDT و روند کل استیبل‌کوین‌ها موجود است، اما تمرکز TRON/ERC20، ذخایر ناشر و جریان صرافی‌ها منبع مستقیم ندارند؛ بنابراین score محافظه‌کارانه و با confidence محدود نمایش داده می‌شود."
         : "ریسک USDT از تغییر عرضه، وضعیت بازار استیبل‌کوین، dominance و رویدادهای مقرراتی/تحریمی استخراج شده است.",
     components: [
       { label: "ریسک عرضه USDT", value: supplyContractionRisk, status: usdtSupply7d === null ? "missing" : "available" },

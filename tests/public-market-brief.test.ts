@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { TARGET_ASSETS } from "../src/lib/assets/targetAssets";
-import { capAssetConfidenceByPublicQuality, classifyAssetBias, etfFlowScore, volumeLiquidityScore, weightedImpactScore } from "../src/lib/intelligence/assetScoring";
+import { capAssetConfidenceByPublicQuality, classifyAssetBias, etfFlowScore, impactStatusLabelFa, volumeLiquidityScore, weightedImpactScore } from "../src/lib/intelligence/assetScoring";
 import { HUMANIZER_VERSION, humanizeReportBlock, renderHumanizedBlockText, validateHumanizedBlock, validateHumanizedMeaningDiversity } from "../src/lib/intelligence/humanReport";
 import { forecastPublicBadgeState, publicModuleStatus, shouldRenderPublicModule } from "../src/lib/intelligence/moduleGating";
 
@@ -20,6 +20,16 @@ test("USDT is a stability monitor and never receives a price-direction bias", ()
   assert.equal(usdt.allowPriceBias, false);
   assert.equal(classifyAssetBias(usdt, 90, 90, 90), "پایش ثبات/ریسک");
   assert.equal(classifyAssetBias(usdt, -90, 90, 90), "پایش ثبات/ریسک");
+});
+
+test("impact status labels use the public v1.2 mapping", () => {
+  assert.equal(impactStatusLabelFa(35), "مثبت واضح");
+  assert.equal(impactStatusLabelFa(22), "مثبت ملایم");
+  assert.equal(impactStatusLabelFa(12), "خنثی متمایل به مثبت");
+  assert.equal(impactStatusLabelFa(0), "خنثی");
+  assert.equal(impactStatusLabelFa(-12), "خنثی متمایل به منفی");
+  assert.equal(impactStatusLabelFa(-24), "احتیاطی / فشار منفی ملایم");
+  assert.equal(impactStatusLabelFa(-35), "منفی واضح");
 });
 
 test("direct ETF contribution is public only for BTC and ETH", () => {
@@ -92,10 +102,11 @@ test("humanized report blocks are valid and render human explanation before tech
     { impactScore: -12, confidence: 64, coverage: 72, driversFa: ["مومنتوم قیمت: فشارزا"], invalidationFa: "اگر محرک‌ها تغییر کنند، سناریو بازنگری می‌شود." },
     { kind: "asset", titleFa: "TRX — ترون", assetSymbol: "TRX", statusFa: "خنثی", confidence: 64, coverage: 72, impactScore: -12 },
   );
-  assert.equal(HUMANIZER_VERSION, "cmip-humanizer-v1.1");
+  assert.equal(HUMANIZER_VERSION, "cmip-humanizer-v1.2");
   assert.equal(validateHumanizedBlock(block), true);
   assert.match(block.watch_next, /بروزرسانی بعدی/);
-  assert.match(block.non_advisory_note, /سیگنال خرید یا فروش نیست/);
+  assert.match(block.non_advisory_note, /توصیه مالی نیست/);
+  assert.match(block.human_summary, /ترون|TRX/);
 
   const rendered = renderHumanizedBlockText(block);
   assert.ok(rendered.indexOf("۱. خلاصه انسانی") < rendered.indexOf("۴. برای رصد بعدی"));
@@ -103,7 +114,7 @@ test("humanized report blocks are valid and render human explanation before tech
   assert.ok(rendered.indexOf("۶. جزئیات فنی") < rendered.indexOf("۷. جزئیات Audit"));
 });
 
-test("humanizer v1.1 does not echo raw engine jargon in human sections", () => {
+test("humanizer v1.2 does not echo raw engine jargon or robotic phrases in human sections", () => {
   const block = humanizeReportBlock(
     {
       impactScore: -4,
@@ -114,7 +125,21 @@ test("humanizer v1.1 does not echo raw engine jargon in human sections", () => {
     { kind: "asset", titleFa: "TON — تون", assetSymbol: "TON", confidence: 63, coverage: 80, impactScore: -4 },
   );
   const humanText = [block.human_summary, block.user_meaning, block.reasoning, block.watch_next].join("\n");
-  for (const forbidden of ["فشارزا", "سناریویی", "ابطال", "پروکسی", "ریسک افزایشی", "اثر کلی", "رژیم بازار", "نیازمند تأیید", "داده عمیق محدود است"]) {
+  for (const forbidden of [
+    "فشارزا",
+    "سناریویی",
+    "ابطال",
+    "پروکسی",
+    "ریسک افزایشی",
+    "اثر کلی",
+    "رژیم بازار",
+    "نیازمند تأیید",
+    "داده عمیق محدود است",
+    "خوانده می‌شود",
+    "اکنون با این برداشت",
+    "برداشت فعلی بیشتر به دلیل نامشخص بودن حرکت قیمت",
+    "این عامل با داده‌های مستقل دیگر هم‌جهت می‌شود یا نه",
+  ]) {
     assert.equal(humanText.includes(forbidden), false, `human text still contains raw jargon: ${forbidden}`);
   }
   assert.match(block.reasoning, /حرکت قیمت|حجم معاملات|داده/);
@@ -128,7 +153,7 @@ test("asset user meanings are not repeated across the public watchlist", () => {
     ),
   );
   const diversity = validateHumanizedMeaningDiversity(blocks);
-  assert.equal(diversity.valid, true, `user meanings are too repetitive: ${diversity.maxSimilarity}`);
+  assert.equal(diversity.valid, true, `humanized text is too repetitive: ${JSON.stringify(diversity)}`);
 });
 
 test("public market brief component no longer contains obvious raw customer-facing terms", () => {
@@ -142,7 +167,7 @@ test("public market brief component no longer contains obvious raw customer-faci
 
 test("public brief builder avoids raw public-facing jargon outside audit details", () => {
   const source = readFileSync(new URL("../src/lib/intelligence/publicBriefBuilder.ts", import.meta.url), "utf8");
-  for (const forbidden of ["در وضعیت سناریویی خوانده می‌شود", "فشارزا", "نیازمند تأیید", "داده عمیق محدود است", "رژیم بازار", "ریسک افزایشی"]) {
+  for (const forbidden of ["در وضعیت سناریویی خوانده می‌شود", "فشارزا", "نیازمند تأیید", "داده عمیق محدود است", "رژیم بازار", "ریسک افزایشی", "سناریوی ابطال"]) {
     assert.equal(source.includes(forbidden), false, `public brief builder still emits raw visible term: ${forbidden}`);
   }
 });

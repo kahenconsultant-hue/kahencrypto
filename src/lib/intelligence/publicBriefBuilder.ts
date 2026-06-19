@@ -21,8 +21,11 @@ import {
 } from "@/lib/intelligence/humanReport";
 import { capPublicConfidence, clamp, forecastPublicBadgeState } from "@/lib/intelligence/moduleGating";
 import {
+  getDashboardAlerts,
+  getDashboardCausalMarketGraph,
   getDashboardForecastValidationCenter,
   getDashboardFreshnessReport,
+  getDashboardLiquidityIntelligenceStack,
   getDashboardLiquidityReport,
   getDashboardMarketRegime,
   getDashboardReliabilityReport,
@@ -66,6 +69,7 @@ export type PublicMarketBrief = {
     conclusiveCount: number;
     publicAccuracy: number | null;
   };
+  operationalDashboard: PublicOperationalDashboard;
   reportRecord: {
     raw_engine_output: Record<string, unknown>;
     humanized_report_output: Record<string, unknown>;
@@ -111,6 +115,67 @@ export type CompactDataLayer = {
   statusFa: string;
   coverage: number | null;
   publicActionFa: string;
+};
+
+export type PublicOperationalDashboard = {
+  liquidity: {
+    score: number | null;
+    labelFa: string;
+    confidence: number | null;
+    coverage: number | null;
+    explanationFa: string;
+    engines: PublicEngineScore[];
+  };
+  regime: {
+    labelFa: string;
+    confidence: number | null;
+    transitionProbability: number | null;
+    riskScore: number | null;
+    liquidityScore: number | null;
+    leverageScore: number | null;
+    macroScore: number | null;
+    probabilities: Array<{
+      labelFa: string;
+      probability: number | null;
+    }>;
+  };
+  activeEdges: PublicActiveEdge[];
+  mainAlerts: PublicMainAlert[];
+  analysisEngines: PublicEngineScore[];
+};
+
+export type PublicEngineScore = {
+  id: string;
+  labelFa: string;
+  score: number | null;
+  coverage: number | null;
+  confidence: number | null;
+  statusFa: string;
+  explanationFa: string;
+};
+
+export type PublicActiveEdge = {
+  id: string;
+  sourceFa: string;
+  targetFa: string;
+  channelFa: string;
+  relationshipFa: string;
+  strengthFa: string;
+  confidence: number | null;
+  probability: number | null;
+  explanationFa: string;
+  affectedAssets: string[];
+};
+
+export type PublicMainAlert = {
+  id: string;
+  titleFa: string;
+  levelFa: string;
+  confidence: number | null;
+  riskFa: string;
+  whyFa: string;
+  affectedAssets: string[];
+  expiresAt: string | null;
 };
 
 export type IntelligenceAuditPayload = {
@@ -886,6 +951,246 @@ function signalAlignmentFrom(assets: PublicAssetBrief[], drivers: PublicDriver[]
   return Math.round(clamp(35 + (dominant / directionalAssets.length) * 35 + driverConsistency * 25, 35, 95));
 }
 
+const causalNodeLabelsFa: Record<string, string> = {
+  DXY: "شاخص دلار",
+  US10Y: "بازده ۱۰ ساله آمریکا",
+  macro_liquidity: "نقدینگی کلان",
+  crypto_liquidity: "نقدینگی کریپتو",
+  stablecoin_supply: "عرضه استیبل‌کوین",
+  etf_flows: "جریان ETF",
+  institutional_demand: "تقاضای نهادی",
+  derivatives_leverage: "اهرم فیوچرز",
+  market_fragility: "شکنندگی بازار",
+  news_sentiment: "سنتیمنت خبری",
+  risk_appetite: "ریسک‌پذیری بازار",
+  BTC: "بیت‌کوین",
+  ETH: "اتریوم",
+  SOL: "سولانا",
+  USDT: "تتر",
+  Gold: "طلا",
+  Nasdaq: "نزدک",
+};
+
+const regimeLabelsFa: Record<string, string> = {
+  "Risk-On Expansion": "گسترش ریسک‌پذیری",
+  "Weak Risk-On": "ریسک‌پذیری ضعیف",
+  "Fragile Risk-On": "ریسک‌پذیری شکننده",
+  "Liquidity-Constrained Risk-On": "ریسک‌پذیری محدودشده با نقدینگی",
+  "Risk-Off Defensive": "دفاعی / ریسک‌گریز",
+  "Liquidity Squeeze": "فشار نقدینگی",
+  "Dollar Strength Pressure": "فشار تقویت دلار",
+  "Rates Shock": "شوک نرخ بهره",
+  "Crypto-Specific Bullish": "حمایت اختصاصی کریپتو",
+  "Crypto-Specific Stress": "فشار اختصاصی کریپتو",
+  "Geopolitical Shock": "شوک ژئوپلیتیک",
+  "Neutral / Transition": "خنثی / در حال گذار",
+  "High Volatility Unclear Regime": "نوسان بالا / رژیم نامشخص",
+};
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function labelNodeFa(value: unknown) {
+  const key = String(value ?? "");
+  return causalNodeLabelsFa[key] ?? causalNodeLabelsFa[key.replaceAll("-", "_")] ?? key.replaceAll("_", " ");
+}
+
+function regimeLabelFa(value: unknown) {
+  const key = String(value ?? "");
+  return regimeLabelsFa[key] ?? key.replaceAll("_", " ");
+}
+
+function edgeRelationshipFa(value: unknown) {
+  const key = String(value ?? "");
+  if (key === "supports") return "حمایت‌کننده";
+  if (key === "pressures") return "فشارآور";
+  if (key === "amplifies") return "تقویت‌کننده ریسک";
+  if (key === "dampens") return "کاهنده فشار";
+  return "نامطمئن";
+}
+
+function edgeStrengthFa(value: unknown) {
+  const key = String(value ?? "");
+  if (key === "strong") return "قوی";
+  if (key === "moderate") return "متوسط";
+  if (key === "weak") return "ضعیف";
+  return "داده ناکافی";
+}
+
+function channelFa(value: unknown) {
+  const key = String(value ?? "");
+  const labels: Record<string, string> = {
+    liquidity: "نقدینگی",
+    rates: "نرخ بهره",
+    dollar: "دلار",
+    risk_on_risk_off: "ریسک‌پذیری",
+    etf_flows: "ETF",
+    stablecoin_flows: "استیبل‌کوین",
+    onchain_activity: "آنچین",
+    geopolitical_risk: "ژئوپلیتیک",
+    regulatory_risk: "رگولاتوری",
+    sentiment_news_shock: "خبر/سنتیمنت",
+    correlation_breakdown: "همبستگی",
+    leverage: "اهرم",
+  };
+  return labels[key] ?? "بازار";
+}
+
+function engineStatusFa(value: unknown) {
+  const key = String(value ?? "");
+  if (key === "connected") return "فعال";
+  if (key === "degraded") return "فعال با محدودیت";
+  if (key === "missing") return "ناموجود";
+  if (key === "disconnected") return "قطع";
+  return "در حال بررسی";
+}
+
+function alertLevelFa(value: unknown) {
+  const key = String(value ?? "");
+  if (key === "Critical") return "بحرانی";
+  if (key === "Important") return "مهم";
+  if (key === "Watch") return "نیازمند رصد";
+  return "اطلاعی";
+}
+
+function buildOperationalDashboard(params: {
+  regime: Record<string, unknown>;
+  liquidity: Record<string, unknown>;
+  risk: Record<string, unknown>;
+  liquidityScore: number | null;
+  riskScore: number | null;
+  macroScore: number | null;
+  globalConfidence: number;
+  globalCoverage: number;
+  liquidityStateFa: string;
+  liquidityExplanationFa: string;
+}): PublicOperationalDashboard {
+  const liquidityStack = asRecord(getDashboardLiquidityIntelligenceStack());
+  const graph = asRecord(getDashboardCausalMarketGraph());
+  const alerts = asArray(getDashboardAlerts()).map(asRecord);
+  const stackEngines = asArray(liquidityStack.engines).map(asRecord);
+  const stackConfidence = numberFrom(liquidityStack.finalConfidence);
+  const stackCoverage =
+    stackEngines.length > 0
+      ? Math.round(stackEngines.reduce((sum, engine) => sum + (numberFrom(engine.coverage) ?? 0), 0) / stackEngines.length)
+      : null;
+
+  const liquidityEngines: PublicEngineScore[] = stackEngines.map((engine, index) => ({
+    id: String(engine.id ?? `liquidity-engine-${index}`),
+    labelFa: String(engine.labelFa ?? "موتور نقدینگی"),
+    score: numberFrom(engine.score),
+    coverage: numberFrom(engine.coverage),
+    confidence: numberFrom(engine.confidence),
+    statusFa: engineStatusFa(engine.status),
+    explanationFa: String(engine.explanationFa ?? "این موتور بخشی از تصویر نقدینگی بازار را می‌سنجد."),
+  }));
+
+  const regimeEngineConfidence = numberFrom(params.regime.confidence);
+  const transition = asRecord(params.regime.transitionAnalysis);
+  const regimeProbabilities = asArray(params.regime.regimeProbabilities)
+    .map(asRecord)
+    .slice(0, 4)
+    .map((item) => ({
+      labelFa: regimeLabelFa(item.label ?? item.state),
+      probability: numberFrom(item.probability),
+    }));
+
+  const analysisEngines: PublicEngineScore[] = [
+    {
+      id: "regime",
+      labelFa: "موتور رژیم بازار",
+      score: regimeEngineConfidence,
+      coverage: params.globalCoverage,
+      confidence: regimeEngineConfidence ?? params.globalConfidence,
+      statusFa: regimeEngineConfidence === null ? "فعال با محدودیت" : "فعال",
+      explanationFa: "رژیم بازار از ترکیب دلار، بازده اوراق، نقدینگی، مومنتوم و کیفیت داده ساخته می‌شود.",
+    },
+    {
+      id: "liquidity",
+      labelFa: "موتور نقدینگی",
+      score: params.liquidityScore,
+      coverage: stackCoverage,
+      confidence: stackConfidence ?? numberFrom(params.liquidity.liquidityRegimeConfidence) ?? params.globalConfidence,
+      statusFa: params.liquidityScore === null ? "فعال با محدودیت" : "فعال",
+      explanationFa: params.liquidityExplanationFa,
+    },
+    {
+      id: "risk",
+      labelFa: "موتور ریسک",
+      score: params.riskScore,
+      coverage: params.globalCoverage,
+      confidence: numberFrom(params.risk.confidence) ?? params.globalConfidence,
+      statusFa: params.riskScore === null ? "فعال با محدودیت" : "فعال",
+      explanationFa: "امتیاز ریسک نشان می‌دهد فضای فعلی بیشتر احتیاطی است یا آرام‌تر.",
+    },
+    {
+      id: "macro",
+      labelFa: "موتور کلان",
+      score: params.macroScore,
+      coverage: params.globalCoverage,
+      confidence: params.globalConfidence,
+      statusFa: params.macroScore === null ? "فعال با محدودیت" : "فعال",
+      explanationFa: "این موتور فشار دلار، نرخ بهره، نزدک و طلا را به زبان بازار کریپتو خلاصه می‌کند.",
+    },
+    ...liquidityEngines,
+  ].slice(0, 9);
+
+  const activeEdges: PublicActiveEdge[] = asArray(graph.activeEdges)
+    .map(asRecord)
+    .slice(0, 5)
+    .map((edge, index) => ({
+      id: String(edge.id ?? `edge-${index}`),
+      sourceFa: labelNodeFa(edge.source),
+      targetFa: labelNodeFa(edge.target),
+      channelFa: channelFa(edge.channel),
+      relationshipFa: edgeRelationshipFa(edge.relationship),
+      strengthFa: edgeStrengthFa(edge.strength),
+      confidence: numberFrom(edge.confidence),
+      probability: numberFrom(edge.probability),
+      explanationFa: String(edge.explanationFa ?? "این رابطه فعال است، اما همچنان احتمالی تفسیر می‌شود."),
+      affectedAssets: asArray(edge.affectedAssets).map(String).slice(0, 6),
+    }));
+
+  const mainAlerts: PublicMainAlert[] = alerts
+    .sort((left, right) => (numberFrom(right.importance) ?? 0) - (numberFrom(left.importance) ?? 0))
+    .slice(0, 4)
+    .map((alert, index) => ({
+      id: String(alert.id ?? `alert-${index}`),
+      titleFa: String(alert.titleFa ?? "هشدار بازار"),
+      levelFa: alertLevelFa(alert.level),
+      confidence: numberFrom(alert.confidence),
+      riskFa: String(alert.severityReasonFa ?? alert.scenarioFa ?? "شدت هشدار بر اساس داده‌های موجود محدود شده است."),
+      whyFa: String(alert.whyItMattersFa ?? alert.reasoningFa ?? "این هشدار یکی از محرک‌های اصلی بازار را نشان می‌دهد."),
+      affectedAssets: asArray(alert.affectedAssets).map(String).slice(0, 8),
+      expiresAt: typeof alert.expiresAt === "string" ? alert.expiresAt : null,
+    }));
+
+  return {
+    liquidity: {
+      score: params.liquidityScore,
+      labelFa: params.liquidityStateFa,
+      confidence: stackConfidence ?? numberFrom(params.liquidity.liquidityRegimeConfidence) ?? params.globalConfidence,
+      coverage: stackCoverage,
+      explanationFa: params.liquidityExplanationFa,
+      engines: liquidityEngines,
+    },
+    regime: {
+      labelFa: String(params.regime.regimeFa ?? params.regime.labelFa ?? regimeLabelFa(params.regime.regimeLabel)),
+      confidence: regimeEngineConfidence ?? params.globalConfidence,
+      transitionProbability: numberFrom(transition.probability) ?? numberFrom(params.regime.transitionProbability),
+      riskScore: params.riskScore,
+      liquidityScore: params.liquidityScore,
+      leverageScore: numberFrom(params.regime.leverageScore) ?? numberFrom(params.liquidity.leverageStress),
+      macroScore: params.macroScore,
+      probabilities: regimeProbabilities,
+    },
+    activeEdges,
+    mainAlerts,
+    analysisEngines,
+  };
+}
+
 export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const snapshot = getDashboardSignalSnapshot();
   const signals = snapshot.byKey as SignalMap;
@@ -1008,6 +1313,18 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       invalidationFa: "اگر دو محرک اصلی در دو بروزرسانی متوالی خلاف جهت فعلی حرکت کنند، سناریوی بازار باید بازنگری شود.",
     },
   );
+  const operationalDashboard = buildOperationalDashboard({
+    regime,
+    liquidity,
+    risk,
+    liquidityScore,
+    riskScore,
+    macroScore,
+    globalConfidence,
+    globalCoverage,
+    liquidityStateFa,
+    liquidityExplanationFa,
+  });
   const generatedAt = new Date().toISOString();
 
   return {
@@ -1045,6 +1362,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     },
     compactDataConfidence: layerState.layers,
     forecastBadge: forecast,
+    operationalDashboard,
     reportRecord: {
       raw_engine_output: {
         globalCoverage,

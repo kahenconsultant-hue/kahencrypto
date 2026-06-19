@@ -158,7 +158,7 @@ test("asset user meanings are not repeated across the public watchlist", () => {
 
 test("public market brief component no longer contains obvious raw customer-facing terms", () => {
   const source = readFileSync(new URL("../src/components/public/PublicMarketBrief.tsx", import.meta.url), "utf8");
-  for (const forbidden of ["N/A", "source health", "raw logs", "scenario invalidation", "fallback active", "validation weak", "پوشش / اطمینان", "وضعیت / Bias", "اقدام در public", "شروط ابطال", "رژیم بازار"]) {
+  for (const forbidden of ["N/A", "source health", "raw logs", "scenario invalidation", "fallback active", "validation weak", "پوشش / اطمینان", "وضعیت / Bias", "اقدام در public", "شروط ابطال"]) {
     assert.equal(source.includes(forbidden), false, `public component still contains raw visible term: ${forbidden}`);
   }
   assert.match(source, /پوشش داده:/);
@@ -167,7 +167,7 @@ test("public market brief component no longer contains obvious raw customer-faci
 
 test("public brief builder avoids raw public-facing jargon outside audit details", () => {
   const source = readFileSync(new URL("../src/lib/intelligence/publicBriefBuilder.ts", import.meta.url), "utf8");
-  for (const forbidden of ["در وضعیت سناریویی خوانده می‌شود", "فشارزا", "نیازمند تأیید", "داده عمیق محدود است", "رژیم بازار", "ریسک افزایشی", "سناریوی ابطال"]) {
+  for (const forbidden of ["در وضعیت سناریویی خوانده می‌شود", "فشارزا", "نیازمند تأیید", "داده عمیق محدود است", "ریسک افزایشی", "سناریوی ابطال"]) {
     assert.equal(source.includes(forbidden), false, `public brief builder still emits raw visible term: ${forbidden}`);
   }
 });

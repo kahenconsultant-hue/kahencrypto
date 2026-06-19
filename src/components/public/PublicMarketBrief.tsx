@@ -1,5 +1,6 @@
-import { BarChart3, CheckCircle2, CircleDot, ShieldAlert, Target } from "lucide-react";
+import { BarChart3, CheckCircle2, ShieldAlert, Target } from "lucide-react";
 import type { PublicAssetBrief, PublicDriver, PublicMarketBrief as PublicMarketBriefData } from "@/lib/intelligence/publicBriefBuilder";
+import { HumanReportBlock } from "@/components/reporting/HumanReportBlock";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -43,6 +44,9 @@ function MarketVerdict({ brief }: { brief: PublicMarketBriefData }) {
         <Badge variant={brief.globalConfidence >= 45 ? "success" : "warning"}>{brief.dataModeFa}</Badge>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-4">
+        <div className="md:col-span-4">
+          <HumanReportBlock {...brief.marketVerdict.humanized} />
+        </div>
         {[
           ["رژیم بازار", brief.marketVerdict.regimeFa],
           ["وضعیت نقدینگی", brief.marketVerdict.liquidityStateFa],
@@ -57,9 +61,9 @@ function MarketVerdict({ brief }: { brief: PublicMarketBriefData }) {
         <div className="md:col-span-4">
           <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
             <span>اطمینان کل</span>
-            <span>{percent(brief.globalConfidence)}</span>
+            <span>{percent(brief.marketVerdict.globalConfidence)}</span>
           </div>
-          <Progress value={brief.globalConfidence} indicatorClassName={confidenceTone(brief.globalConfidence)} />
+          <Progress value={brief.marketVerdict.globalConfidence} indicatorClassName={confidenceTone(brief.marketVerdict.globalConfidence)} />
         </div>
       </CardContent>
     </Card>
@@ -72,7 +76,7 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
       <CardHeader>
         <div>
           <CardTitle>جدول فشرده ۱۰ دارایی</CardTitle>
-          <CardDescription>تمام دارایی‌های فهرست پایش ایران نمایش داده می‌شوند؛ عوامل نامرتبط به‌جای N/A از گزارش عمومی حذف شده‌اند.</CardDescription>
+          <CardDescription>تمام دارایی‌های فهرست پایش ایران نمایش داده می‌شوند؛ عوامل نامرتبط از گزارش عمومی حذف شده‌اند.</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="overflow-x-auto">
@@ -80,7 +84,7 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
           <thead className="text-xs text-muted-foreground">
             <tr className="border-b">
               <th className="px-3 py-2 text-right">دارایی</th>
-              <th className="px-3 py-2 text-right">وضعیت / Bias</th>
+              <th className="px-3 py-2 text-right">وضعیت / برداشت</th>
               <th className="px-3 py-2 text-right">امتیاز اثر</th>
               <th className="px-3 py-2 text-right">اطمینان</th>
               <th className="px-3 py-2 text-right">پوشش داده</th>
@@ -129,32 +133,7 @@ function AssetBriefCard({ asset }: { asset: PublicAssetBrief }) {
         <Badge variant={asset.confidence < 45 ? "warning" : "outline"}>{asset.freshnessLabelFa}</Badge>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
-        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="rounded-md border bg-background/45 p-2">
-            <div className="text-muted-foreground">اثر</div>
-            <div className={cn("mt-1 font-black", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "محدود" : formatNumber(asset.impactScore, 0)}</div>
-          </div>
-          <div className="rounded-md border bg-background/45 p-2">
-            <div className="text-muted-foreground">اطمینان</div>
-            <div className="mt-1 font-black text-foreground">{percent(asset.confidence)}</div>
-          </div>
-          <div className="rounded-md border bg-background/45 p-2">
-            <div className="text-muted-foreground">پوشش</div>
-            <div className="mt-1 font-black text-foreground">{percent(asset.dataCoverage)}</div>
-          </div>
-        </div>
-        <ul className="space-y-2 text-xs leading-6 text-muted-foreground">
-          {asset.driversFa.slice(0, 4).map((driver) => (
-            <li key={driver} className="flex gap-2">
-              <CircleDot className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-              <span>{driver}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-auto rounded-md border border-amber-500/25 bg-amber-500/8 p-3 text-xs leading-6 text-amber-100">
-          <span className="font-bold">سناریوی ابطال: </span>
-          {asset.invalidationFa}
-        </div>
+        <HumanReportBlock {...asset.humanized} compact />
       </CardContent>
     </Card>
   );
@@ -166,7 +145,7 @@ function MainDrivers({ drivers }: { drivers: PublicDriver[] }) {
       <CardHeader>
         <div>
           <CardTitle>محرک‌های غالب</CardTitle>
-          <CardDescription>فقط محرک‌های قابل استفاده در گزارش عمومی نمایش داده می‌شوند. مسیرهای علی کامل و تشخیص‌های خام در Audit هستند.</CardDescription>
+          <CardDescription>فقط محرک‌های قابل استفاده در گزارش عمومی نمایش داده می‌شوند. مسیرهای علی کامل و تشخیص‌های خام در بخش بررسی فنی هستند.</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -176,7 +155,7 @@ function MainDrivers({ drivers }: { drivers: PublicDriver[] }) {
               <h3 className="text-sm font-black text-foreground">{driver.titleFa}</h3>
               <Badge variant={directionVariant(driver.direction)}>{driver.directionFa}</Badge>
             </div>
-            <p className="text-xs leading-6 text-muted-foreground">{driver.explanationFa}</p>
+            <HumanReportBlock {...driver.humanized} compact />
             <div className="mt-3 flex flex-wrap gap-1">
               {driver.affectedAssets.slice(0, 8).map((asset) => (
                 <span key={asset} className="rounded-sm border bg-muted/35 px-2 py-1 text-[10px] text-muted-foreground">
@@ -184,7 +163,6 @@ function MainDrivers({ drivers }: { drivers: PublicDriver[] }) {
                 </span>
               ))}
             </div>
-            <div className="mt-3 text-[11px] leading-5 text-amber-100">ابطال: {driver.invalidationFa}</div>
           </div>
         ))}
       </CardContent>
@@ -241,7 +219,7 @@ function CompactDataConfidence({ brief }: { brief: PublicMarketBriefData }) {
       <CardHeader>
         <div>
           <CardTitle>اعتماد داده به‌صورت فشرده</CardTitle>
-          <CardDescription>جزئیات کامل source health، forecast، correlation و raw logs در Audit/Admin نگه داشته شده‌اند.</CardDescription>
+          <CardDescription>سلامت منابع، اعتبارسنجی، همبستگی و گزارش‌های خام در بخش بررسی فنی/Admin نگه داشته شده‌اند.</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="overflow-x-auto">
@@ -251,7 +229,7 @@ function CompactDataConfidence({ brief }: { brief: PublicMarketBriefData }) {
               <th className="px-3 py-2 text-right">لایه</th>
               <th className="px-3 py-2 text-right">وضعیت عمومی</th>
               <th className="px-3 py-2 text-right">پوشش</th>
-              <th className="px-3 py-2 text-right">اقدام در public</th>
+              <th className="px-3 py-2 text-right">نحوه نمایش عمومی</th>
             </tr>
           </thead>
           <tbody>
@@ -292,9 +270,10 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
               <div className="mt-1 font-bold text-foreground">{new Date(brief.generatedAt).toLocaleString("fa-IR")}</div>
             </div>
             <div className="rounded-md border bg-background/45 p-3">
-              <div className="text-muted-foreground">پوشش / اطمینان</div>
-              <div className="mt-1 font-bold text-foreground">
-                {percent(brief.globalCoverage)} / {percent(brief.globalConfidence)}
+              <div className="text-muted-foreground">کیفیت گزارش</div>
+              <div className="mt-1 space-y-1 font-bold text-foreground">
+                <div>پوشش داده: {percent(brief.globalCoverage)}</div>
+                <div>اطمینان تحلیلی: {percent(brief.marketVerdict.globalConfidence)}</div>
               </div>
             </div>
           </div>

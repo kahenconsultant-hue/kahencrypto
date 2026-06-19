@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { TARGET_ASSETS } from "../src/lib/assets/targetAssets";
-import { classifyAssetBias, etfFlowScore, volumeLiquidityScore, weightedImpactScore } from "../src/lib/intelligence/assetScoring";
+import { capAssetConfidenceByPublicQuality, classifyAssetBias, etfFlowScore, volumeLiquidityScore, weightedImpactScore } from "../src/lib/intelligence/assetScoring";
+import { humanizeReportBlock, renderHumanizedBlockText, validateHumanizedBlock } from "../src/lib/intelligence/humanReport";
 import { forecastPublicBadgeState, publicModuleStatus, shouldRenderPublicModule } from "../src/lib/intelligence/moduleGating";
 
 test("target asset registry contains exactly the Iran-relevant public watchlist", () => {
@@ -66,4 +68,43 @@ test("missing derivatives or volume data do not become fake zero scores", () => 
 
 test("ETF score is unavailable when market cap is missing and never implies zero flow", () => {
   assert.equal(etfFlowScore({ flow24hUsd: 10_000_000, flow7dUsd: 25_000_000, assetMarketCapUsd: null }), null);
+});
+
+test("public confidence caps prevent deep-data-limited assets from overclaiming", () => {
+  assert.equal(
+    capAssetConfidenceByPublicQuality({
+      symbol: "TRX",
+      coverageTier: "medium",
+      confidence: 84,
+      deepDataLimited: true,
+      hasDerivatives: false,
+      hasAssetSpecificDeepData: false,
+    }),
+    65,
+  );
+  assert.equal(capAssetConfidenceByPublicQuality({ symbol: "DOGE", coverageTier: "lite", confidence: 84 }), 62);
+  assert.equal(capAssetConfidenceByPublicQuality({ symbol: "USDT", coverageTier: "stablecoin_monitor", confidence: 88, networkIssuerDataMissing: true }), 70);
+  assert.equal(capAssetConfidenceByPublicQuality({ symbol: "BTC", coverageTier: "full", confidence: 95 }), 80);
+});
+
+test("humanized report blocks are valid and render human explanation before technical details", () => {
+  const block = humanizeReportBlock(
+    { impactScore: -12, confidence: 64, coverage: 72, driversFa: ["مومنتوم قیمت: فشارزا"], invalidationFa: "اگر محرک‌ها تغییر کنند، سناریو بازنگری می‌شود." },
+    { kind: "asset", titleFa: "TRX — ترون", statusFa: "خنثی", confidence: 64, coverage: 72, impactScore: -12 },
+  );
+  assert.equal(validateHumanizedBlock(block), true);
+  assert.match(block.non_advisory_note, /سیگنال خرید یا فروش نیست/);
+
+  const rendered = renderHumanizedBlockText(block);
+  assert.ok(rendered.indexOf("۱. خلاصه انسانی") < rendered.indexOf("۵. جزئیات فنی"));
+  assert.ok(rendered.indexOf("۵. جزئیات فنی") < rendered.indexOf("۶. جزئیات Audit"));
+});
+
+test("public market brief component no longer contains obvious raw customer-facing terms", () => {
+  const source = readFileSync(new URL("../src/components/public/PublicMarketBrief.tsx", import.meta.url), "utf8");
+  for (const forbidden of ["N/A", "source health", "raw logs", "scenario invalidation", "fallback active", "validation weak", "پوشش / اطمینان", "وضعیت / Bias", "اقدام در public"]) {
+    assert.equal(source.includes(forbidden), false, `public component still contains raw visible term: ${forbidden}`);
+  }
+  assert.match(source, /پوشش داده:/);
+  assert.match(source, /اطمینان تحلیلی:/);
 });

@@ -1,4 +1,5 @@
 import type { AssetRegistryItem } from "@/lib/assets/targetAssets";
+import type { AssetCoverageTier, TargetAssetSymbol } from "@/lib/assets/targetAssets";
 import { clamp, normalizeSigned } from "@/lib/intelligence/moduleGating";
 
 export type PublicFactorScore = {
@@ -8,6 +9,30 @@ export type PublicFactorScore = {
   available: boolean;
   labelFa: string;
 };
+
+export const PUBLIC_CONFIDENCE_CAPS: Record<AssetCoverageTier, number> = {
+  full: 80,
+  stablecoin_monitor: 70,
+  medium: 70,
+  lite: 65,
+};
+
+export function capAssetConfidenceByPublicQuality(params: {
+  symbol: TargetAssetSymbol;
+  coverageTier: AssetCoverageTier;
+  confidence: number;
+  deepDataLimited?: boolean;
+  hasDerivatives?: boolean;
+  hasAssetSpecificDeepData?: boolean;
+  networkIssuerDataMissing?: boolean;
+}) {
+  let capped = Math.min(params.confidence, PUBLIC_CONFIDENCE_CAPS[params.coverageTier]);
+  if (params.deepDataLimited) capped = Math.min(capped, 68);
+  if (params.coverageTier === "medium" && !params.hasDerivatives && !params.hasAssetSpecificDeepData) capped = Math.min(capped, 65);
+  if (params.coverageTier === "lite") capped = Math.min(capped, 62);
+  if (params.symbol === "USDT" && params.networkIssuerDataMissing) capped = Math.min(capped, 70);
+  return Math.round(clamp(capped, 0, 100));
+}
 
 export function priceMomentumScore(input: { change24hPct?: number | null; change7dPct?: number | null; change30dPct?: number | null }) {
   const factors = [

@@ -202,6 +202,42 @@ function shouldRetainPreviousSnapshot(candidate: CachePayload, previous: CachePa
   return null;
 }
 
+function mergeCandidateWithPrevious(candidate: CachePayload, previous: CachePayload, retentionReason: string): CachePayload {
+  const previousByKey = new Map(previous.points.map((point) => [point.key, point]));
+  const candidateKeys = new Set(candidate.points.map((point) => point.key));
+  const points: DataPoint[] = candidate.points.map((point): DataPoint => {
+    const candidateUsable = point.value !== null && point.quality !== "unavailable" && point.quality !== "estimated";
+    if (candidateUsable) return point;
+    const prior = previousByKey.get(point.key);
+    const priorUsable = prior && prior.value !== null && prior.quality !== "unavailable" && prior.quality !== "estimated";
+    if (!priorUsable) return point;
+    return {
+      ...prior,
+      quality: prior.quality === "proxy" ? "proxy" : "delayed",
+      error: point.error
+        ? `${point.error} آخرین مقدار معتبر قبلی با timestamp اصلی نگه داشته شد.`
+        : "تازه‌سازی این signal ناموفق بود؛ آخرین مقدار معتبر قبلی با timestamp اصلی نگه داشته شد.",
+    };
+  });
+
+  for (const point of previous.points) {
+    if (candidateKeys.has(point.key)) continue;
+    points.push({
+      ...point,
+      quality: point.quality === "proxy" ? "proxy" : "delayed",
+      error: point.error ?? "این signal در candidate جدید وجود نداشت؛ مقدار قبلی با timestamp اصلی نگه داشته شد.",
+    });
+  }
+
+  return {
+    ...candidate,
+    points,
+    counts: countByQuality(points),
+    retainedPreviousSnapshot: true,
+    retentionReason: `${retentionReason} Fresh candidate signals were merged; only unavailable keys retained prior values.`,
+  };
+}
+
 function toCachePayload(payload: SharedSignalCachePayload): CachePayload {
   return {
     generatedAt: payload.generatedAt,
@@ -260,14 +296,7 @@ export async function refreshSignalCache() {
   const expiresAt = new Date(Date.now() + SIGNAL_CACHE_TTL_MINUTES * 60_000).toISOString();
   const candidate: CachePayload = { generatedAt, expiresAt, points, counts: countByQuality(points) };
   const retentionReason = shouldRetainPreviousSnapshot(candidate, previous);
-  const payload: CachePayload = retentionReason && previous
-    ? {
-        ...previous,
-        counts: countByQuality(previous.points),
-        retainedPreviousSnapshot: true,
-        retentionReason,
-      }
-    : candidate;
+  const payload: CachePayload = retentionReason && previous ? mergeCandidateWithPrevious(candidate, previous, retentionReason) : candidate;
 
   safeWriteLocalPayload(payload);
   const storageMode = await persistSharedSignalCache(payload);

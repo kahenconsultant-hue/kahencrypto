@@ -39,6 +39,11 @@ import {
 } from "@/lib/report/dataEvidence";
 import { formatNumber } from "@/lib/utils";
 import {
+  buildDerivativesLiteSummary,
+  type MarketDerivativesSummary,
+  type PublicDerivativesAsset,
+} from "@/lib/intelligence/derivativesLite";
+import {
   getDashboardAlerts,
   getDashboardCausalMarketGraph,
   getDashboardForecastValidationCenter,
@@ -61,6 +66,7 @@ export type PublicMarketBrief = {
   globalCoverage: number;
   confidenceGuard: ConfidenceGuardResult;
   dataEvidence: PublicDataEvidence;
+  derivativesLite: MarketDerivativesSummary;
   audit: PublicReportAudit;
   targetUniverseLabelFa: string;
   marketVerdict: {
@@ -139,6 +145,7 @@ export type PublicAssetBrief = {
     explanationFa: string | null;
   };
   humanized: HumanizedReportBlock;
+  derivatives: PublicDerivativesAsset | null;
 };
 
 export type PublicSourceEvidence = {
@@ -206,6 +213,7 @@ export type PublicReportAudit = {
     numericFieldsAvailable: string[];
   }>;
   engines: Record<ConfidenceEngineKey, ConfidenceEngineInput>;
+  derivativesAudit: MarketDerivativesSummary["audit"];
 };
 
 export type PublicDriver = {
@@ -744,7 +752,7 @@ function factor(key: string, score: number | null, weight: number, labelFa: stri
   return { key, score, weight, labelFa, available: score !== null };
 }
 
-function factorsFor(asset: AssetRegistryItem, signals: SignalMap, assetMarketData: PublicMarketData | undefined): PublicFactorScore[] {
+function factorsFor(asset: AssetRegistryItem, signals: SignalMap, assetMarketData: PublicMarketData | undefined, derivatives: PublicDerivativesAsset | null): PublicFactorScore[] {
   const symbol = asset.symbol;
   const lower = symbol.toLowerCase();
   const priceScore = priceMomentumScore({
@@ -777,8 +785,16 @@ function factorsFor(asset: AssetRegistryItem, signals: SignalMap, assetMarketDat
     : null;
   const sentimentScore = signalValue(signals, "news_sentiment_macro");
   const derivativesScore =
-    hasVerifiedFutures(asset, signals)
-      ? -Math.min(35, Math.abs(signalValue(signals, `funding_${lower}`) ?? 0) * 10_000 + Math.max(0, signalValue(signals, `open_interest_${lower}_24h`) ?? 0) * 0.5)
+    derivatives?.derivativesAvailable && !derivatives.stale && derivatives.leverageRiskScore !== null
+      ? derivatives.directionalDerivativesBias === "bullish"
+        ? Math.max(5, 20 - derivatives.leverageRiskScore * 0.12)
+        : derivatives.directionalDerivativesBias === "bearish"
+          ? -Math.max(8, derivatives.leverageRiskScore * 0.25)
+          : derivatives.directionalDerivativesBias === "deleveraging"
+            ? -5
+            : derivatives.directionalDerivativesBias === "squeeze-risk"
+              ? -Math.min(18, derivatives.leverageRiskScore * 0.2)
+              : 0
       : null;
 
   if (symbol === "USDT") {
@@ -863,11 +879,11 @@ function factorDriverText(factorItem: PublicFactorScore, weak = false) {
   return `${factorItem.labelFa}: ${factorItem.score > 0 ? "بهبوددهنده" : "فشار منفی"}`;
 }
 
-function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMarketData: PublicMarketData | undefined): BuiltAssetBrief {
-  const factors = factorsFor(asset, signals, assetMarketData);
+function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMarketData: PublicMarketData | undefined, derivatives: PublicDerivativesAsset | null): BuiltAssetBrief {
+  const factors = factorsFor(asset, signals, assetMarketData, derivatives);
   const weighted = weightedImpactScore(factors);
   const priceDataAvailable = hasPriceData(asset, assetMarketData, signals);
-  const verifiedFuturesAvailable = hasVerifiedFutures(asset, signals);
+  const verifiedFuturesAvailable = Boolean(derivatives?.derivativesAvailable && !derivatives.stale && derivatives.latestFundingRate !== null && derivatives.openInterest24hChangePct !== null);
   const stablecoinDataAvailable = signalAvailable(signals, "stablecoin_market_cap_7d") || signalAvailable(signals, "usdt_supply_7d");
   const priceMomentumAvailable = factors.some((factorItem) => factorItem.key === "price_momentum" && factorItem.available);
   const availableNonSentiment = factors.filter((factorItem) => factorItem.available && !["sentiment", "asset_specific_news", "regulatory_sanction_news"].includes(factorItem.key));
@@ -993,6 +1009,7 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
         explanationFa: regimeDivergenceFa,
       },
       humanized,
+      derivatives,
     },
     priceDataAvailable,
     priceMomentumAvailable,
@@ -1643,7 +1660,18 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const regime = asRecord(getDashboardMarketRegime());
   const liquidity = asRecord(getDashboardLiquidityReport());
   const risk = asRecord(getDashboardRiskReport());
-  const assetBuilds = TARGET_ASSETS.map((asset) => buildAssetBrief(asset, signals, marketData[asset.symbol]));
+  const derivativesLite = buildDerivativesLiteSummary(
+    signals,
+    Object.fromEntries(
+      TARGET_ASSETS.filter((asset) => asset.symbol !== "USDT").map((asset) => [
+        asset.symbol,
+        { change24hPct: marketData[asset.symbol]?.change24hPct ?? null, change7dPct: marketData[asset.symbol]?.change7dPct ?? null },
+      ]),
+    ),
+  );
+  const assetBuilds = TARGET_ASSETS.map((asset) =>
+    buildAssetBrief(asset, signals, marketData[asset.symbol], asset.symbol === "USDT" ? null : derivativesLite.assets.find((item) => item.asset === asset.symbol) ?? null),
+  );
   const preliminaryAssets = assetBuilds.map((asset) => asset.brief);
   const averageConfidence = Math.round(preliminaryAssets.reduce((sum, asset) => sum + asset.confidence, 0) / Math.max(1, preliminaryAssets.length));
   const sourceHealthCoverage = sourceHealthCoverageFrom(reliability);
@@ -1788,6 +1816,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       numericFieldsAvailable: engine.numericFieldsAvailable,
     })),
     engines: engineInputs,
+    derivativesAudit: derivativesLite.audit,
   };
 
   return {
@@ -1799,6 +1828,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     globalCoverage,
     confidenceGuard,
     dataEvidence,
+    derivativesLite,
     audit,
     targetUniverseLabelFa: TARGET_ASSET_UNIVERSE_LABEL_FA,
     marketVerdict: {
@@ -1845,6 +1875,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
         capReasons: confidenceGuard.capReasons,
         engines: engineInputs,
         dataEvidence,
+        derivativesLite,
       },
       humanized_report_output: {
         marketVerdict: marketVerdictHumanized,

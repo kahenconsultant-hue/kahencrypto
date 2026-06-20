@@ -1,6 +1,7 @@
 import type { AssetSymbol, DataPoint, DataQuality, DataSeriesPoint, SignalGroup, SourceType } from "@/lib/types";
 import { getEtfFlows } from "@/server/data/etf-flow-module";
 import { classifyGeopoliticalEvent } from "@/server/analytics/geopolitical-classifier";
+import { derivativesSignalKeys, fetchDerivativesLiteSignal } from "@/server/data/derivatives-lite-collector";
 
 export interface AdapterResult<T = number> {
   value: T | null;
@@ -1161,13 +1162,22 @@ export const onchainAdapter: DataAdapter = {
 export const correlationAdapter: DataAdapter = {
   id: "correlationAdapter",
   async fetchPoint(key) {
-    if (key === "funding_btc") return (await fetchFundingRate("BTCUSDT")) ?? (await fetchBybitFundingRate("BTCUSDT")) ?? (await fetchCoinAnkFundingRate("BTCUSDT"));
-    if (key === "funding_eth") return (await fetchFundingRate("ETHUSDT")) ?? (await fetchBybitFundingRate("ETHUSDT")) ?? (await fetchCoinAnkFundingRate("ETHUSDT"));
-    if (key === "funding_sol") return (await fetchFundingRate("SOLUSDT")) ?? (await fetchBybitFundingRate("SOLUSDT")) ?? (await fetchCoinAnkFundingRate("SOLUSDT"));
-    if (key === "open_interest_btc_24h") return (await fetchOpenInterestTrend("BTCUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("BTCUSDT")) ?? fallbackPoint(key);
-    if (key === "open_interest_eth_24h") return (await fetchOpenInterestTrend("ETHUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("ETHUSDT")) ?? unavailable("Binance/CoinAnk ETH open interest", "ETH open interest unavailable.");
-    if (key === "open_interest_sol_24h") return (await fetchOpenInterestTrend("SOLUSDT")) ?? (await fetchCoinAnkOpenInterestTrend("SOLUSDT")) ?? unavailable("Binance/CoinAnk SOL open interest", "SOL open interest unavailable.");
-    if (key === "liquidation_btc_24h") return await fetchCoinAnkLiquidationProxy("BTCUSDT");
+    const result = await fetchDerivativesLiteSignal(key);
+    if (result) {
+      if (result.value === null) return unavailable(result.source, result.error ?? "Public derivatives metric unavailable.", 0);
+      return live({
+        value: result.value,
+        previousValue: null,
+        timestamp: result.timestamp,
+        source: result.source,
+        reliability: result.reliability,
+        sourceType: "API",
+        quality: result.reliability >= 75 ? "partial_live" : "delayed",
+      });
+    }
+    if (key === "liquidation_btc_24h") {
+      return unavailable("Public exchange liquidation stream", "Liquidation proxy is not collected because a persistent public WebSocket runtime is not enabled; no liquidation value is fabricated.");
+    }
     return fallbackPoint(key);
   },
 };
@@ -1227,9 +1237,11 @@ const adapterByKey: Record<string, { adapter: DataAdapter; group: SignalGroup }>
   geopolitical_event_score: { adapter: newsAdapter, group: "geopolitical" },
 };
 
+for (const key of derivativesSignalKeys()) adapterByKey[key] = { adapter: correlationAdapter, group: "leverage" };
+
 export const requiredSignalKeys = Object.keys(adapterByKey);
 
-const descriptorByKey: Record<string, { asset: AssetSymbol | "VIX" | "Stablecoins"; metric: string; sourceType: SourceType }> = {
+const descriptorByKey: Record<string, { asset?: AssetSymbol | "VIX" | "Stablecoins"; metric: string; sourceType: SourceType }> = {
   btc_trend_24h: { asset: "BTC", metric: "price_trend_24h_pct", sourceType: "API" },
   eth_trend_24h: { asset: "ETH", metric: "price_trend_24h_pct", sourceType: "API" },
   sol_trend_24h: { asset: "SOL", metric: "price_trend_24h_pct", sourceType: "API" },
@@ -1280,6 +1292,16 @@ const descriptorByKey: Record<string, { asset: AssetSymbol | "VIX" | "Stablecoin
   news_sentiment_macro: { asset: "BTC", metric: "macro_news_sentiment_score", sourceType: "RSS" },
   geopolitical_event_score: { asset: "Gold", metric: "geopolitical_event_score", sourceType: "RSS" },
 };
+
+for (const key of derivativesSignalKeys()) {
+  if (descriptorByKey[key]) continue;
+  const assetCode = key.match(/_(btc|eth|sol)(?:_|$)/)?.[1]?.toUpperCase() as AssetSymbol | undefined;
+  descriptorByKey[key] = {
+    ...(assetCode ? { asset: assetCode } : {}),
+    metric: key,
+    sourceType: "API",
+  };
+}
 
 function enrichPoint(key: string, result: AdapterResult, group: SignalGroup): DataPoint {
   const descriptor = descriptorByKey[key];

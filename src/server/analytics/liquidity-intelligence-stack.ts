@@ -4,6 +4,7 @@ import { clampPercent } from "@/server/analytics/scoring-engine";
 import { classifyLiquidityHealth, isFreshUsableSignal, signalAgeMinutes, strictLiquidityNarrative } from "@/server/analytics/intelligence-quality";
 import { calculateLiquidityEngine } from "@/server/analytics/liquidity-engine";
 import { getSentimentReport } from "@/server/analytics/sentiment-engine";
+import { buildDerivativesLiteSummary, derivativesBiasFa } from "@/lib/intelligence/derivativesLite";
 
 type LiquiditySubEngineId = "stablecoin" | "etf" | "derivatives" | "macro_calendar" | "sentiment";
 type LiquidityEngineStatus = "connected" | "degraded" | "missing";
@@ -217,46 +218,43 @@ function derivativesClassification(risk: number | null) {
 }
 
 function buildDerivativesEngine(): LiquiditySubEngine {
-  const keys = ["funding_btc", "funding_eth", "funding_sol", "open_interest_btc_24h", "open_interest_eth_24h", "open_interest_sol_24h", "futures_volume_btc_24h", "spot_volume_btc_24h"];
-  const inputLists = buildInputLists(keys);
-  const risk = weightedScore([
-    { value: derivativeHeatScore(usable("funding_btc"), usable("open_interest_btc_24h")), weight: 0.48 },
-    { value: derivativeHeatScore(usable("funding_eth"), usable("open_interest_eth_24h")), weight: 0.26 },
-    { value: derivativeHeatScore(usable("funding_sol"), usable("open_interest_sol_24h")), weight: 0.18 },
-    {
-      value:
-        usable("futures_volume_btc_24h") === null || usable("spot_volume_btc_24h") === null
-          ? null
-          : clampPercent(45 + Math.max(0, (usable("futures_volume_btc_24h") ?? 0) - Math.max(0, usable("spot_volume_btc_24h") ?? 0)) * 1.4),
-      weight: 0.08,
-    },
-  ]);
+  const snapshot = getSignalSnapshot();
+  const summary = buildDerivativesLiteSummary(snapshot.byKey);
+  const risk = summary.marketLeverageRiskScore;
   const liquidityScore = risk === null ? null : clampPercent(100 - risk);
-  const inputCoverage = coverage(keys);
+  const majorAssets = summary.assets.filter((asset) => ["BTC", "ETH", "SOL", "BNB", "XRP"].includes(asset.asset));
+  const inputCoverage = clampPercent((majorAssets.filter((asset) => asset.derivativesAvailable && !asset.stale).length / 5) * 100);
+  const inputLists = {
+    usedInputs: summary.assets.filter((asset) => asset.derivativesAvailable).flatMap((asset) => [`funding_${asset.asset.toLowerCase()}`, `open_interest_${asset.asset.toLowerCase()}_24h`]),
+    missingInputs: summary.missingAssets.map((asset) => `derivatives_${asset.toLowerCase()}`),
+  };
+  const latestUpdated = summary.assets.map((asset) => asset.latestDataTimestamp).filter((item): item is string => Boolean(item)).sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
   return {
     id: "derivatives",
     labelFa: "موتور مشتقات",
-    status: healthStatus(liquidityScore, inputCoverage),
+    status: liquidityScore === null ? "missing" : inputCoverage >= 60 ? "connected" : "degraded",
     score: liquidityScore,
-    confidence: liquidityScore === null ? 0 : clampPercent(Math.min(inputCoverage, 35 + inputCoverage * 0.45)),
+    confidence: summary.confidence,
     coverage: inputCoverage,
-    freshness: freshness(keys),
-    sourceCount: sourceCount(inputLists.usedInputs),
-    lastUpdated: latestTimestamp(inputLists.usedInputs),
+    freshness: summary.assets.some((asset) => asset.derivativesAvailable && !asset.stale) ? (inputCoverage >= 60 ? "partial_live" : "delayed") : "unavailable",
+    sourceCount: Object.keys(summary.sourceBreakdown).length,
+    lastUpdated: latestUpdated,
     ...inputLists,
     classification: derivativesClassification(risk),
     explanationFa:
       risk === null
         ? "داده معتبر funding/open interest موجود نیست؛ موتور مشتقات Missing می‌ماند."
-        : `ریسک مشتقات ${risk}/100 و طبقه‌بندی ${derivativesClassification(risk)} است؛ برای fusion، score نقدینگی مشتقات برابر ${liquidityScore}/100 استفاده می‌شود.`,
+        : `ریسک اهرم بازار ${risk}/100 است و وضعیت کلی ${derivativesBiasFa(summary.marketDerivativesBias)} ارزیابی می‌شود؛ این داده فقط صرافی‌های عمومی در دسترس را پوشش می‌دهد.`,
     details: {
       derivativesRiskScore: risk,
       derivativesLiquidityScore: liquidityScore,
       leveragePressureScore: risk,
-      btcFunding: usable("funding_btc"),
-      btcOpenInterest: usable("open_interest_btc_24h"),
-      ethFunding: usable("funding_eth"),
-      solFunding: usable("funding_sol"),
+      marketDerivativesBias: summary.marketDerivativesBias,
+      availableAssetsCount: summary.availableAssetsCount,
+      missingAssets: summary.missingAssets,
+      sourceBreakdown: summary.sourceBreakdown,
+      assets: summary.assets,
+      derivativesAudit: summary.audit,
     },
   };
 }

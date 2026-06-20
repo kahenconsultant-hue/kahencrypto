@@ -98,6 +98,38 @@ export default async function IntelligenceAuditPage() {
           </table>
         </div>
       </div>
+      <div className="rounded-md border bg-card/70 p-4" dir="rtl">
+        <h2 className="text-base font-black">ممیزی موتور مشتقات Lite</h2>
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4">
+          <div className="rounded-md border p-3">حالت: lite_public_exchange_api</div>
+          <div className="rounded-md border p-3">دارایی موجود: {formatNumber(brief.derivativesLite.availableAssetsCount, 0)}</div>
+          <div className="rounded-md border p-3">ریسک اهرم: {brief.derivativesLite.marketLeverageRiskScore === null ? "ناموجود" : formatNumber(brief.derivativesLite.marketLeverageRiskScore, 0)}</div>
+          <div className="rounded-md border p-3">اعتماد: {formatNumber(brief.derivativesLite.confidence, 0)}٪</div>
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[980px] text-xs">
+            <thead>
+              <tr className="border-b text-right text-muted-foreground">
+                <th className="p-2">دارایی</th><th className="p-2">منبع</th><th className="p-2">Funding</th><th className="p-2">OI 24h</th><th className="p-2">OI 7d</th><th className="p-2">ریسک</th><th className="p-2">اعتماد</th><th className="p-2">فیلدهای غایب</th>
+              </tr>
+            </thead>
+            <tbody>
+              {brief.derivativesLite.assets.map((asset) => (
+                <tr key={asset.asset} className="border-b last:border-b-0">
+                  <td className="p-2 font-bold">{asset.asset}</td>
+                  <td className="p-2">{asset.sourceUsed ?? "ناموجود"}</td>
+                  <td className="p-2">{asset.latestFundingRate ?? "ناموجود"}</td>
+                  <td className="p-2">{asset.openInterest24hChangePct ?? "ناموجود"}</td>
+                  <td className="p-2">{asset.openInterest7dChangePct ?? "ناموجود"}</td>
+                  <td className="p-2">{asset.leverageRiskScore ?? "ناموجود"}</td>
+                  <td className="p-2">{asset.derivativesConfidence}٪</td>
+                  <td className="p-2">{asset.missingFields.join("، ") || "هیچ"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <Reveal>
         <MarketRegimePanel />
       </Reveal>

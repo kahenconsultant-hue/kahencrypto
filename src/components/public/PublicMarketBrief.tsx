@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Activity, AlertOctagon, BarChart3, CheckCircle2, GitBranch, Gauge, ShieldAlert, Target, Waves, Zap } from "lucide-react";
 import type { PublicAssetBrief, PublicDriver, PublicMarketBrief as PublicMarketBriefData } from "@/lib/intelligence/publicBriefBuilder";
+import { derivativesBiasFa } from "@/lib/intelligence/derivativesLite";
 import { HumanReportBlock } from "@/components/reporting/HumanReportBlock";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -495,6 +496,84 @@ function AnalysisEngineScores({ brief }: { brief: PublicMarketBriefData }) {
   );
 }
 
+function DerivativesLiteEvidence({ brief }: { brief: PublicMarketBriefData }) {
+  const summary = brief.derivativesLite;
+  const visibleAssets = summary.assets.filter((asset) => asset.derivativesAvailable);
+  const riskLabel =
+    summary.marketLeverageRiskScore === null
+      ? "داده کافی برای جمع‌بندی بازار موجود نیست"
+      : summary.marketLeverageRiskScore >= 70
+        ? "اهرم بازار بالاست و شکنندگی حرکت افزایش یافته است"
+        : summary.marketLeverageRiskScore >= 45
+          ? "اهرم بازار در سطح متوسط قرار دارد"
+          : "اهرم بازار فعلاً محدود یا در حال تخلیه است";
+  return (
+    <Card className={reportCardClass}>
+      <CardHeader>
+        <SectionTitle
+          icon={<Activity className="h-5 w-5" aria-hidden />}
+          title="مشتقات و اهرم"
+          subtitle="داده عمومی صرافی‌ها؛ پوشش Lite و صرافی‌محور است و به‌عنوان کل بازار مشتقات تفسیر نمی‌شود."
+        />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className={nestedPanelClass}>
+            <div className="text-[11px] text-[#8f9bb0]">دارایی‌های دارای داده</div>
+            <div className="mt-2 text-2xl font-black text-[#eef3fc]">{formatNumber(summary.availableAssetsCount, 0)} / {formatNumber(summary.assets.length, 0)}</div>
+          </div>
+          <div className={nestedPanelClass}>
+            <div className="text-[11px] text-[#8f9bb0]">ریسک اهرم بازار</div>
+            <div className={cn("mt-2 text-2xl font-black", scoreTone(summary.marketLeverageRiskScore))}>{summary.marketLeverageRiskScore === null ? "ناموجود" : formatScore(summary.marketLeverageRiskScore)}</div>
+          </div>
+          <div className={nestedPanelClass}>
+            <div className="text-[11px] text-[#8f9bb0]">برداشت کلی</div>
+            <div className="mt-2 text-sm font-black leading-6 text-[#eef3fc]">{riskLabel}</div>
+            <div className="mt-1 text-[10px] text-[#8f9bb0]">اعتماد: {percent(summary.confidence)}</div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-[14px] border border-[#2b3850]">
+          <table className="w-full min-w-[1040px] border-collapse text-xs">
+            <thead className="bg-[#0d1521] text-[#8f9bb0]">
+              <tr className="border-b border-[#2b3850]">
+                <th className="px-3 py-3 text-right">دارایی</th>
+                <th className="px-3 py-3 text-right">Funding</th>
+                <th className="px-3 py-3 text-right">OI ۲۴ساعته</th>
+                <th className="px-3 py-3 text-right">OI ۷روزه</th>
+                <th className="px-3 py-3 text-right">ریسک اهرم</th>
+                <th className="px-3 py-3 text-right">وضعیت مشتقات</th>
+                <th className="px-3 py-3 text-right">اعتماد</th>
+                <th className="px-3 py-3 text-right">منبع / زمان</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.assets.map((asset) => (
+                <tr key={asset.asset} className="border-b border-[#26334a] last:border-b-0">
+                  <td className="px-3 py-3">
+                    <span className="inline-flex items-center gap-2 font-black text-[#eef3fc]">{assetIcon(asset.asset, "sm")} {asset.asset}</span>
+                  </td>
+                  <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{asset.latestFundingRate === null ? "ناموجود" : `${formatNumber(asset.latestFundingRate, 4)}٪`}</td>
+                  <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{signedPercent(asset.openInterest24hChangePct)}</td>
+                  <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{signedPercent(asset.openInterest7dChangePct)}</td>
+                  <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{asset.leverageRiskScore === null ? "ناموجود" : formatScore(asset.leverageRiskScore)}</td>
+                  <td className="px-3 py-3 text-[#cfd8ea]">{asset.derivativesAvailable ? derivativesBiasFa(asset.directionalDerivativesBias) : "ناموجود"}</td>
+                  <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{percent(asset.derivativesConfidence)}</td>
+                  <td className="px-3 py-3 text-[10px] leading-5 text-[#8f9bb0]">{asset.sourceUsed ?? "منبع موفقی نبود"}<br />{sourceTimestamp(asset.latestDataTimestamp)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="text-xs leading-6 text-[#aab6ca]">
+          {summary.missingAssets.length ? `دارایی‌های فاقد داده معتبر مشتقات: ${summary.missingAssets.join("، ")}` : "Funding و Open Interest برای همه دارایی‌های واجد شرایط موجود است."}
+          {!visibleAssets.length ? " گزارش عمومی بدون ادعای اهرمی ادامه پیدا می‌کند." : " داده لیکوییدیشن نمایش داده نمی‌شود، چون جریان عمومی پیوسته در این runtime فعال نیست."}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
   return (
     <Card className={reportCardClass}>
@@ -566,6 +645,13 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
                   <div className="mb-1 text-[10px] font-bold text-[#8f9bb0]">محرک عددی اصلی</div>
                   <div className="text-[10px] leading-5 text-[#aab6ca]">{asset.mainNumericDriverFa}</div>
                 </div>
+                {asset.derivatives?.derivativesAvailable ? (
+                  <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-[#26334a] bg-[#111a28]/80 p-2 text-center text-[9px] leading-4">
+                    <div><span className="block text-[#8f9bb0]">Funding</span><b className="text-[#eef3fc]">{asset.derivatives.latestFundingRate === null ? "—" : `${formatNumber(asset.derivatives.latestFundingRate, 3)}٪`}</b></div>
+                    <div><span className="block text-[#8f9bb0]">OI ۲۴h</span><b className="text-[#eef3fc]">{signedPercent(asset.derivatives.openInterest24hChangePct)}</b></div>
+                    <div><span className="block text-[#8f9bb0]">ریسک</span><b className="text-[#eef3fc]">{asset.derivatives.leverageRiskScore === null ? "—" : formatNumber(asset.derivatives.leverageRiskScore, 0)}</b></div>
+                  </div>
+                ) : null}
                 {asset.missingDataFlags.length ? <div className="line-clamp-2 text-[9px] leading-4 text-amber-200">داده‌های غایب: {asset.missingDataFlags.join("، ")}</div> : null}
               </div>
             </div>
@@ -780,6 +866,7 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
         <ActiveEdgesDashboard brief={brief} />
       </section>
       <AnalysisEngineScores brief={brief} />
+      <DerivativesLiteEvidence brief={brief} />
       <AssetOverviewTable assets={brief.assets} />
       <section className="grid gap-3 lg:grid-cols-2">
         {brief.assets.map((asset) => (

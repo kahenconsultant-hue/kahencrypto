@@ -19,6 +19,7 @@ export type ConfidenceEngineInput = {
   freshnessStatus: EvidenceFreshnessStatus;
   parseStatus: "success" | "partial" | "failed";
   numericFieldsAvailable: string[];
+  limitations?: string[];
 };
 
 export type ConfidenceGuardInput = {
@@ -70,7 +71,14 @@ const reasonFa: Record<string, string> = {
   missing_liquidity_etf_derivatives: "داده استیبل‌کوین، ETF و مشتقات هم‌زمان موجود نیست",
   weighted_coverage_below_50: "پوشش وزنی داده کمتر از ۵۰٪ است",
   weighted_coverage_below_35: "پوشش وزنی داده کمتر از ۳۵٪ است",
-  stale_critical_source: "حداقل یک منبع حیاتی از بازه تازگی مجاز عبور کرده است",
+  stale_critical_source: "حداقل یک منبع حیاتی قدیمی‌تر از بازه مجاز است",
+  stale_macro_source: "داده شاخص گسترده دلار آمریکا یا نرخ اوراق قدیمی‌تر از بازه مجاز است",
+  stale_broad_usd_index: "داده شاخص گسترده دلار آمریکا قدیمی‌تر از بازه مجاز است",
+  stale_etf_source: "داده ETF قدیمی‌تر از آخرین بازه معاملاتی مجاز است",
+  etf_last_trading_day: "داده ETF مربوط به آخرین روز معاملاتی است، نه امروز",
+  liquidation_missing: "داده لیکوییدیشن در دسترس نیست",
+  derivatives_exchange_level_proxy: "داده مشتقات فقط صرافی‌محور است و نماینده کل بازار نیست",
+  broad_usd_proxy_not_true_dxy: "داده دلار آمریکا از نوع شاخص گسترده است، نه DXY کلاسیک",
 };
 
 function clampPercent(value: number) {
@@ -132,6 +140,9 @@ export function applyConfidenceGuard(input: ConfidenceGuardInput): ConfidenceGua
     confidenceCap = Math.min(confidenceCap, value);
     if (!capReasons.includes(reason)) capReasons.push(reason);
   };
+  const note = (reason: string) => {
+    if (!capReasons.includes(reason)) capReasons.push(reason);
+  };
 
   if (input.engines.priceMomentum.status === "missing") cap(30, "missing_price_momentum");
   if (input.engines.stablecoinLiquidity.status === "missing") cap(55, "missing_stablecoin_liquidity");
@@ -154,7 +165,17 @@ export function applyConfidenceGuard(input: ConfidenceGuardInput): ConfidenceGua
   const hasStaleCriticalSource = (Object.keys(input.engines) as ConfidenceEngineKey[]).some(
     (key) => input.engines[key].status === "available_but_stale",
   );
-  if (hasStaleCriticalSource) cap(60, "stale_critical_source");
+  const macroStale = input.engines.macro.status === "available_but_stale";
+  const etfStale = input.engines.etfFlow.status === "available_but_stale";
+  if (macroStale) {
+    cap(60, input.engines.macro.limitations?.includes("broad_usd_proxy_not_true_dxy") ? "stale_broad_usd_index" : "stale_macro_source");
+  }
+  if (etfStale) cap(60, "stale_etf_source");
+  if (hasStaleCriticalSource && !macroStale && !etfStale) cap(60, "stale_critical_source");
+  if (input.engines.etfFlow.freshnessStatus === "last_trading_day") note("etf_last_trading_day");
+  if (input.engines.derivatives.limitations?.includes("liquidation_missing")) cap(60, "liquidation_missing");
+  if (input.engines.derivatives.limitations?.includes("exchange_level_proxy")) note("derivatives_exchange_level_proxy");
+  if (input.engines.macro.limitations?.includes("broad_usd_proxy_not_true_dxy")) note("broad_usd_proxy_not_true_dxy");
 
   const derivativesMissing = input.engines.derivatives.status === "missing";
   const stablecoinMissing = input.engines.stablecoinLiquidity.status === "missing";
@@ -177,8 +198,8 @@ export function applyConfidenceGuard(input: ConfidenceGuardInput): ConfidenceGua
     missingCriticalData,
     staleSources,
     engineCaps: {
-      riskEngineConfidence: derivativesMissing ? 45 : 100,
-      marketRegimeConfidence: derivativesMissing ? 55 : 100,
+      riskEngineConfidence: derivativesMissing ? 45 : Math.min(100, input.engines.derivatives.confidence ?? 100),
+      marketRegimeConfidence: derivativesMissing ? 55 : Math.min(100, input.engines.derivatives.confidence ?? 100),
       liquidityEngineConfidence: stablecoinMissing ? 55 : 100,
       byEngine,
     },

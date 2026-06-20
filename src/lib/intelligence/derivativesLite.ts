@@ -44,6 +44,20 @@ export type MarketDerivativesSummary = {
   marketLeverageRiskScore: number | null;
   marketDerivativesBias: DerivativesBias | "N/A";
   confidence: number;
+  coverage: number;
+  componentCoverage: {
+    fundingRate: number;
+    openInterest: number;
+    liquidations: number;
+    crossExchangeCoverage: number;
+  };
+  derivativesScope: "exchange_level_proxy" | "multi_exchange_market_view";
+  exchangesUsed: string[];
+  liquidationAvailable: boolean;
+  fundingAvailable: boolean;
+  openInterestAvailable: boolean;
+  maxAllowedCoverage: number;
+  maxAllowedConfidence: number;
   missingAssets: DerivativesAssetSymbol[];
   sourceBreakdown: Record<string, number>;
   assets: PublicDerivativesAsset[];
@@ -59,6 +73,13 @@ export type MarketDerivativesSummary = {
     parseErrors: number;
     fetchedAt: string;
     confidenceCapsApplied: Array<{ asset: DerivativesAssetSymbol; cap: number; reason: string }>;
+    derivativesScope: "exchange_level_proxy" | "multi_exchange_market_view";
+    exchangesUsed: string[];
+    liquidationAvailable: boolean;
+    fundingAvailable: boolean;
+    openInterestAvailable: boolean;
+    maxAllowedCoverage: number;
+    maxAllowedConfidence: number;
   };
 };
 
@@ -75,6 +96,13 @@ function clamp(value: number, min = 0, max = 100) {
 function value(signals: SignalMap, key: string) {
   const signal = signals[key];
   return signal && signal.value !== null && signal.quality !== "unavailable" ? signal.value : null;
+}
+
+function freshValue(signals: SignalMap, key: string, maxAgeMinutes = 15) {
+  const item = signals[key];
+  const itemTimestamp = item?.timestamp ? Date.parse(item.timestamp) : NaN;
+  if (!Number.isFinite(itemTimestamp) || Date.now() - itemTimestamp > maxAgeMinutes * 60_000) return null;
+  return value(signals, key);
 }
 
 function timestamp(signals: SignalMap, key: string) {
@@ -156,8 +184,40 @@ export function derivativesConfidence(params: {
   if (params.fundingAvailable && params.oiAvailable && params.longShortAvailable) confidence = Math.min(75, confidence + 10);
   if (params.fundingAvailable && params.oiAvailable && params.longShortAvailable && params.liquidationAvailable) confidence = Math.min(80, confidence + 5);
   if (!params.sevenDayOiAvailable) confidence = Math.max(0, confidence - 5);
+  // A single-asset Lite snapshot is always exchange-scoped. Without a
+  // liquidation stream it cannot support more than limited confidence.
+  if (!params.liquidationAvailable) confidence = Math.min(60, confidence);
   if (params.stale) confidence = Math.min(45, confidence);
   return Math.min(80, confidence);
+}
+
+function componentAvailability(available: number, eligible: number) {
+  if (eligible <= 0 || available <= 0) return 0;
+  const ratio = available / eligible;
+  if (ratio >= 0.8) return 1;
+  return 0.5;
+}
+
+export function calculateDerivativesCoverage(params: {
+  fundingCoverage: number;
+  openInterestCoverage: number;
+  liquidationCoverage: number;
+  crossExchangeCoverage: number;
+}) {
+  const raw =
+    params.fundingCoverage * 35 +
+    params.openInterestCoverage * 35 +
+    params.liquidationCoverage * 20 +
+    params.crossExchangeCoverage * 10;
+  const liquidationMissing = params.liquidationCoverage === 0;
+  const crossExchangeLimited = params.crossExchangeCoverage < 1;
+  const maxAllowedCoverage = liquidationMissing && crossExchangeLimited ? 70 : liquidationMissing ? 80 : 100;
+  const maxAllowedConfidence = liquidationMissing && crossExchangeLimited ? 60 : liquidationMissing ? 65 : 80;
+  return {
+    coverage: Math.min(maxAllowedCoverage, Math.round(raw)),
+    maxAllowedCoverage,
+    maxAllowedConfidence,
+  };
 }
 
 function buildAsset(asset: DerivativesAssetSymbol, signals: SignalMap, prices: PriceContext): PublicDerivativesAsset {
@@ -179,14 +239,14 @@ function buildAsset(asset: DerivativesAssetSymbol, signals: SignalMap, prices: P
   const oiUsd = value(signals, keys.oiUsd);
   const oi24h = value(signals, keys.oi24h);
   const oi7d = value(signals, keys.oi7d);
-  const ratio = value(signals, keys.ratio);
+  const ratio = freshValue(signals, keys.ratio);
   const fundingTimestamp = timestamp(signals, keys.funding);
   const oiTimestamp = timestamp(signals, keys.oi);
   const latestDataTimestamp = latestTimestamp(fundingTimestamp, oiTimestamp, timestamp(signals, keys.ratio));
   const stale = latestDataTimestamp === null || Date.now() - Date.parse(latestDataTimestamp) > 15 * 60_000;
   const fundingSource = source(signals, [keys.funding, keys.funding24h, keys.funding7d]);
   const oiSource = source(signals, [keys.oi, keys.oi24h, keys.oi7d]);
-  const sourceUsed = source(signals, Object.values(keys));
+  const sourceUsed = source(signals, [keys.funding, keys.funding24h, keys.funding7d, keys.oi, keys.oiUsd, keys.oi24h, keys.oi7d]);
   const sameSource = Boolean(fundingSource && oiSource && fundingSource === oiSource);
   const confidence = derivativesConfidence({
     fundingAvailable: funding !== null,
@@ -243,7 +303,7 @@ function buildAsset(asset: DerivativesAssetSymbol, signals: SignalMap, prices: P
 
 export function buildDerivativesLiteSummary(signals: SignalMap, prices: PriceContext = {}): MarketDerivativesSummary {
   const assets = DERIVATIVES_ASSETS.map((asset) => buildAsset(asset, signals, prices));
-  const available = assets.filter((asset) => asset.derivativesAvailable);
+  const available = assets.filter((asset) => asset.derivativesAvailable && !asset.stale);
   const majors = assets.filter((asset) => MAJOR_ASSETS.includes(asset.asset) && asset.derivativesAvailable && !asset.stale);
   const sourceBreakdown = available.reduce<Record<string, number>>((result, asset) => {
     const key = asset.sourceUsed ?? "Unknown";
@@ -251,6 +311,22 @@ export function buildDerivativesLiteSummary(signals: SignalMap, prices: PriceCon
     return result;
   }, {});
   const marketRisk = majors.length >= 3 ? average(majors.map((asset) => asset.leverageRiskScore)) : null;
+  const exchangesUsed = [...new Set(Object.keys(sourceBreakdown).flatMap((sourceName) => ["Binance", "Bybit", "OKX"].filter((provider) => sourceName.includes(provider))))];
+  const fundingCount = available.filter((asset) => asset.latestFundingRate !== null).length;
+  const oiCount = available.filter((asset) => asset.latestOpenInterest !== null && asset.openInterest24hChangePct !== null).length;
+  const liquidationCount = available.filter((asset) => asset.liquidationProxy !== null).length;
+  const componentCoverage = {
+    fundingRate: componentAvailability(fundingCount, assets.length),
+    openInterest: componentAvailability(oiCount, assets.length),
+    liquidations: componentAvailability(liquidationCount, assets.length),
+    crossExchangeCoverage: exchangesUsed.length >= 3 ? 1 : exchangesUsed.length >= 2 ? 0.5 : 0,
+  };
+  const coveragePolicy = calculateDerivativesCoverage({
+    fundingCoverage: componentCoverage.fundingRate,
+    openInterestCoverage: componentCoverage.openInterest,
+    liquidationCoverage: componentCoverage.liquidations,
+    crossExchangeCoverage: componentCoverage.crossExchangeCoverage,
+  });
   const biasCounts = majors.reduce<Record<DerivativesBias, number>>(
     (result, asset) => ({ ...result, [asset.directionalDerivativesBias]: result[asset.directionalDerivativesBias] + 1 }),
     { bullish: 0, bearish: 0, neutral: 0, "squeeze-risk": 0, deleveraging: 0 },
@@ -261,20 +337,31 @@ export function buildDerivativesLiteSummary(signals: SignalMap, prices: PriceCon
     cap: asset.derivativesConfidence,
     reason: asset.stale ? "stale_over_15m" : asset.missingFields.includes("liquidationProxy") ? "lite_mode_no_total_market_liquidation" : "public_exchange_lite_cap",
   }));
-  const sourcesSucceeded = Object.keys(sourceBreakdown).flatMap((sourceName) => ["Binance", "Bybit", "OKX"].filter((provider) => sourceName.includes(provider)));
+  const sourcesSucceeded = exchangesUsed;
+  const rawMarketConfidence = majors.length < 3 ? Math.min(40, Math.round(average(majors.map((asset) => asset.derivativesConfidence)) ?? 0)) : Math.round(average(majors.map((asset) => asset.derivativesConfidence)) ?? 0);
+  const marketConfidence = Math.min(rawMarketConfidence, coveragePolicy.maxAllowedConfidence, coveragePolicy.coverage);
   return {
     mode: "lite_public_exchange_api",
     availableAssetsCount: available.length,
     missingAssetsCount: assets.length - available.length,
-    btcDerivativesState: assets.find((asset) => asset.asset === "BTC")?.derivativesAvailable ? assets.find((asset) => asset.asset === "BTC")!.directionalDerivativesBias : "N/A",
-    ethDerivativesState: assets.find((asset) => asset.asset === "ETH")?.derivativesAvailable ? assets.find((asset) => asset.asset === "ETH")!.directionalDerivativesBias : "N/A",
+    btcDerivativesState: assets.find((asset) => asset.asset === "BTC")?.derivativesAvailable && !assets.find((asset) => asset.asset === "BTC")?.stale ? assets.find((asset) => asset.asset === "BTC")!.directionalDerivativesBias : "N/A",
+    ethDerivativesState: assets.find((asset) => asset.asset === "ETH")?.derivativesAvailable && !assets.find((asset) => asset.asset === "ETH")?.stale ? assets.find((asset) => asset.asset === "ETH")!.directionalDerivativesBias : "N/A",
     avgFundingRateMajorAssets: average(majors.map((asset) => asset.latestFundingRate)),
     avgOi24hChangeMajorAssets: average(majors.map((asset) => asset.openInterest24hChangePct)),
     avgOi7dChangeMajorAssets: average(majors.map((asset) => asset.openInterest7dChangePct)),
     marketLeverageRiskScore: marketRisk === null ? null : Math.round(marketRisk),
     marketDerivativesBias: marketBias,
-    confidence: majors.length < 3 ? Math.min(40, Math.round(average(majors.map((asset) => asset.derivativesConfidence)) ?? 0)) : Math.round(average(majors.map((asset) => asset.derivativesConfidence)) ?? 0),
-    missingAssets: assets.filter((asset) => !asset.derivativesAvailable).map((asset) => asset.asset),
+    confidence: marketConfidence,
+    coverage: coveragePolicy.coverage,
+    componentCoverage,
+    derivativesScope: "exchange_level_proxy",
+    exchangesUsed,
+    liquidationAvailable: liquidationCount > 0,
+    fundingAvailable: fundingCount > 0,
+    openInterestAvailable: oiCount > 0,
+    maxAllowedCoverage: coveragePolicy.maxAllowedCoverage,
+    maxAllowedConfidence: coveragePolicy.maxAllowedConfidence,
+    missingAssets: assets.filter((asset) => !asset.derivativesAvailable || asset.stale).map((asset) => asset.asset),
     sourceBreakdown,
     assets,
     generatedAt: new Date().toISOString(),
@@ -289,6 +376,13 @@ export function buildDerivativesLiteSummary(signals: SignalMap, prices: PriceCon
       parseErrors: 0,
       fetchedAt: new Date().toISOString(),
       confidenceCapsApplied,
+      derivativesScope: "exchange_level_proxy",
+      exchangesUsed,
+      liquidationAvailable: liquidationCount > 0,
+      fundingAvailable: fundingCount > 0,
+      openInterestAvailable: oiCount > 0,
+      maxAllowedCoverage: coveragePolicy.maxAllowedCoverage,
+      maxAllowedConfidence: coveragePolicy.maxAllowedConfidence,
     },
   };
 }

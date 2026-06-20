@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildDerivativesLiteSummary,
+  calculateDerivativesCoverage,
   calculateLeverageRisk,
   classifyDerivativesBias,
   derivativesConfidence,
@@ -91,6 +92,30 @@ test("Missing liquidation proxy never blocks public derivatives evidence", () =>
   assert.ok(btc.missingFields.includes("liquidationProxy"));
   assert.equal(
     derivativesConfidence({ fundingAvailable: true, oiAvailable: true, sameSource: true, primarySource: true, longShortAvailable: false, liquidationAvailable: false, stale: false, sevenDayOiAvailable: true }),
-    70,
+    60,
   );
+  assert.ok(summary.coverage <= 70);
+  assert.ok(summary.confidence <= 60);
+  assert.equal(summary.audit.liquidationAvailable, false);
+  assert.equal(summary.audit.derivativesScope, "exchange_level_proxy");
+});
+
+test("component coverage cannot reach 100 without liquidation and broad exchange coverage", () => {
+  const limited = calculateDerivativesCoverage({
+    fundingCoverage: 1,
+    openInterestCoverage: 1,
+    liquidationCoverage: 0,
+    crossExchangeCoverage: 0.5,
+  });
+  assert.equal(limited.coverage, 70);
+  assert.equal(limited.maxAllowedConfidence, 60);
+
+  const complete = calculateDerivativesCoverage({
+    fundingCoverage: 1,
+    openInterestCoverage: 1,
+    liquidationCoverage: 1,
+    crossExchangeCoverage: 1,
+  });
+  assert.equal(complete.coverage, 100);
+  assert.equal(complete.maxAllowedConfidence, 80);
 });

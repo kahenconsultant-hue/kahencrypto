@@ -3,6 +3,7 @@ import { Activity, AlertOctagon, BarChart3, CheckCircle2, GitBranch, Gauge, Shie
 import type { PublicAssetBrief, PublicDriver, PublicMarketBrief as PublicMarketBriefData } from "@/lib/intelligence/publicBriefBuilder";
 import { derivativesBiasFa } from "@/lib/intelligence/derivativesLite";
 import { HumanReportBlock } from "@/components/reporting/HumanReportBlock";
+import { PersianFontReadyMarker } from "@/components/reporting/PersianFontReadyMarker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -179,18 +180,24 @@ function MarketVerdict({ brief }: { brief: PublicMarketBriefData }) {
   );
 }
 
-function EvidenceSource({ name, url, timestamp, freshness }: { name: string | null; url: string | null; timestamp: string | null; freshness: string }) {
+function EvidenceSource({
+  name,
+  url,
+  fetchedAt,
+  timestamp,
+  freshness,
+}: {
+  name: string | null;
+  url: string | null;
+  fetchedAt: string | null;
+  timestamp: string | null;
+  freshness: string;
+}) {
   return (
     <div className="mt-3 border-t border-[#26334a] pt-2 text-[10px] leading-5 text-[#8f9bb0]">
-      <span>منبع: </span>
-      {url && name ? (
-        <a href={url} target="_blank" rel="noreferrer" className="font-bold text-cyan-200 underline decoration-cyan-300/30 underline-offset-2">
-          {name}
-        </a>
-      ) : (
-        <span>{name ?? "ناموجود"}</span>
-      )}
-      <span> · {sourceTimestamp(timestamp)} · {freshness}</span>
+      <div><span>منبع: </span>{url && name ? <a href={url} target="_blank" rel="noreferrer" className="font-bold text-cyan-200 underline decoration-cyan-300/30 underline-offset-2">{name}</a> : <span>{name ?? "ناموجود"}</span>}</div>
+      <div><span>زمان داده: </span><span className="metric-value" dir="ltr">{sourceTimestamp(timestamp)}</span></div>
+      <div><span>زمان دریافت: </span><span className="metric-value" dir="ltr">{sourceTimestamp(fetchedAt)}</span><span> · {freshness}</span></div>
     </div>
   );
 }
@@ -198,7 +205,7 @@ function EvidenceSource({ name, url, timestamp, freshness }: { name: string | nu
 function DataEvidenceStrip({ brief }: { brief: PublicMarketBriefData }) {
   const stablecoin = brief.dataEvidence.stablecoin;
   const etfRows = [brief.dataEvidence.etf.btc, brief.dataEvidence.etf.eth];
-  const macroRows = brief.dataEvidence.macro.filter((row) => row.id === "DXY" || row.id === "US10Y");
+  const macroRows = brief.dataEvidence.macro.filter((row) => row.id === "DXY" || row.id === "USD_BROAD" || row.id === "US10Y");
   return (
     <Card className={reportCardClass}>
       <CardHeader>
@@ -220,7 +227,7 @@ function DataEvidenceStrip({ brief }: { brief: PublicMarketBriefData }) {
           <Badge className="mt-3 whitespace-normal text-right leading-5" variant={stablecoin.interpretation === "unavailable" ? "warning" : "outline"}>
             {stablecoin.interpretationFa}
           </Badge>
-          <EvidenceSource name={stablecoin.sourceName} url={stablecoin.sourceUrl} timestamp={stablecoin.latestDataTimestamp} freshness={stablecoin.freshnessLabelFa} />
+          <EvidenceSource name={stablecoin.sourceName} url={stablecoin.sourceUrl} fetchedAt={stablecoin.fetchedAt} timestamp={stablecoin.latestDataTimestamp} freshness={stablecoin.freshnessLabelFa} />
         </div>
 
         {etfRows.map((row) => (
@@ -235,19 +242,20 @@ function DataEvidenceStrip({ brief }: { brief: PublicMarketBriefData }) {
             <Badge className="mt-3" variant={row.interpretation === "unavailable" ? "warning" : row.interpretation === "pressure" ? "danger" : "outline"}>
               {row.interpretationFa}
             </Badge>
-            <EvidenceSource name={row.sourceName} url={row.sourceUrl} timestamp={row.latestDataTimestamp} freshness={row.freshnessLabelFa} />
+            <EvidenceSource name={row.sourceName} url={row.sourceUrl} fetchedAt={row.fetchedAt} timestamp={row.latestDataTimestamp} freshness={row.freshnessLabelFa} />
           </div>
         ))}
 
         {macroRows.map((row) => (
           <div key={row.id} className={nestedPanelClass}>
-            <div className="text-sm font-black text-[#eef3fc]">{row.id}</div>
-            <div className="mt-3 space-y-1 text-[11px] leading-5 text-[#cfd8ea]">
-              <div>آخرین مقدار: {row.latest === null ? "ناموجود" : formatNumber(row.latest, 2)}</div>
-              <div>تغییر یک‌روزه: {row.changeUnit === "basis_point" ? signedNumber(row.change1d, "واحد پایه", 1) : signedPercent(row.change1d)}</div>
-              <div>تغییر ۷روزه: {row.changeUnit === "basis_point" ? signedNumber(row.change7d, "واحد پایه", 1) : signedPercent(row.change7d)}</div>
+            <div className="text-sm font-black text-[#eef3fc]">{row.publicLabelFa}</div>
+            <div className="evidence-strip mt-3 space-y-1 text-[11px] leading-5 text-[#cfd8ea]">
+              <div className="numeric-row"><span className="fa-label" dir="rtl">آخرین مقدار</span><span className="metric-value" dir="ltr">{row.latest === null ? "ناموجود" : formatNumber(row.latest, 2)}</span></div>
+              <div className="numeric-row"><span className="fa-label" dir="rtl">تغییر یک‌روزه</span><span className="metric-value" dir="ltr">{row.changeUnit === "basis_point" ? signedNumber(row.change1d, "واحد پایه", 1) : signedPercent(row.change1d)}</span></div>
+              <div className="numeric-row"><span className="fa-label" dir="rtl">تغییر ۷روزه</span><span className="metric-value" dir="ltr">{row.changeUnit === "basis_point" ? signedNumber(row.change7d, "واحد پایه", 1) : signedPercent(row.change7d)}</span></div>
             </div>
-            <EvidenceSource name={row.sourceName} url={row.sourceUrl} timestamp={row.latestDataTimestamp} freshness={row.freshnessLabelFa} />
+            {row.isProxy ? <div className="mt-2 text-[10px] leading-5 text-amber-200">این شاخص نمای جایگزین قدرت دلار است و شاخص کلاسیک دلار نیست.</div> : null}
+            <EvidenceSource name={row.sourceName} url={row.sourceUrl} fetchedAt={row.fetchedAt} timestamp={row.latestDataTimestamp} freshness={row.freshnessLabelFa} />
           </div>
         ))}
       </CardContent>
@@ -498,8 +506,10 @@ function AnalysisEngineScores({ brief }: { brief: PublicMarketBriefData }) {
 
 function DerivativesLiteEvidence({ brief }: { brief: PublicMarketBriefData }) {
   const summary = brief.derivativesLite;
-  const visibleAssets = summary.assets.filter((asset) => asset.derivativesAvailable);
-  const riskLabel =
+  const visibleAssets = summary.assets.filter((asset) => asset.derivativesAvailable && !asset.stale);
+  const riskLabel = !summary.liquidationAvailable
+    ? "اهرم فعلاً محدود دیده می‌شود، اما به دلیل نبود لیکوییدیشن، قطعیت پایین‌تر است"
+    :
     summary.marketLeverageRiskScore === null
       ? "داده کافی برای جمع‌بندی بازار موجود نیست"
       : summary.marketLeverageRiskScore >= 70
@@ -517,10 +527,16 @@ function DerivativesLiteEvidence({ brief }: { brief: PublicMarketBriefData }) {
         />
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className={nestedPanelClass}>
-            <div className="text-[11px] text-[#8f9bb0]">دارایی‌های دارای داده</div>
-            <div className="mt-2 text-2xl font-black text-[#eef3fc]">{formatNumber(summary.availableAssetsCount, 0)} / {formatNumber(summary.assets.length, 0)}</div>
+            <div className="text-[11px] text-[#8f9bb0]">وضعیت موتور</div>
+            <div className="mt-2 text-lg font-black text-[#eef3fc]">فعال محدود</div>
+            <div className="mt-1 text-[10px] text-[#8f9bb0]">{formatNumber(summary.availableAssetsCount, 0)} از {formatNumber(summary.assets.length, 0)} دارایی تازه</div>
+          </div>
+          <div className={nestedPanelClass}>
+            <div className="text-[11px] text-[#8f9bb0]">پوشش اجزای داده</div>
+            <div className="mt-2 text-2xl font-black text-[#f5c842]">{percent(summary.coverage)}</div>
+            <div className="mt-1 text-[10px] text-[#8f9bb0]">Funding + Open Interest؛ بدون لیکوییدیشن</div>
           </div>
           <div className={nestedPanelClass}>
             <div className="text-[11px] text-[#8f9bb0]">ریسک اهرم بازار</div>
@@ -531,6 +547,12 @@ function DerivativesLiteEvidence({ brief }: { brief: PublicMarketBriefData }) {
             <div className="mt-2 text-sm font-black leading-6 text-[#eef3fc]">{riskLabel}</div>
             <div className="mt-1 text-[10px] text-[#8f9bb0]">اعتماد: {percent(summary.confidence)}</div>
           </div>
+        </div>
+
+        <div className="rounded-[12px] border border-amber-400/30 bg-amber-400/8 px-3 py-3 text-xs leading-6 text-amber-100">
+          <div>داده لیکوییدیشن در دسترس نیست؛ ارزیابی ریسک اهرمی کامل نیست.</div>
+          <div>داده مشتقات از منابع صرافی‌محور گرفته شده و نماینده کل بازار مشتقات نیست.</div>
+          <div className="mt-1 text-[10px] text-amber-100/70">منابع موفق: {summary.exchangesUsed.join("، ") || "هیچ‌کدام"}</div>
         </div>
 
         <div className="overflow-x-auto rounded-[14px] border border-[#2b3850]">
@@ -557,17 +579,17 @@ function DerivativesLiteEvidence({ brief }: { brief: PublicMarketBriefData }) {
                   <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{signedPercent(asset.openInterest24hChangePct)}</td>
                   <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{signedPercent(asset.openInterest7dChangePct)}</td>
                   <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{asset.leverageRiskScore === null ? "ناموجود" : formatScore(asset.leverageRiskScore)}</td>
-                  <td className="px-3 py-3 text-[#cfd8ea]">{asset.derivativesAvailable ? derivativesBiasFa(asset.directionalDerivativesBias) : "ناموجود"}</td>
+                  <td className="px-3 py-3 text-[#cfd8ea]">{asset.stale ? "قدیمی / فقط بررسی فنی" : asset.derivativesAvailable ? derivativesBiasFa(asset.directionalDerivativesBias) : "ناموجود"}</td>
                   <td className="px-3 py-3 tabular-nums text-[#cfd8ea]">{percent(asset.derivativesConfidence)}</td>
-                  <td className="px-3 py-3 text-[10px] leading-5 text-[#8f9bb0]">{asset.sourceUsed ?? "منبع موفقی نبود"}<br />{sourceTimestamp(asset.latestDataTimestamp)}</td>
+                  <td className="px-3 py-3 text-[10px] leading-5 text-[#8f9bb0]">{asset.sourceUsed ?? "منبع موفقی نبود"}<br />{sourceTimestamp(asset.latestDataTimestamp)}{asset.stale ? " · قدیمی" : ""}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <div className="text-xs leading-6 text-[#aab6ca]">
-          {summary.missingAssets.length ? `دارایی‌های فاقد داده معتبر مشتقات: ${summary.missingAssets.join("، ")}` : "Funding و Open Interest برای همه دارایی‌های واجد شرایط موجود است."}
-          {!visibleAssets.length ? " گزارش عمومی بدون ادعای اهرمی ادامه پیدا می‌کند." : " داده لیکوییدیشن نمایش داده نمی‌شود، چون جریان عمومی پیوسته در این runtime فعال نیست."}
+          {summary.missingAssets.length ? `دارایی‌های فاقد داده تازه و معتبر مشتقات: ${summary.missingAssets.join("، ")}` : "Funding و Open Interest تازه برای همه دارایی‌های واجد شرایط موجود است."}
+          {!visibleAssets.length ? " گزارش عمومی بدون ادعای اهرمی ادامه پیدا می‌کند." : " داده موجود: Funding و Open Interest. داده غایب: جریان لیکوییدیشن."}
         </div>
       </CardContent>
     </Card>
@@ -645,7 +667,7 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
                   <div className="mb-1 text-[10px] font-bold text-[#8f9bb0]">محرک عددی اصلی</div>
                   <div className="text-[10px] leading-5 text-[#aab6ca]">{asset.mainNumericDriverFa}</div>
                 </div>
-                {asset.derivatives?.derivativesAvailable ? (
+                {asset.derivatives?.derivativesAvailable && !asset.derivatives.stale ? (
                   <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-[#26334a] bg-[#111a28]/80 p-2 text-center text-[9px] leading-4">
                     <div><span className="block text-[#8f9bb0]">Funding</span><b className="text-[#eef3fc]">{asset.derivatives.latestFundingRate === null ? "—" : `${formatNumber(asset.derivatives.latestFundingRate, 3)}٪`}</b></div>
                     <div><span className="block text-[#8f9bb0]">OI ۲۴h</span><b className="text-[#eef3fc]">{signedPercent(asset.derivatives.openInterest24hChangePct)}</b></div>
@@ -825,10 +847,10 @@ function CompactDataConfidence({ brief }: { brief: PublicMarketBriefData }) {
 export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
   return (
     <div
-      className="mx-auto max-w-[1400px] space-y-5 rounded-[32px] border border-[#2a3448] bg-[radial-gradient(circle_at_20%_30%,#1a2332,#0f141e)] p-4 text-[#eef3fc] shadow-[0_30px_60px_-12px_rgba(0,0,0,0.8)] md:p-6"
+      className="report-fa mx-auto max-w-[1400px] space-y-5 rounded-[32px] border border-[#2a3448] bg-[radial-gradient(circle_at_20%_30%,#1a2332,#0f141e)] p-4 text-[#eef3fc] shadow-[0_30px_60px_-12px_rgba(0,0,0,0.8)] md:p-6"
       dir="rtl"
-      style={{ fontFamily: "'Segoe UI', Roboto, system-ui, sans-serif" }}
     >
+      <PersianFontReadyMarker />
       <section className="rounded-[22px] border border-[#2f3d58] bg-[#111827]/65 p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>

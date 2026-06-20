@@ -37,7 +37,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: Tahoma, Arial, "Segoe UI", sans-serif;
+    font-family: Vazirmatn, IRANSans, Tahoma, Arial, sans-serif;
     letter-spacing: 0;
     min-height: 100vh;
   }
@@ -49,6 +49,41 @@
 }
 
 @layer components {
+  .report-fa {
+    direction: rtl;
+    unicode-bidi: plaintext;
+    text-align: right;
+    font-family: Vazirmatn, IRANSans, Tahoma, Arial, sans-serif;
+  }
+
+  .numeric-row,
+  .evidence-strip,
+  .asset-metrics {
+    direction: ltr;
+    unicode-bidi: isolate;
+    text-align: left;
+  }
+
+  .numeric-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .fa-label {
+    direction: rtl;
+    unicode-bidi: isolate;
+    text-align: right;
+  }
+
+  .metric-value {
+    direction: ltr;
+    unicode-bidi: isolate;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
   .terminal-grid {
     background-image:
       linear-gradient(hsl(var(--border) / 0.34) 1px, transparent 1px),
@@ -67,6 +102,21 @@
 
   .number-tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+@media print {
+  html,
+  body,
+  .report-fa {
+    direction: rtl;
+    unicode-bidi: plaintext;
+    font-family: Vazirmatn, IRANSans, Tahoma, Arial, sans-serif;
+  }
+
+  .report-fa {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }
 

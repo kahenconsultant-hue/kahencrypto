@@ -39,6 +39,12 @@ import {
 } from "@/lib/report/dataEvidence";
 import { formatNumber } from "@/lib/utils";
 import {
+  normalizeMacroSource,
+  normalizePublicMacroText,
+  type NormalizedMacroSource,
+} from "@/lib/macro/normalizeMacroSources";
+import { assertPersianTextIntegrity } from "@/lib/report/persianTextIntegrity";
+import {
   buildDerivativesLiteSummary,
   type MarketDerivativesSummary,
   type PublicDerivativesAsset,
@@ -168,7 +174,14 @@ export type PublicEtfAssetEvidence = PublicSourceEvidence & {
 };
 
 export type PublicMacroEvidence = PublicSourceEvidence & {
-  id: "DXY" | "US10Y" | "Nasdaq" | "Gold";
+  id: "DXY" | "USD_BROAD" | "US10Y" | "Nasdaq" | "Gold";
+  publicLabel: string;
+  publicLabelFa: string;
+  technicalLabel: string;
+  macroSourceType: NormalizedMacroSource["macroSourceType"];
+  sourceSymbol: string | null;
+  isProxy: boolean;
+  proxyWarning: string | null;
   latest: number | null;
   change1d: number | null;
   change7d: number | null;
@@ -214,6 +227,7 @@ export type PublicReportAudit = {
   }>;
   engines: Record<ConfidenceEngineKey, ConfidenceEngineInput>;
   derivativesAudit: MarketDerivativesSummary["audit"];
+  macroSources: NormalizedMacroSource[];
 };
 
 export type PublicDriver = {
@@ -397,6 +411,17 @@ function numberFrom(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizePublicTextTree<T>(value: T, macroSource: NormalizedMacroSource): T {
+  if (typeof value === "string") return normalizePublicMacroText(value, macroSource) as T;
+  if (Array.isArray(value)) return value.map((item) => normalizePublicTextTree(item, macroSource)) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, normalizePublicTextTree(item, macroSource)]),
+    ) as T;
+  }
+  return value;
+}
+
 const PUBLIC_SOURCE_URLS = {
   coingecko: "https://api.coingecko.com/api/v3/coins/markets",
   defiLlama: "https://stablecoins.llama.fi/stablecoincharts/all",
@@ -520,9 +545,27 @@ function buildDataEvidence(signals: SignalMap, marketData: PublicMarketDataMap, 
   const macroMetric = (id: PublicMacroEvidence["id"], key: string, unit: PublicMacroEvidence["changeUnit"]): PublicMacroEvidence => {
     const signal = signals[key];
     const source = sourceEvidence("macro", signal, fetchedAt);
+    const normalizedSource = normalizeMacroSource({ symbol: id, sourceName: signal?.source ?? null });
+    const labels =
+      id === "US10Y"
+        ? { publicLabel: "US10Y", publicLabelFa: "بازده اوراق ۱۰ساله آمریکا" }
+        : id === "Nasdaq"
+          ? { publicLabel: "Nasdaq", publicLabelFa: "نزدک" }
+          : id === "Gold"
+            ? { publicLabel: "Gold", publicLabelFa: "طلا" }
+            : { publicLabel: normalizedSource.publicLabel, publicLabelFa: normalizedSource.publicLabelFa };
+    const publicId = normalizedSource.shortCode === "USD_BROAD" ? "USD_BROAD" : id;
     return {
       ...source,
-      id,
+      id: publicId,
+      sourceName: normalizedSource.technicalLabel,
+      publicLabel: labels.publicLabel,
+      publicLabelFa: labels.publicLabelFa,
+      technicalLabel: normalizedSource.technicalLabel,
+      macroSourceType: normalizedSource.macroSourceType,
+      sourceSymbol: normalizedSource.sourceSymbol,
+      isProxy: normalizedSource.isProxy,
+      proxyWarning: normalizedSource.proxyWarning,
       latest: latestHistoryPoint(signal)?.value ?? null,
       change1d: signalValue(signals, key) === null ? null : unit === "basis_point" ? Number(((signalValue(signals, key) ?? 0) * 100).toFixed(2)) : signalValue(signals, key),
       change7d: historyChange(signal, 7, unit),
@@ -600,6 +643,7 @@ function buildConfidenceEngines(
   signals: SignalMap,
   marketData: PublicMarketDataMap,
   fetchedAt: string,
+  derivativesLite: MarketDerivativesSummary,
 ): Record<ConfidenceEngineKey, ConfidenceEngineInput> {
   const priceRows = TARGET_ASSETS.map((asset) => marketData[asset.symbol]).filter((row): row is PublicMarketData => Boolean(row?.priceUsd !== null && row?.change24hPct !== null));
   const priceTimestamp = priceRows.map((row) => row.lastUpdatedAt).filter((value): value is string => Boolean(value)).sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
@@ -621,12 +665,33 @@ function buildConfidenceEngines(
   const etfSignals = [signals.btc_etf_flow_24h, signals.btc_etf_flow_7d, signals.eth_etf_flow_24h, signals.eth_etf_flow_7d];
   const macroSignals = [signals.dxy_trend_24h, signals.us10y_trend_24h];
   const derivativeSignals = [signals.funding_btc, signals.open_interest_btc_24h, signals.funding_eth, signals.open_interest_eth_24h];
+  const macroInput = engineInput({ category: "macro", signals: macroSignals, requiredCount: 2, fetchedAt });
+  const dollarSource = normalizeMacroSource({ symbol: "DXY", sourceName: signals.dxy_trend_24h?.source ?? null });
+  macroInput.limitations = dollarSource.isProxy ? ["broad_usd_proxy_not_true_dxy"] : [];
+  const derivativeInputBase = engineInput({ category: "derivatives", signals: derivativeSignals, requiredCount: 4, fetchedAt });
+  const derivativesInput: ConfidenceEngineInput = {
+    ...derivativeInputBase,
+    status:
+      derivativesLite.availableAssetsCount === 0
+        ? "missing"
+        : derivativesLite.assets.every((asset) => asset.stale || !asset.derivativesAvailable)
+          ? "available_but_stale"
+          : derivativesLite.coverage < 100
+            ? "partial"
+            : "available_and_fresh",
+    confidence: derivativesLite.confidence,
+    parseStatus: derivativesLite.availableAssetsCount === 0 ? "failed" : derivativesLite.coverage < 100 ? "partial" : "success",
+    limitations: [
+      ...(!derivativesLite.liquidationAvailable ? ["liquidation_missing"] : []),
+      ...(derivativesLite.derivativesScope === "exchange_level_proxy" ? ["exchange_level_proxy"] : []),
+    ],
+  };
   return {
     priceMomentum,
     stablecoinLiquidity: engineInput({ category: "stablecoinLiquidity", signals: stablecoinSignals, requiredCount: 3, fetchedAt, forceMissingWhenIncomplete: true }),
     etfFlow: engineInput({ category: "etfFlow", signals: etfSignals, requiredCount: 4, fetchedAt }),
-    macro: engineInput({ category: "macro", signals: macroSignals, requiredCount: 2, fetchedAt }),
-    derivatives: engineInput({ category: "derivatives", signals: derivativeSignals, requiredCount: 4, fetchedAt, forceMissingWhenIncomplete: true }),
+    macro: macroInput,
+    derivatives: derivativesInput,
     sentimentNews: engineInput({ category: "sentimentNews", signals: [signals.news_sentiment_macro], requiredCount: 1, fetchedAt }),
   };
 }
@@ -1034,7 +1099,12 @@ function dataModeFa(mode: PublicMarketBrief["dataMode"]) {
   return "محدود";
 }
 
-function buildCompactDataConfidence(signals: SignalMap, assetBuilds: BuiltAssetBrief[], forecast: PublicMarketBrief["forecastBadge"]): LayerCoverageState {
+function buildCompactDataConfidence(
+  signals: SignalMap,
+  assetBuilds: BuiltAssetBrief[],
+  forecast: PublicMarketBrief["forecastBadge"],
+  derivativesLite: MarketDerivativesSummary,
+): LayerCoverageState {
   const layer = (layerKey: string, layerFa: string, keys: string[], publicActionFa: string): CompactDataLayer => {
     const available = keys.filter((key) => signalAvailable(signals, key)).length;
     const coverage = Math.round((available / Math.max(1, keys.length)) * 100);
@@ -1060,8 +1130,7 @@ function buildCompactDataConfidence(signals: SignalMap, assetBuilds: BuiltAssetB
     publicActionFa: "فقط برای بیت‌کوین و اتریوم؛ برای سایر دارایی‌ها نامرتبط است.",
   };
   const sentimentCoverage = signalAvailable(signals, "news_sentiment_macro") ? Math.round((assetBuilds.filter((asset) => asset.priceDataAvailable).length / TARGET_ASSETS.length) * 70) : 0;
-  const futuresSymbols = TARGET_ASSETS.filter((asset) => asset.allowDerivativesIfAvailable && asset.binanceFuturesSymbol);
-  const futuresCoverage = Math.round((assetBuilds.filter((asset) => asset.verifiedFuturesAvailable).length / Math.max(1, futuresSymbols.length)) * 100);
+  const futuresCoverage = derivativesLite.coverage;
   const hasFundingAndOIForAtLeastBtcEth = hasVerifiedFutures(TARGET_ASSETS.find((asset) => asset.symbol === "BTC")!, signals) && hasVerifiedFutures(TARGET_ASSETS.find((asset) => asset.symbol === "ETH")!, signals);
   const derivativesPublicReady = hasFundingAndOIForAtLeastBtcEth && futuresCoverage >= 60;
   const priceLayer: CompactDataLayer = {
@@ -1081,9 +1150,11 @@ function buildCompactDataConfidence(signals: SignalMap, assetBuilds: BuiltAssetB
   const derivativesLayer: CompactDataLayer = {
     layer: "derivatives",
     layerFa: "فیوچرز/اهرم",
-    statusFa: derivativesPublicReady ? "قابل نمایش محدود" : futuresCoverage > 0 ? "محدود؛ فقط برای دارایی‌های دارای داده معتبر فیوچرز" : "محدود / فقط بررسی فنی",
+    statusFa: derivativesPublicReady ? "فعال محدود؛ لیکوییدیشن موجود نیست" : futuresCoverage > 0 ? "محدود؛ فقط برای دارایی‌های دارای داده معتبر فیوچرز" : "محدود / فقط بررسی فنی",
     coverage: futuresCoverage,
-    publicActionFa: derivativesPublicReady ? "در گزارش عمومی فقط به‌عنوان شکنندگی/ریسک استفاده می‌شود، نه جهت قیمت." : "محدود / فقط بررسی فنی",
+    publicActionFa: derivativesPublicReady
+      ? "Funding و Open Interest موجود است؛ لیکوییدیشن غایب و نمای فقط صرافی‌محور است."
+      : "محدود / فقط بررسی فنی",
   };
   const forecastLayer: CompactDataLayer = {
     layer: "forecast_validation",
@@ -1216,7 +1287,7 @@ function buildMainDrivers(
   });
   const sentiment = signalValue(signals, "news_sentiment_macro");
   const derivativesAvailable = layerState.derivativesPublicReady && confidenceGuard.missingCriticalData.includes("derivatives") === false;
-  const dxyEvidence = evidence.macro.find((item) => item.id === "DXY");
+  const dxyEvidence = evidence.macro.find((item) => item.id === "DXY" || item.id === "USD_BROAD");
   const us10yEvidence = evidence.macro.find((item) => item.id === "US10Y");
 
   if (macroScore !== null && (dxyEvidence?.change1d !== null || us10yEvidence?.change1d !== null)) {
@@ -1229,7 +1300,7 @@ function buildMainDrivers(
           ? "supportive"
           : "mixed";
     const evidenceParts = [
-      dxyChange === null ? null : `DXY یک‌روزه ${dxyChange > 0 ? "+" : ""}${formatNumber(dxyChange, 2)}٪`,
+      dxyChange === null ? null : `${dxyEvidence?.publicLabelFa ?? "شاخص قدرت دلار"} یک‌روزه ${dxyChange > 0 ? "+" : ""}${formatNumber(dxyChange, 2)}٪`,
       yieldChange === null ? null : `US10Y یک‌روزه ${yieldChange > 0 ? "+" : ""}${formatNumber(yieldChange, 1)} واحد پایه`,
     ].filter((value): value is string => Boolean(value));
     drivers.push(withHumanizedDriver({
@@ -1689,9 +1760,9 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     usdcSupply7dPct: signalValue(signals, "usdc_supply_7d"),
   });
   const forecast = forecastBadge();
-  const layerState = buildCompactDataConfidence(signals, assetBuilds, forecast);
+  const layerState = buildCompactDataConfidence(signals, assetBuilds, forecast, derivativesLite);
   const dataEvidence = buildDataEvidence(signals, marketData, generatedAt);
-  const engineInputs = buildConfidenceEngines(signals, marketData, generatedAt);
+  const engineInputs = buildConfidenceEngines(signals, marketData, generatedAt, derivativesLite);
   const coverageProbe = applyConfidenceGuard({ rawConfidence: 100, reportMode: "public_market_brief", engines: engineInputs });
   const preliminaryDrivers = buildMainDrivers(signals, preliminaryAssets, layerState, dataEvidence, coverageProbe);
   const signalAlignment = signalAlignmentFrom(preliminaryAssets, preliminaryDrivers);
@@ -1817,9 +1888,25 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     })),
     engines: engineInputs,
     derivativesAudit: derivativesLite.audit,
+    macroSources: dataEvidence.macro.map((item) => ({
+      macroSourceType: item.macroSourceType,
+      sourceSymbol: item.sourceSymbol,
+      publicLabel: item.publicLabel,
+      publicLabelFa: item.publicLabelFa,
+      technicalLabel: item.technicalLabel,
+      shortCode: item.id === "USD_BROAD" ? "USD_BROAD" : item.id === "DXY" ? "DXY" : "MACRO",
+      isProxy: item.isProxy,
+      proxyWarning: item.proxyWarning,
+    })),
   };
 
-  return {
+  const dollarMacroSource = dataEvidence.macro.find((item) => item.id === "USD_BROAD" || item.id === "DXY");
+  const normalizedDollarSource = dollarMacroSource
+    ? normalizeMacroSource({ symbol: dollarMacroSource.sourceSymbol, sourceName: dollarMacroSource.technicalLabel })
+    : normalizeMacroSource({ symbol: "DXY" });
+  const normalizePublic = <T,>(value: T) => normalizePublicTextTree(value, normalizedDollarSource);
+
+  const brief: PublicMarketBrief = {
     generatedAt,
     dataMode: mode,
     dataModeFa: dataModeFa(mode),
@@ -1831,7 +1918,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     derivativesLite,
     audit,
     targetUniverseLabelFa: TARGET_ASSET_UNIVERSE_LABEL_FA,
-    marketVerdict: {
+    marketVerdict: normalizePublic({
       regime: String(regime.regime ?? regime.currentRegime ?? "limited"),
       regimeFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "نتیجه قطعی مجاز نیست" : "فضای کلی بازار با داده محدود")),
       liquidityState: String(liquidity.state ?? liquidity.classification ?? "limited"),
@@ -1845,20 +1932,20 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       summaryFa: marketSummaryFa,
       invalidationFa: "اگر دو محرک اصلی در دو بروزرسانی متوالی خلاف جهت فعلی حرکت کنند، سناریوی بازار باید بازنگری شود.",
       humanized: marketVerdictHumanized,
-    },
-    assets,
-    mainDrivers: drivers.slice(0, 5),
-    invalidation: {
+    }),
+    assets: normalizePublic(assets),
+    mainDrivers: normalizePublic(drivers.slice(0, 5)),
+    invalidation: normalizePublic({
       conditionsFa: [
         "اگر DXY و US10Y در دو بروزرسانی متوالی آرام شوند، فشار کلان کاهش می‌یابد.",
         "اگر ارزش بازار استیبل‌کوین‌ها و جریان ETF همزمان بهبود یابد، خوانش نقدینگی بهتر می‌شود.",
         "اگر funding/open interest بدون افت قیمت تخلیه شود، ریسک اهرمی کاهش می‌یابد.",
       ],
       watchNextFa: ["DXY و US10Y", "ETF Flow بیت‌کوین و اتریوم", "تغییر ۷ روزه stablecoin market cap و USDT supply"],
-    },
+    }),
     compactDataConfidence: layerState.layers,
     forecastBadge: forecast,
-    operationalDashboard,
+    operationalDashboard: normalizePublic(operationalDashboard),
     reportRecord: {
       raw_engine_output: {
         rawConfidence,
@@ -1878,9 +1965,9 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
         derivativesLite,
       },
       humanized_report_output: {
-        marketVerdict: marketVerdictHumanized,
-        assets: assets.map((asset) => asset.humanized),
-        drivers: drivers.map((driver) => driver.humanized),
+        marketVerdict: normalizePublic(marketVerdictHumanized),
+        assets: normalizePublic(assets.map((asset) => asset.humanized)),
+        drivers: normalizePublic(drivers.map((driver) => driver.humanized)),
       },
       humanizer_version: HUMANIZER_VERSION,
       generated_at: generatedAt,
@@ -1888,4 +1975,15 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     },
     disclaimerFa: "این گزارش توصیه مالی نیست؛ فقط وضعیت فعلی بازار را خلاصه می‌کند.",
   };
+
+  assertPersianTextIntegrity(
+    JSON.stringify({
+      marketVerdict: brief.marketVerdict,
+      assets: brief.assets,
+      drivers: brief.mainDrivers,
+      invalidation: brief.invalidation,
+      operationalDashboard: brief.operationalDashboard,
+    }),
+  );
+  return brief;
 }

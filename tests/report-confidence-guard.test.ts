@@ -95,3 +95,13 @@ test("public UI exposes capped confidence, evidence and separated horizons", () 
   assert.match(source, /برداشت رژیمی ۷\/۳۰ روزه/);
   assert.match(source, /محرک عددی اصلی/);
 });
+
+test("confidence cap reasons name missing liquidation and broad USD proxy explicitly", () => {
+  const derivatives = { ...engine("partial"), confidence: 60, limitations: ["liquidation_missing", "exchange_level_proxy"] };
+  const macro = { ...engine(), limitations: ["broad_usd_proxy_not_true_dxy"] };
+  const result = applyConfidenceGuard({ rawConfidence: 86, reportMode: "public", engines: engines({ derivatives, macro }) });
+  assert.ok(result.finalConfidence <= 60);
+  assert.match(result.capReasonsFa.join(" "), /لیکوییدیشن/);
+  assert.match(result.capReasonsFa.join(" "), /شاخص گسترده/);
+  assert.match(result.capReasonsFa.join(" "), /صرافی‌محور/);
+});

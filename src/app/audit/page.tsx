@@ -22,6 +22,8 @@ import {
   UsdtRiskPanel,
 } from "@/components/dashboard/panels";
 import { Reveal } from "@/components/motion/reveal";
+import { buildPublicMarketBrief } from "@/lib/intelligence/publicBriefBuilder";
+import { formatNumber } from "@/lib/utils";
 import { ensureDashboardSignalCacheFresh } from "@/server/dashboard/dashboard-service";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +52,7 @@ function DeferredSection({ children, label }: { children: ReactNode; label: stri
 
 export default async function IntelligenceAuditPage() {
   await ensureDashboardSignalCacheFresh();
+  const brief = await buildPublicMarketBrief();
 
   return (
     <div className="space-y-4">
@@ -58,6 +61,42 @@ export default async function IntelligenceAuditPage() {
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           این مسیر برای diagnostics، forecast validation، source health، correlation و trace محاسبات است. گزارش عمومی در صفحه اصلی خلاصه و کاربرمحور نگه داشته شده است.
         </p>
+      </div>
+      <div className="rounded-md border bg-card/70 p-4" dir="rtl">
+        <h2 className="text-base font-black">ممیزی سقف اعتماد گزارش عمومی</h2>
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4">
+          <div className="rounded-md border p-3">اعتماد خام: {formatNumber(brief.audit.rawConfidence, 0)}٪</div>
+          <div className="rounded-md border p-3">سقف اعتماد: {formatNumber(brief.audit.confidenceCap, 0)}٪</div>
+          <div className="rounded-md border p-3">اعتماد نهایی: {formatNumber(brief.audit.finalConfidence, 0)}٪</div>
+          <div className="rounded-md border p-3">پوشش وزنی: {formatNumber(brief.audit.weightedCoverage, 0)}٪</div>
+        </div>
+        <div className="mt-3 rounded-md border p-3 text-xs leading-6 text-muted-foreground">
+          دلایل سقف: {brief.confidenceGuard.capReasonsFa.length ? brief.confidenceGuard.capReasonsFa.join("؛ ") : "محدودیت فعالی ثبت نشده است."}
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-xs">
+            <thead>
+              <tr className="border-b text-right text-muted-foreground">
+                <th className="p-2">موتور</th>
+                <th className="p-2">وضعیت</th>
+                <th className="p-2">منبع</th>
+                <th className="p-2">تازگی</th>
+                <th className="p-2">فیلدهای عددی</th>
+              </tr>
+            </thead>
+            <tbody>
+              {brief.audit.sources.map((source) => (
+                <tr key={source.category} className="border-b last:border-b-0">
+                  <td className="p-2 font-bold">{source.category}</td>
+                  <td className="p-2">{brief.audit.engines[source.category].status}</td>
+                  <td className="p-2">{source.sourceName ?? "ناموجود"}</td>
+                  <td className="p-2">{source.freshnessStatus}</td>
+                  <td className="p-2">{source.numericFieldsAvailable.join("، ") || "هیچ"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
       <Reveal>
         <MarketRegimePanel />

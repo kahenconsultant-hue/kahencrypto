@@ -5,10 +5,31 @@ import { HumanReportBlock } from "@/components/reporting/HumanReportBlock";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { cn, formatNumber, formatScore } from "@/lib/utils";
+import { cn, formatCompactUsd, formatNumber, formatScore } from "@/lib/utils";
 
 function percent(value: number) {
   return `${formatNumber(value, 0)}٪`;
+}
+
+function signedPercent(value: number | null, digits = 2) {
+  if (value === null) return "ناموجود";
+  return `${value > 0 ? "+" : ""}${formatNumber(value, digits)}٪`;
+}
+
+function signedNumber(value: number | null, unit: string, digits = 2) {
+  if (value === null) return "ناموجود";
+  return `${value > 0 ? "+" : ""}${formatNumber(value, digits)} ${unit}`;
+}
+
+function priceLabel(value: number | null) {
+  if (value === null) return "ناموجود";
+  if (value >= 1) return `$${formatNumber(value, value >= 100 ? 0 : 2)}`;
+  return `$${formatNumber(value, 4)}`;
+}
+
+function sourceTimestamp(value: string | null) {
+  if (!value) return "زمان ناموجود";
+  return new Date(value).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" });
 }
 
 function scoreTone(score: number | null) {
@@ -143,12 +164,97 @@ function MarketVerdict({ brief }: { brief: PublicMarketBriefData }) {
         ))}
         <div className="md:col-span-4">
           <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>اطمینان کل</span>
+            <span>اعتماد نهایی پس از اعمال سقف داده</span>
             <span>{percent(brief.marketVerdict.globalConfidence)}</span>
           </div>
           <Progress value={brief.marketVerdict.globalConfidence} indicatorClassName={confidenceTone(brief.marketVerdict.globalConfidence)} />
+          <div className="mt-3 rounded-[12px] border border-[#33415c] bg-[#0d1522] px-3 py-2 text-[11px] leading-6 text-[#aab6ca]">
+            <span className="font-bold text-[#eef3fc]">دلیل سقف اعتماد: </span>
+            {brief.confidenceGuard.capReasonsFa.length ? brief.confidenceGuard.capReasonsFa.join("؛ ") : "محدودیت بحرانی فعالی ثبت نشده است."}
+          </div>
         </div>
       </CardContent>
+    </Card>
+  );
+}
+
+function EvidenceSource({ name, url, timestamp, freshness }: { name: string | null; url: string | null; timestamp: string | null; freshness: string }) {
+  return (
+    <div className="mt-3 border-t border-[#26334a] pt-2 text-[10px] leading-5 text-[#8f9bb0]">
+      <span>منبع: </span>
+      {url && name ? (
+        <a href={url} target="_blank" rel="noreferrer" className="font-bold text-cyan-200 underline decoration-cyan-300/30 underline-offset-2">
+          {name}
+        </a>
+      ) : (
+        <span>{name ?? "ناموجود"}</span>
+      )}
+      <span> · {sourceTimestamp(timestamp)} · {freshness}</span>
+    </div>
+  );
+}
+
+function DataEvidenceStrip({ brief }: { brief: PublicMarketBriefData }) {
+  const stablecoin = brief.dataEvidence.stablecoin;
+  const etfRows = [brief.dataEvidence.etf.btc, brief.dataEvidence.etf.eth];
+  const macroRows = brief.dataEvidence.macro.filter((row) => row.id === "DXY" || row.id === "US10Y");
+  return (
+    <Card className={reportCardClass}>
+      <CardHeader>
+        <SectionTitle
+          icon={<BarChart3 className="h-5 w-5" aria-hidden />}
+          title="داده‌های عددی کلیدی"
+          subtitle="هر برداشت جهت‌دار فقط وقتی فعال است که عدد، منبع و زمان داده در همین بخش قابل مشاهده باشد."
+        />
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className={nestedPanelClass}>
+          <div className="text-sm font-black text-[#eef3fc]">نقدینگی استیبل‌کوین</div>
+          <div className="mt-3 space-y-1 text-[11px] leading-5 text-[#cfd8ea]">
+            <div>ارزش کل: {stablecoin.totalStablecoinMarketCapUsd === null ? "ناموجود" : formatCompactUsd(stablecoin.totalStablecoinMarketCapUsd)}</div>
+            <div>تغییر ۷روزه: {signedPercent(stablecoin.totalStablecoinChange7dPct)}</div>
+            <div>تغییر ۳۰روزه: {signedPercent(stablecoin.totalStablecoinChange30dPct)}</div>
+            <div>ارزش بازار USDT: {stablecoin.usdtMarketCapUsd === null ? "ناموجود" : formatCompactUsd(stablecoin.usdtMarketCapUsd)}</div>
+          </div>
+          <Badge className="mt-3 whitespace-normal text-right leading-5" variant={stablecoin.interpretation === "unavailable" ? "warning" : "outline"}>
+            {stablecoin.interpretationFa}
+          </Badge>
+          <EvidenceSource name={stablecoin.sourceName} url={stablecoin.sourceUrl} timestamp={stablecoin.latestDataTimestamp} freshness={stablecoin.freshnessLabelFa} />
+        </div>
+
+        {etfRows.map((row) => (
+          <div key={row.asset} className={nestedPanelClass}>
+            <div className="text-sm font-black text-[#eef3fc]">ETF {row.asset}</div>
+            <div className="mt-3 space-y-1 text-[11px] leading-5 text-[#cfd8ea]">
+              <div>روزانه: {row.dailyNetFlowUsd === null ? "ناموجود" : formatCompactUsd(row.dailyNetFlowUsd)}</div>
+              <div>مجموع ۷روزه: {row.sevenDayNetFlowUsd === null ? "ناموجود" : formatCompactUsd(row.sevenDayNetFlowUsd)}</div>
+              <div>مجموع ۳۰روزه: {row.thirtyDayNetFlowUsd === null ? "ناموجود" : formatCompactUsd(row.thirtyDayNetFlowUsd)}</div>
+              <div>تاریخ داده: {row.latestDate ?? "ناموجود"}</div>
+            </div>
+            <Badge className="mt-3" variant={row.interpretation === "unavailable" ? "warning" : row.interpretation === "pressure" ? "danger" : "outline"}>
+              {row.interpretationFa}
+            </Badge>
+            <EvidenceSource name={row.sourceName} url={row.sourceUrl} timestamp={row.latestDataTimestamp} freshness={row.freshnessLabelFa} />
+          </div>
+        ))}
+
+        {macroRows.map((row) => (
+          <div key={row.id} className={nestedPanelClass}>
+            <div className="text-sm font-black text-[#eef3fc]">{row.id}</div>
+            <div className="mt-3 space-y-1 text-[11px] leading-5 text-[#cfd8ea]">
+              <div>آخرین مقدار: {row.latest === null ? "ناموجود" : formatNumber(row.latest, 2)}</div>
+              <div>تغییر یک‌روزه: {row.changeUnit === "basis_point" ? signedNumber(row.change1d, "واحد پایه", 1) : signedPercent(row.change1d)}</div>
+              <div>تغییر ۷روزه: {row.changeUnit === "basis_point" ? signedNumber(row.change7d, "واحد پایه", 1) : signedPercent(row.change7d)}</div>
+            </div>
+            <EvidenceSource name={row.sourceName} url={row.sourceUrl} timestamp={row.latestDataTimestamp} freshness={row.freshnessLabelFa} />
+          </div>
+        ))}
+      </CardContent>
+      {brief.confidenceGuard.missingCriticalData.length ? (
+        <div className="mx-4 mb-4 rounded-[12px] border border-amber-400/30 bg-amber-400/8 px-3 py-2 text-xs leading-6 text-amber-100 md:mx-6">
+          این گزارش با محدودیت‌های «{brief.confidenceGuard.capReasonsFa.join("؛ ")}» و سقف اعتماد {percent(brief.confidenceGuard.confidenceCap)} منتشر شده است.
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -395,7 +501,7 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
       <CardHeader>
         <div>
           <CardTitle className="text-base text-[#eef3fc] md:text-lg">جدول فشرده ۱۰ دارایی</CardTitle>
-          <CardDescription className={mutedTextClass}>تمام دارایی‌های فهرست پایش ایران نمایش داده می‌شوند؛ عوامل نامرتبط از گزارش عمومی حذف شده‌اند.</CardDescription>
+          <CardDescription className={mutedTextClass}>حرکت قیمت ۲۴ساعته از برداشت رژیمی ۷/۳۰روزه جداست؛ رنگ امروز به‌تنهایی وضعیت میان‌مدت را تعیین نمی‌کند.</CardDescription>
         </div>
       </CardHeader>
       <CardContent>
@@ -406,16 +512,45 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
                 <div className="flex min-w-0 items-center gap-2">
                   {assetIcon(asset.symbol)}
                   <div className="min-w-0">
-                    <div className="truncate text-base font-black text-[#eef3fc]">{asset.symbol}</div>
+                    <div className="whitespace-nowrap text-sm font-black text-[#eef3fc]">{asset.symbol}</div>
                     <div className="truncate text-[11px] text-[#9aa8bd]">{asset.persianName}</div>
                   </div>
                 </div>
-                <span className={cn("shrink-0 text-sm font-black tabular-nums", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "—" : formatNumber(asset.impactScore, 0)}</span>
+                <div className="shrink-0 text-left">
+                  <div className="text-[9px] text-[#8f9bb0]">امتیاز رژیم ۷/۳۰</div>
+                  <span className={cn("text-sm font-black tabular-nums", scoreTone(asset.impactScore))}>{asset.impactScore === null ? "—" : formatNumber(asset.impactScore, 0)}</span>
+                </div>
               </div>
 
-              <Badge className="mt-3 w-full justify-center whitespace-normal px-2 py-1 text-[10px] leading-5" variant={asset.confidence < 45 || asset.dataCoverage < 50 ? "warning" : "outline"}>
-                {asset.biasFa}
-              </Badge>
+              <div className="mt-3 grid grid-cols-2 gap-1.5 text-[10px]">
+                <div className="rounded-[8px] border border-[#26334a] bg-[#111a28]/80 p-2">
+                  <div className="text-[#8f9bb0]">آخرین قیمت</div>
+                  <div className="mt-1 font-black tabular-nums text-[#eef3fc]">{priceLabel(asset.priceAction24h.latestPriceUsd)}</div>
+                </div>
+                <div className="rounded-[8px] border border-[#26334a] bg-[#111a28]/80 p-2">
+                  <div className="text-[#8f9bb0]">تغییر ۲۴ساعته</div>
+                  <div className={cn("mt-1 font-black tabular-nums", asset.priceAction24h.status === "positive" ? "text-emerald-300" : asset.priceAction24h.status === "negative" ? "text-red-300" : "text-amber-200")}>
+                    {signedPercent(asset.priceAction24h.changePct)}
+                  </div>
+                </div>
+                <div className="rounded-[8px] border border-[#26334a] bg-[#111a28]/80 p-2">
+                  <div className="text-[#8f9bb0]">تغییر ۷روزه</div>
+                  <div className="mt-1 font-black tabular-nums text-[#eef3fc]">{signedPercent(asset.regimeView.change7dPct)}</div>
+                </div>
+                <div className="rounded-[8px] border border-[#26334a] bg-[#111a28]/80 p-2">
+                  <div className="text-[#8f9bb0]">تغییر ۳۰روزه</div>
+                  <div className="mt-1 font-black tabular-nums text-[#eef3fc]">{signedPercent(asset.regimeView.change30dPct)}</div>
+                </div>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <Badge className="justify-center whitespace-normal px-2 py-1 text-[9px] leading-4" variant={asset.priceAction24h.status === "positive" ? "success" : asset.priceAction24h.status === "negative" ? "danger" : "outline"}>
+                  ۲۴ساعته: {asset.priceAction24h.statusFa}
+                </Badge>
+                <Badge className="justify-center whitespace-normal px-2 py-1 text-[9px] leading-4" variant={asset.confidence < 45 || asset.dataCoverage < 50 ? "warning" : "outline"}>
+                  رژیم: {asset.biasFa}
+                </Badge>
+              </div>
 
               <div className="mt-3 space-y-2 text-[11px] leading-5">
                 <div className="flex items-center justify-between gap-2">
@@ -428,9 +563,10 @@ function AssetOverviewTable({ assets }: { assets: PublicAssetBrief[] }) {
                   <span className="max-w-[112px] text-left leading-5 text-[#cfd8ea]">{asset.coverageLabelFa}</span>
                 </div>
                 <div className="rounded-[10px] border border-[#26334a] bg-[#111a28]/80 p-2">
-                  <div className="mb-1 text-[10px] font-bold text-[#8f9bb0]">محرک اصلی</div>
-                  <div className="text-[10px] leading-5 text-[#aab6ca]">{asset.mainDriverFa}</div>
+                  <div className="mb-1 text-[10px] font-bold text-[#8f9bb0]">محرک عددی اصلی</div>
+                  <div className="text-[10px] leading-5 text-[#aab6ca]">{asset.mainNumericDriverFa}</div>
                 </div>
+                {asset.missingDataFlags.length ? <div className="line-clamp-2 text-[9px] leading-4 text-amber-200">داده‌های غایب: {asset.missingDataFlags.join("، ")}</div> : null}
               </div>
             </div>
           ))}
@@ -460,6 +596,28 @@ function AssetBriefCard({ asset }: { asset: PublicAssetBrief }) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className={nestedPanelClass}>
+            <div className="text-xs font-black text-[#eef3fc]">قیمت و حرکت ۲۴ ساعته</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] leading-5 text-[#aab6ca]">
+              <div>قیمت: <span className="font-bold text-[#eef3fc]">{priceLabel(asset.priceAction24h.latestPriceUsd)}</span></div>
+              <div>تغییر: <span className="font-bold text-[#eef3fc]">{signedPercent(asset.priceAction24h.changePct)}</span></div>
+              <div>حجم: <span className="font-bold text-[#eef3fc]">{asset.priceAction24h.volume24hUsd === null ? "ناموجود" : formatCompactUsd(asset.priceAction24h.volume24hUsd)}</span></div>
+              <div>وضعیت: <span className="font-bold text-[#eef3fc]">{asset.priceAction24h.statusFa}</span></div>
+            </div>
+            <div className="mt-2 text-[9px] leading-4 text-[#78869d]">{asset.priceAction24h.sourceName} · {sourceTimestamp(asset.priceAction24h.timestamp)}</div>
+          </div>
+          <div className={nestedPanelClass}>
+            <div className="text-xs font-black text-[#eef3fc]">برداشت رژیمی ۷/۳۰ روزه</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] leading-5 text-[#aab6ca]">
+              <div>۷روزه: <span className="font-bold text-[#eef3fc]">{signedPercent(asset.regimeView.change7dPct)}</span></div>
+              <div>۳۰روزه: <span className="font-bold text-[#eef3fc]">{signedPercent(asset.regimeView.change30dPct)}</span></div>
+              <div>امتیاز رژیم: <span className="font-bold text-[#eef3fc]">{asset.regimeView.score === null ? "ناموجود" : formatScore(asset.regimeView.score)}</span></div>
+              <div>اعتماد نهایی: <span className="font-bold text-[#eef3fc]">{percent(asset.regimeView.confidence)}</span></div>
+            </div>
+            {asset.regimeView.explanationFa ? <div className="mt-2 rounded-[8px] border border-amber-400/20 bg-amber-400/5 p-2 text-[10px] leading-5 text-amber-100">{asset.regimeView.explanationFa}</div> : null}
+          </div>
+        </div>
         <HumanReportBlock {...asset.humanized} compact />
       </CardContent>
     </Card>
@@ -614,6 +772,7 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
       </section>
 
       <MarketVerdict brief={brief} />
+      <DataEvidenceStrip brief={brief} />
       <OperationalDashboard brief={brief} />
       <MainAlertsDashboard brief={brief} />
       <section className="grid items-start gap-4">

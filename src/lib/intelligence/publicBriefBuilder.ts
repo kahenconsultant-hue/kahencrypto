@@ -21,6 +21,24 @@ import {
 } from "@/lib/intelligence/humanReport";
 import { capPublicConfidence, clamp, forecastPublicBadgeState } from "@/lib/intelligence/moduleGating";
 import {
+  applyConfidenceGuard,
+  resolveEvidenceFreshness,
+  type ConfidenceEngineInput,
+  type ConfidenceEngineKey,
+  type ConfidenceGuardResult,
+  type EvidenceFreshnessStatus,
+} from "@/lib/report/confidenceGuard";
+import {
+  buildEtfEvidenceClaim,
+  explainPriceRegimeDivergence,
+  interpretEtfFlow,
+  interpretStablecoinLiquidity,
+  priceActionStatus,
+  type EtfInterpretation,
+  type StablecoinInterpretation,
+} from "@/lib/report/dataEvidence";
+import { formatNumber } from "@/lib/utils";
+import {
   getDashboardAlerts,
   getDashboardCausalMarketGraph,
   getDashboardForecastValidationCenter,
@@ -41,6 +59,9 @@ export type PublicMarketBrief = {
   updateFrequencyLabel: string;
   globalConfidence: number;
   globalCoverage: number;
+  confidenceGuard: ConfidenceGuardResult;
+  dataEvidence: PublicDataEvidence;
+  audit: PublicReportAudit;
   targetUniverseLabelFa: string;
   marketVerdict: {
     regime: string;
@@ -95,7 +116,96 @@ export type PublicAssetBrief = {
   invalidationFa: string;
   freshnessLabelFa: string;
   hiddenFactors: string[];
+  missingDataFlags: string[];
+  mainNumericDriverFa: string;
+  priceAction24h: {
+    latestPriceUsd: number | null;
+    changePct: number | null;
+    volume24hUsd: number | null;
+    sourceName: string;
+    sourceUrl: string;
+    timestamp: string | null;
+    status: "positive" | "negative" | "neutral" | "unavailable";
+    statusFa: string;
+  };
+  regimeView: {
+    change7dPct: number | null;
+    change30dPct: number | null;
+    volumeTrend7dPct: number | null;
+    volumeTrend30dPct: number | null;
+    score: number | null;
+    labelFa: string;
+    confidence: number;
+    explanationFa: string | null;
+  };
   humanized: HumanizedReportBlock;
+};
+
+export type PublicSourceEvidence = {
+  sourceName: string | null;
+  sourceUrl: string | null;
+  fetchedAt: string | null;
+  latestDataTimestamp: string | null;
+  freshnessStatus: EvidenceFreshnessStatus;
+  freshnessLabelFa: string;
+};
+
+export type PublicEtfAssetEvidence = PublicSourceEvidence & {
+  asset: "BTC" | "ETH";
+  latestDate: string | null;
+  dailyNetFlowUsd: number | null;
+  sevenDayNetFlowUsd: number | null;
+  thirtyDayNetFlowUsd: number | null;
+  interpretation: EtfInterpretation;
+  interpretationFa: string;
+};
+
+export type PublicMacroEvidence = PublicSourceEvidence & {
+  id: "DXY" | "US10Y" | "Nasdaq" | "Gold";
+  latest: number | null;
+  change1d: number | null;
+  change7d: number | null;
+  changeUnit: "percent" | "basis_point";
+};
+
+export type PublicDataEvidence = {
+  stablecoin: PublicSourceEvidence & {
+    totalStablecoinMarketCapUsd: number | null;
+    totalStablecoinChange7dPct: number | null;
+    totalStablecoinChange30dPct: number | null;
+    usdtMarketCapUsd: number | null;
+    usdtChange7dPct: number | null;
+    usdtChange30dPct: number | null;
+    interpretation: StablecoinInterpretation;
+    interpretationFa: string;
+  };
+  etf: {
+    btc: PublicEtfAssetEvidence;
+    eth: PublicEtfAssetEvidence;
+  };
+  macro: PublicMacroEvidence[];
+};
+
+export type PublicReportAudit = {
+  reportId: string;
+  generatedAt: string;
+  mode: string;
+  rawConfidence: number;
+  confidenceCap: number;
+  finalConfidence: number;
+  capReasons: string[];
+  weightedCoverage: number;
+  sources: Array<{
+    category: ConfidenceEngineKey;
+    sourceName: string | null;
+    sourceUrl: string | null;
+    fetchedAt: string | null;
+    latestDataTimestamp: string | null;
+    freshnessStatus: EvidenceFreshnessStatus;
+    parseStatus: ConfidenceEngineInput["parseStatus"];
+    numericFieldsAvailable: string[];
+  }>;
+  engines: Record<ConfidenceEngineKey, ConfidenceEngineInput>;
 };
 
 export type PublicDriver = {
@@ -279,6 +389,240 @@ function numberFrom(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+const PUBLIC_SOURCE_URLS = {
+  coingecko: "https://api.coingecko.com/api/v3/coins/markets",
+  defiLlama: "https://stablecoins.llama.fi/stablecoincharts/all",
+  defiLlamaAssets: "https://stablecoins.llama.fi/stablecoins?includePrices=true",
+  farsideBtc: "https://farside.co.uk/bitcoin-etf-flow-all-data/",
+  farsideEth: "https://farside.co.uk/ethereum-etf-flow-all-data/",
+  theBlockBtc: "https://www.theblock.co/data/etfs/bitcoin-etf/spot-bitcoin-etf-flows",
+  theBlockEth: "https://www.theblock.co/data/etfs/ethereum-etf/spot-ethereum-etf-flows",
+  fred: "https://fred.stlouisfed.org/",
+  yahoo: "https://finance.yahoo.com/",
+} as const;
+
+function evidenceFreshnessLabelFa(status: EvidenceFreshnessStatus) {
+  if (status === "fresh") return "بروز";
+  if (status === "last_trading_day") return "آخرین روز معاملاتی";
+  if (status === "stale") return "کهنه";
+  return "ناموجود";
+}
+
+function sourceUrlFor(signal: NormalizedSignal | undefined, category: ConfidenceEngineKey, asset?: "BTC" | "ETH") {
+  const source = signal?.source.toLowerCase() ?? "";
+  if (category === "stablecoinLiquidity") return source.includes("circulating supply") ? PUBLIC_SOURCE_URLS.defiLlamaAssets : PUBLIC_SOURCE_URLS.defiLlama;
+  if (category === "etfFlow") {
+    if (source.includes("the block")) return asset === "ETH" ? PUBLIC_SOURCE_URLS.theBlockEth : PUBLIC_SOURCE_URLS.theBlockBtc;
+    return asset === "ETH" ? PUBLIC_SOURCE_URLS.farsideEth : PUBLIC_SOURCE_URLS.farsideBtc;
+  }
+  if (category === "macro") {
+    const fredSeries = source.match(/fred\s+(dgs10|dtwexbgs|dgs2|t10y2y)/i)?.[1]?.toUpperCase();
+    if (fredSeries) return `${PUBLIC_SOURCE_URLS.fred}series/${fredSeries}`;
+    if (source.includes("nasdaq")) return `${PUBLIC_SOURCE_URLS.yahoo}quote/%5EIXIC`;
+    if (source.includes("gold")) return `${PUBLIC_SOURCE_URLS.yahoo}quote/GC=F`;
+    if (source.includes("dxy")) return `${PUBLIC_SOURCE_URLS.yahoo}quote/DX-Y.NYB`;
+    if (source.includes("us10y")) return `${PUBLIC_SOURCE_URLS.yahoo}quote/%5ETNX`;
+    return PUBLIC_SOURCE_URLS.yahoo;
+  }
+  if (category === "priceMomentum") return PUBLIC_SOURCE_URLS.coingecko;
+  return null;
+}
+
+function latestHistoryPoint(signal: NormalizedSignal | undefined) {
+  const history = signal?.history?.filter((point) => Number.isFinite(point.value) && Number.isFinite(Date.parse(point.timestamp))) ?? [];
+  return history.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)).at(-1) ?? null;
+}
+
+function historyChange(signal: NormalizedSignal | undefined, days: number, mode: "percent" | "basis_point") {
+  const history = signal?.history?.filter((point) => Number.isFinite(point.value) && Number.isFinite(Date.parse(point.timestamp))) ?? [];
+  if (history.length < 2) return null;
+  const sorted = history.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  const latest = sorted.at(-1)!;
+  const target = Date.parse(latest.timestamp) - days * 24 * 60 * 60 * 1000;
+  const previous = [...sorted].reverse().find((point) => Date.parse(point.timestamp) <= target);
+  if (!previous || previous.value === 0) return null;
+  return mode === "basis_point"
+    ? Number(((latest.value - previous.value) * 100).toFixed(2))
+    : Number((((latest.value - previous.value) / previous.value) * 100).toFixed(4));
+}
+
+function firstAvailableSignal(signals: SignalMap, keys: string[]) {
+  return keys.map((key) => signals[key]).find((signal) => signal && signal.value !== null && signal.quality !== "unavailable");
+}
+
+function sourceEvidence(
+  category: ConfidenceEngineKey,
+  signal: NormalizedSignal | undefined,
+  fetchedAt: string,
+  asset?: "BTC" | "ETH",
+): PublicSourceEvidence {
+  const latestDataTimestamp = latestHistoryPoint(signal)?.timestamp ?? signal?.timestamp ?? null;
+  const freshnessStatus = resolveEvidenceFreshness(category, latestDataTimestamp);
+  return {
+    sourceName: signal?.source ?? null,
+    sourceUrl: sourceUrlFor(signal, category, asset),
+    fetchedAt: signal ? fetchedAt : null,
+    latestDataTimestamp,
+    freshnessStatus,
+    freshnessLabelFa: evidenceFreshnessLabelFa(freshnessStatus),
+  };
+}
+
+function etfInterpretationFa(value: EtfInterpretation) {
+  if (value === "supportive") return "ورود خالص سرمایه";
+  if (value === "pressure") return "خروج خالص سرمایه";
+  if (value === "neutral") return "جریان دوگانه";
+  return "تفسیر جهت‌دار مجاز نیست";
+}
+
+function stablecoinInterpretationFa(value: StablecoinInterpretation) {
+  if (value === "supportive") return "نقدینگی استیبل‌کوین بهبوددهنده است";
+  if (value === "pressure") return "نقدینگی استیبل‌کوین تحت فشار است";
+  if (value === "mixed") return "نقدینگی استیبل‌کوین دوگانه و حمایت آن ضعیف است";
+  return "تغییرات ۷ و ۳۰ روزه کامل نیست؛ تفسیر جهت‌دار مجاز نیست";
+}
+
+function buildDataEvidence(signals: SignalMap, marketData: PublicMarketDataMap, fetchedAt: string): PublicDataEvidence {
+  const stablecoinSignal = firstAvailableSignal(signals, ["total_stablecoin_market_cap_usd", "stablecoin_market_cap_7d", "stablecoin_market_cap_30d"]);
+  const stablecoin7d = signalValue(signals, "stablecoin_market_cap_7d");
+  const stablecoin30d = signalValue(signals, "stablecoin_market_cap_30d");
+  const stablecoinInterpretation = interpretStablecoinLiquidity(stablecoin7d, stablecoin30d);
+  const stablecoinSource = sourceEvidence("stablecoinLiquidity", stablecoinSignal, fetchedAt);
+
+  const etfAsset = (asset: "BTC" | "ETH"): PublicEtfAssetEvidence => {
+    const lower = asset.toLowerCase();
+    const signal = firstAvailableSignal(signals, [`${lower}_etf_flow_24h`, `${lower}_etf_flow_7d`, `${lower}_etf_flow_30d`]);
+    const dailyNetFlowUsd = etfFlowUsdFromSignal(signalValue(signals, `${lower}_etf_flow_24h`));
+    const sevenDayNetFlowUsd = etfFlowUsdFromSignal(signalValue(signals, `${lower}_etf_flow_7d`));
+    const thirtyDayNetFlowUsd = etfFlowUsdFromSignal(signalValue(signals, `${lower}_etf_flow_30d`));
+    const interpretation = interpretEtfFlow(dailyNetFlowUsd, sevenDayNetFlowUsd);
+    const source = sourceEvidence("etfFlow", signal, fetchedAt, asset);
+    return {
+      ...source,
+      asset,
+      latestDate: source.latestDataTimestamp?.slice(0, 10) ?? null,
+      dailyNetFlowUsd,
+      sevenDayNetFlowUsd,
+      thirtyDayNetFlowUsd,
+      interpretation,
+      interpretationFa: etfInterpretationFa(interpretation),
+    };
+  };
+
+  const macroMetric = (id: PublicMacroEvidence["id"], key: string, unit: PublicMacroEvidence["changeUnit"]): PublicMacroEvidence => {
+    const signal = signals[key];
+    const source = sourceEvidence("macro", signal, fetchedAt);
+    return {
+      ...source,
+      id,
+      latest: latestHistoryPoint(signal)?.value ?? null,
+      change1d: signalValue(signals, key) === null ? null : unit === "basis_point" ? Number(((signalValue(signals, key) ?? 0) * 100).toFixed(2)) : signalValue(signals, key),
+      change7d: historyChange(signal, 7, unit),
+      changeUnit: unit,
+    };
+  };
+
+  return {
+    stablecoin: {
+      ...stablecoinSource,
+      totalStablecoinMarketCapUsd: signalValue(signals, "total_stablecoin_market_cap_usd"),
+      totalStablecoinChange7dPct: stablecoin7d,
+      totalStablecoinChange30dPct: stablecoin30d,
+      usdtMarketCapUsd: marketData.USDT?.marketCapUsd ?? null,
+      usdtChange7dPct: signalValue(signals, "usdt_supply_7d"),
+      usdtChange30dPct: signalValue(signals, "usdt_supply_30d"),
+      interpretation: stablecoinInterpretation,
+      interpretationFa: stablecoinInterpretationFa(stablecoinInterpretation),
+    },
+    etf: {
+      btc: etfAsset("BTC"),
+      eth: etfAsset("ETH"),
+    },
+    macro: [
+      macroMetric("DXY", "dxy_trend_24h", "percent"),
+      macroMetric("US10Y", "us10y_trend_24h", "basis_point"),
+      macroMetric("Nasdaq", "nasdaq_trend_24h", "percent"),
+      macroMetric("Gold", "gold_trend_24h", "percent"),
+    ],
+  };
+}
+
+function engineInput(params: {
+  category: ConfidenceEngineKey;
+  signals: Array<NormalizedSignal | undefined>;
+  requiredCount: number;
+  fetchedAt: string;
+  forceMissingWhenIncomplete?: boolean;
+}): ConfidenceEngineInput {
+  const availableSignals = params.signals.filter(
+    (signal): signal is NormalizedSignal => Boolean(signal && signal.value !== null && signal.quality !== "unavailable" && signal.quality !== "estimated"),
+  );
+  const timestamp = availableSignals
+    .map((signal) => latestHistoryPoint(signal)?.timestamp ?? signal.timestamp)
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
+  const freshnessStatus = resolveEvidenceFreshness(params.category, timestamp);
+  const incomplete = availableSignals.length < params.requiredCount;
+  const status =
+    availableSignals.length === 0 || (params.forceMissingWhenIncomplete && incomplete)
+      ? "missing"
+      : incomplete
+        ? "partial"
+        : freshnessStatus === "stale"
+          ? "available_but_stale"
+          : "available_and_fresh";
+  const sources = Array.from(new Set(availableSignals.map((signal) => signal.source)));
+  const confidence = availableSignals.length
+    ? Math.round(availableSignals.reduce((sum, signal) => sum + signal.reliability, 0) / availableSignals.length)
+    : null;
+  return {
+    status,
+    confidence,
+    sourceName: sources.join(" + ") || null,
+    sourceUrl: sourceUrlFor(availableSignals[0], params.category),
+    fetchedAt: availableSignals.length ? params.fetchedAt : null,
+    latestDataTimestamp: timestamp,
+    freshnessStatus,
+    parseStatus: availableSignals.length === 0 ? "failed" : incomplete ? "partial" : "success",
+    numericFieldsAvailable: availableSignals.map((signal) => signal.key),
+  };
+}
+
+function buildConfidenceEngines(
+  signals: SignalMap,
+  marketData: PublicMarketDataMap,
+  fetchedAt: string,
+): Record<ConfidenceEngineKey, ConfidenceEngineInput> {
+  const priceRows = TARGET_ASSETS.map((asset) => marketData[asset.symbol]).filter((row): row is PublicMarketData => Boolean(row?.priceUsd !== null && row?.change24hPct !== null));
+  const priceTimestamp = priceRows.map((row) => row.lastUpdatedAt).filter((value): value is string => Boolean(value)).sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
+  const priceFreshness = resolveEvidenceFreshness("priceMomentum", priceTimestamp);
+  const priceStatus = priceRows.length === 0 ? "missing" : priceRows.length < TARGET_ASSETS.length ? "partial" : priceFreshness === "stale" ? "available_but_stale" : "available_and_fresh";
+  const priceMomentum: ConfidenceEngineInput = {
+    status: priceStatus,
+    confidence: priceRows.length ? 85 : null,
+    sourceName: priceRows.length ? "CoinGecko" : null,
+    sourceUrl: priceRows.length ? PUBLIC_SOURCE_URLS.coingecko : null,
+    fetchedAt: priceRows.length ? fetchedAt : null,
+    latestDataTimestamp: priceTimestamp,
+    freshnessStatus: priceFreshness,
+    parseStatus: priceRows.length === 0 ? "failed" : priceRows.length < TARGET_ASSETS.length ? "partial" : "success",
+    numericFieldsAvailable: priceRows.flatMap((row) => [`${row.symbol}_price`, `${row.symbol}_change_24h`]),
+  };
+
+  const stablecoinSignals = [signals.total_stablecoin_market_cap_usd, signals.stablecoin_market_cap_7d, signals.stablecoin_market_cap_30d];
+  const etfSignals = [signals.btc_etf_flow_24h, signals.btc_etf_flow_7d, signals.eth_etf_flow_24h, signals.eth_etf_flow_7d];
+  const macroSignals = [signals.dxy_trend_24h, signals.us10y_trend_24h];
+  const derivativeSignals = [signals.funding_btc, signals.open_interest_btc_24h, signals.funding_eth, signals.open_interest_eth_24h];
+  return {
+    priceMomentum,
+    stablecoinLiquidity: engineInput({ category: "stablecoinLiquidity", signals: stablecoinSignals, requiredCount: 3, fetchedAt, forceMissingWhenIncomplete: true }),
+    etfFlow: engineInput({ category: "etfFlow", signals: etfSignals, requiredCount: 4, fetchedAt }),
+    macro: engineInput({ category: "macro", signals: macroSignals, requiredCount: 2, fetchedAt }),
+    derivatives: engineInput({ category: "derivatives", signals: derivativeSignals, requiredCount: 4, fetchedAt, forceMissingWhenIncomplete: true }),
+    sentimentNews: engineInput({ category: "sentimentNews", signals: [signals.news_sentiment_macro], requiredCount: 1, fetchedAt }),
+  };
+}
+
 async function fetchPublicCoinGeckoMarketData(): Promise<PublicMarketDataMap> {
   const now = Date.now();
   if (marketDataCache && marketDataCache.expiresAt > now) return marketDataCache.data;
@@ -404,7 +748,6 @@ function factorsFor(asset: AssetRegistryItem, signals: SignalMap, assetMarketDat
   const symbol = asset.symbol;
   const lower = symbol.toLowerCase();
   const priceScore = priceMomentumScore({
-    change24hPct: marketChange(assetMarketData, signals, lower, "24h"),
     change7dPct: marketChange(assetMarketData, signals, lower, "7d"),
     change30dPct: marketChange(assetMarketData, signals, lower, "30d"),
   });
@@ -555,6 +898,17 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
   const lowCoverageLiteLabel = asset.coverageTier === "lite" && weighted.coverage < 50 && priceDataAvailable ? "فقط پایش خبری/مومنتوم محدود" : dataLabel;
   const statusFa = asset.symbol === "USDT" ? "پایش ثبات/ریسک" : weighted.coverage < 50 && publicImpactScore === null ? lowCoverageLiteLabel : biasFa;
   const invalidationFa = ASSET_INVALIDATION_FA[asset.symbol];
+  const priceChange24h = marketChange(assetMarketData, signals, asset.symbol.toLowerCase(), "24h");
+  const priceChange7d = marketChange(assetMarketData, signals, asset.symbol.toLowerCase(), "7d");
+  const priceChange30d = marketChange(assetMarketData, signals, asset.symbol.toLowerCase(), "30d");
+  const priceStatus = priceActionStatus(priceChange24h);
+  const regimeDivergenceFa = explainPriceRegimeDivergence(priceChange24h, publicImpactScore);
+  const mainNumericDriverFa =
+    priceChange7d !== null
+      ? `تغییر قیمت ۷روزه: ${priceChange7d > 0 ? "+" : ""}${formatNumber(priceChange7d, 2)}٪`
+      : priceChange30d !== null
+        ? `تغییر قیمت ۳۰روزه: ${priceChange30d > 0 ? "+" : ""}${formatNumber(priceChange30d, 2)}٪`
+        : "محرک عددی معتبر در دسترس نیست";
   const driversFa =
     asset.symbol === "USDT"
       ? [
@@ -569,7 +923,8 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
             dataLabel === "داده‌های عمیق بازار کامل نیستند"
               ? "قیمت و مومنتوم عمومی موجود است؛ داده‌های عمیق مثل مشتقات، آنچین یا جریان شبکه محدود هستند."
               : dataLabel,
-            ...availableDrivers.slice(0, 3),
+            ...(regimeDivergenceFa ? [regimeDivergenceFa] : []),
+            ...availableDrivers.slice(0, regimeDivergenceFa ? 2 : 3),
           ]
         : ["پایش فقط؛ داده قیمت/حجم مستقیم برای نتیجه‌گیری عمومی کافی نیست."];
   const humanized = humanizeReportBlock(
@@ -615,6 +970,28 @@ function buildAssetBrief(asset: AssetRegistryItem, signals: SignalMap, assetMark
       invalidationFa,
       freshnessLabelFa: asset.symbol === "USDT" ? "داده شبکه/ناشر محدود است" : dataLabel === "بروز شده" ? signalFreshnessLabel(priceSignal) : dataLabel,
       hiddenFactors,
+      missingDataFlags: hiddenFactors.slice(0, 4),
+      mainNumericDriverFa,
+      priceAction24h: {
+        latestPriceUsd: assetMarketData?.priceUsd ?? null,
+        changePct: priceChange24h,
+        volume24hUsd: volumeValue(assetMarketData, signals, asset.symbol.toLowerCase()),
+        sourceName: assetMarketData?.source ?? signals[`${asset.symbol.toLowerCase()}_trend_24h`]?.source ?? "منبع قیمت ناموجود",
+        sourceUrl: PUBLIC_SOURCE_URLS.coingecko,
+        timestamp: assetMarketData?.lastUpdatedAt ?? signals[`${asset.symbol.toLowerCase()}_trend_24h`]?.timestamp ?? null,
+        status: priceStatus.status,
+        statusFa: priceStatus.labelFa,
+      },
+      regimeView: {
+        change7dPct: priceChange7d,
+        change30dPct: priceChange30d,
+        volumeTrend7dPct: null,
+        volumeTrend30dPct: null,
+        score: publicImpactScore,
+        labelFa: biasFa,
+        confidence,
+        explanationFa: regimeDivergenceFa,
+      },
       humanized,
     },
     priceDataAvailable,
@@ -805,7 +1182,13 @@ function withHumanizedDriver(driver: Omit<PublicDriver, "humanized">): PublicDri
   };
 }
 
-function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerState: LayerCoverageState): PublicDriver[] {
+function buildMainDrivers(
+  signals: SignalMap,
+  assets: PublicAssetBrief[],
+  layerState: LayerCoverageState,
+  evidence: PublicDataEvidence,
+  confidenceGuard: ConfidenceGuardResult,
+): PublicDriver[] {
   const drivers: PublicDriver[] = [];
   const macroScore = macroPressureScore({
     dxyChangePct: signalValue(signals, "dxy_trend_24h"),
@@ -814,67 +1197,83 @@ function buildMainDrivers(signals: SignalMap, assets: PublicAssetBrief[], layerS
     goldChangePct: signalValue(signals, "gold_trend_24h"),
     sentimentRiskHigh: (signalValue(signals, "geopolitical_event_score") ?? 0) > 50,
   });
-  const stableScore = stablecoinLiquidityScore({
-    totalStablecoin7dPct: signalValue(signals, "stablecoin_market_cap_7d"),
-    usdtSupply7dPct: signalValue(signals, "usdt_supply_7d"),
-    usdcSupply7dPct: signalValue(signals, "usdc_supply_7d"),
-  });
-  const btcEtf = signalValue(signals, "btc_etf_flow_7d");
-  const ethEtf = signalValue(signals, "eth_etf_flow_7d");
   const sentiment = signalValue(signals, "news_sentiment_macro");
-  const derivativesAvailable = layerState.derivativesPublicReady;
+  const derivativesAvailable = layerState.derivativesPublicReady && confidenceGuard.missingCriticalData.includes("derivatives") === false;
+  const dxyEvidence = evidence.macro.find((item) => item.id === "DXY");
+  const us10yEvidence = evidence.macro.find((item) => item.id === "US10Y");
 
-  if (macroScore !== null) {
-    const direction = macroScore >= 25 ? "supportive" : macroScore <= -25 ? "pressure" : "mixed";
+  if (macroScore !== null && (dxyEvidence?.change1d !== null || us10yEvidence?.change1d !== null)) {
+    const dxyChange = dxyEvidence?.change1d ?? null;
+    const yieldChange = us10yEvidence?.change1d ?? null;
+    const direction =
+      dxyChange !== null && yieldChange !== null && dxyChange > 0 && yieldChange > 0
+        ? "pressure"
+        : dxyChange !== null && yieldChange !== null && dxyChange < 0 && yieldChange < 0
+          ? "supportive"
+          : "mixed";
+    const evidenceParts = [
+      dxyChange === null ? null : `DXY یک‌روزه ${dxyChange > 0 ? "+" : ""}${formatNumber(dxyChange, 2)}٪`,
+      yieldChange === null ? null : `US10Y یک‌روزه ${yieldChange > 0 ? "+" : ""}${formatNumber(yieldChange, 1)} واحد پایه`,
+    ].filter((value): value is string => Boolean(value));
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("macro", direction, strengthFromScore(macroScore)),
       direction,
       directionFa: direction === "supportive" ? "بهبوددهنده" : direction === "pressure" ? "فشار منفی" : "دوگانه",
       affectedAssets: ["BTC", "ETH", "SOL", "DXY", "Gold", "US10Y"],
-      confidence: Math.round(Math.min(80, Math.abs(macroScore) + 35)),
-      explanationFa:
-        direction === "pressure"
-          ? "ترکیب دلار/بازده اوراق برای دارایی‌های پرریسک فشارساز است."
-          : direction === "supportive"
-            ? "محرک‌های کلان فشار شدیدی نشان نمی‌دهند و می‌توانند فضای ریسک را آرام‌تر کنند."
-          : "محرک‌های کلان هم‌جهت نیستند و برای نتیجه‌گیری قوی باید داده‌های بعدی روشن‌تر شوند.",
+      confidence: Math.min(confidenceGuard.engineCaps.byEngine.macro, Math.round(Math.min(80, Math.abs(macroScore) + 35))),
+      explanationFa: `${evidenceParts.join("؛ ")}. منبع: ${dxyEvidence?.sourceName ?? us10yEvidence?.sourceName ?? "ناموجود"}؛ آخرین داده: ${dxyEvidence?.latestDataTimestamp?.slice(0, 10) ?? us10yEvidence?.latestDataTimestamp?.slice(0, 10) ?? "ناموجود"}.`,
       invalidationFa: "اگر DXY و US10Y در دو بروزرسانی متوالی خلاف جهت فعلی حرکت کنند، خوانش کلان بازنگری می‌شود.",
     }));
   }
 
-  if (stableScore !== null) {
-    const direction = liquidityDirectionFromScore(stableScore);
+  if (evidence.stablecoin.interpretation !== "unavailable") {
+    const direction =
+      evidence.stablecoin.interpretation === "supportive"
+        ? "supportive"
+        : evidence.stablecoin.interpretation === "pressure"
+          ? "pressure"
+          : "mixed";
+    const stableScore = stablecoinLiquidityScore({
+      totalStablecoin7dPct: evidence.stablecoin.totalStablecoinChange7dPct,
+      usdtSupply7dPct: evidence.stablecoin.usdtChange7dPct,
+    }) ?? 0;
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("stablecoin", direction, strengthFromScore(stableScore)),
       direction,
       directionFa: direction === "supportive" ? "بهبوددهنده" : direction === "pressure" ? "فشار منفی" : "خنثی",
       affectedAssets: assets.map((asset) => asset.symbol),
-      confidence: Math.round(Math.min(82, Math.abs(stableScore) + 38)),
-      explanationFa:
-        direction === "supportive"
-          ? "روند استیبل‌کوین‌ها نشانه بهبود نقدینگی نقدی را تقویت می‌کند."
-          : direction === "pressure"
-            ? "روند استیبل‌کوین‌ها ضعف نقدینگی نقدی را تقویت می‌کند."
-            : "روند استیبل‌کوین‌ها هنوز تأیید قوی برای ورود یا خروج نقدینگی نشان نمی‌دهد.",
+      confidence: Math.min(confidenceGuard.engineCaps.liquidityEngineConfidence, Math.round(Math.min(82, Math.abs(stableScore) + 38))),
+      explanationFa: `ارزش کل استیبل‌کوین‌ها در ۷ روز ${formatNumber(evidence.stablecoin.totalStablecoinChange7dPct ?? 0, 2)}٪ و در ۳۰ روز ${formatNumber(evidence.stablecoin.totalStablecoinChange30dPct ?? 0, 2)}٪ تغییر کرده است. منبع: ${evidence.stablecoin.sourceName ?? "ناموجود"}؛ بروزرسانی: ${evidence.stablecoin.latestDataTimestamp?.slice(0, 10) ?? "ناموجود"}.`,
       invalidationFa: "اگر تغییر ۷ روزه stablecoin market cap و USDT supply خلاف جهت فعلی شود، این محرک تضعیف می‌شود.",
     }));
   }
 
-  if (btcEtf !== null || ethEtf !== null) {
-    const net = (btcEtf ?? 0) + (ethEtf ?? 0);
-    const direction = net > 0 ? "supportive" : net < 0 ? "pressure" : "neutral";
+  const etfValues = [
+    evidence.etf.btc.dailyNetFlowUsd,
+    evidence.etf.btc.sevenDayNetFlowUsd,
+    evidence.etf.eth.dailyNetFlowUsd,
+    evidence.etf.eth.sevenDayNetFlowUsd,
+  ].filter((value): value is number => value !== null);
+  const flowText = [evidence.etf.btc, evidence.etf.eth]
+    .map((item) =>
+      buildEtfEvidenceClaim({
+        asset: item.asset,
+        dailyFlowUsd: item.dailyNetFlowUsd,
+        sevenDayFlowUsd: item.sevenDayNetFlowUsd,
+        sourceName: item.sourceName,
+        latestDate: item.latestDate,
+      }),
+    )
+    .filter((value): value is string => Boolean(value));
+  if (etfValues.length > 0 && flowText.length > 0) {
+    const direction = etfValues.every((value) => value > 0) ? "supportive" : etfValues.every((value) => value < 0) ? "pressure" : "neutral";
     drivers.push(withHumanizedDriver({
       titleFa: buildDriverLabel("etf", direction, "moderate"),
       direction,
       directionFa: direction === "supportive" ? "بهبوددهنده" : direction === "pressure" ? "فشار منفی" : "خنثی",
       affectedAssets: ["BTC", "ETH"],
-      confidence: 62,
-      explanationFa:
-        direction === "pressure"
-          ? "جریان خالص ETF برای BTC/ETH نقش فشار منفی دارد؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند."
-          : direction === "supportive"
-            ? "جریان خالص ETF برای BTC/ETH نقش حمایتی دارد؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند."
-            : "جریان ETF برای BTC/ETH فعلاً جهت قوی ندارد؛ جدول صادرکننده در بخش بررسی فنی باقی می‌ماند.",
+      confidence: Math.min(60, confidenceGuard.engineCaps.byEngine.etfFlow),
+      explanationFa: flowText.join("؛ "),
       invalidationFa: "اگر جریان خالص ۷ روزه ETF خلاف جهت فعلی شود، اثر این محرک تغییر می‌کند.",
     }));
   }
@@ -920,15 +1319,6 @@ function forecastBadge() {
     conclusiveCount: scored,
     publicAccuracy: scored >= 100 ? accuracy : null,
   };
-}
-
-function freshnessCoverageFrom(freshness: Record<string, unknown>) {
-  const state = String(freshness.overallFreshnessState ?? "");
-  if (state === "fresh") return 92;
-  if (state === "recent") return 78;
-  if (state === "delayed") return 58;
-  if (state === "stale") return 35;
-  return 45;
 }
 
 function sourceHealthCoverageFrom(reliability: Record<string, unknown>) {
@@ -1065,6 +1455,7 @@ function buildOperationalDashboard(params: {
   globalCoverage: number;
   liquidityStateFa: string;
   liquidityExplanationFa: string;
+  confidenceGuard: ConfidenceGuardResult;
 }): PublicOperationalDashboard {
   const liquidityStack = asRecord(getDashboardLiquidityIntelligenceStack());
   const graph = asRecord(getDashboardCausalMarketGraph());
@@ -1086,7 +1477,10 @@ function buildOperationalDashboard(params: {
     explanationFa: String(engine.explanationFa ?? "این موتور بخشی از تصویر نقدینگی بازار را می‌سنجد."),
   }));
 
-  const regimeEngineConfidence = numberFrom(params.regime.confidence);
+  const rawRegimeEngineConfidence = numberFrom(params.regime.confidence);
+  const regimeEngineConfidence = rawRegimeEngineConfidence === null
+    ? null
+    : Math.min(rawRegimeEngineConfidence, params.confidenceGuard.engineCaps.marketRegimeConfidence);
   const transition = asRecord(params.regime.transitionAnalysis);
   const regimeProbabilities = asArray(params.regime.regimeProbabilities)
     .map(asRecord)
@@ -1111,7 +1505,10 @@ function buildOperationalDashboard(params: {
       labelFa: "موتور نقدینگی",
       score: params.liquidityScore,
       coverage: stackCoverage,
-      confidence: stackConfidence ?? numberFrom(params.liquidity.liquidityRegimeConfidence) ?? params.globalConfidence,
+      confidence: Math.min(
+        stackConfidence ?? numberFrom(params.liquidity.liquidityRegimeConfidence) ?? params.globalConfidence,
+        params.confidenceGuard.engineCaps.liquidityEngineConfidence,
+      ),
       statusFa: params.liquidityScore === null ? "فعال با محدودیت" : "فعال",
       explanationFa: params.liquidityExplanationFa,
     },
@@ -1120,7 +1517,10 @@ function buildOperationalDashboard(params: {
       labelFa: "موتور ریسک",
       score: params.riskScore,
       coverage: params.globalCoverage,
-      confidence: numberFrom(params.risk.confidence) ?? params.globalConfidence,
+      confidence: Math.min(
+        numberFrom(params.risk.confidence) ?? params.globalConfidence,
+        params.confidenceGuard.engineCaps.riskEngineConfidence,
+      ),
       statusFa: params.riskScore === null ? "فعال با محدودیت" : "فعال",
       explanationFa: "امتیاز ریسک نشان می‌دهد فضای فعلی بیشتر احتیاطی است یا آرام‌تر.",
     },
@@ -1129,7 +1529,7 @@ function buildOperationalDashboard(params: {
       labelFa: "موتور کلان",
       score: params.macroScore,
       coverage: params.globalCoverage,
-      confidence: params.globalConfidence,
+      confidence: Math.min(params.globalConfidence, params.confidenceGuard.engineCaps.byEngine.macro),
       statusFa: params.macroScore === null ? "فعال با محدودیت" : "فعال",
       explanationFa: "این موتور فشار دلار، نرخ بهره، نزدک و طلا را به زبان بازار کریپتو خلاصه می‌کند.",
     },
@@ -1170,7 +1570,10 @@ function buildOperationalDashboard(params: {
     liquidity: {
       score: params.liquidityScore,
       labelFa: params.liquidityStateFa,
-      confidence: stackConfidence ?? numberFrom(params.liquidity.liquidityRegimeConfidence) ?? params.globalConfidence,
+      confidence: Math.min(
+        stackConfidence ?? numberFrom(params.liquidity.liquidityRegimeConfidence) ?? params.globalConfidence,
+        params.confidenceGuard.engineCaps.liquidityEngineConfidence,
+      ),
       coverage: stackCoverage,
       explanationFa: params.liquidityExplanationFa,
       engines: liquidityEngines,
@@ -1191,78 +1594,115 @@ function buildOperationalDashboard(params: {
   };
 }
 
+function capAssetsForReport(assetBuilds: BuiltAssetBrief[], confidenceCap: number) {
+  return assetBuilds.map((built) => {
+    const confidence = Math.min(built.brief.confidence, confidenceCap);
+    if (confidence === built.brief.confidence) return built.brief;
+    const brief = built.brief;
+    return {
+      ...brief,
+      confidence,
+      regimeView: { ...brief.regimeView, confidence },
+      humanized: humanizeReportBlock(
+        {
+          symbol: brief.symbol,
+          statusFa: brief.statusFa,
+          biasFa: brief.biasFa,
+          impactScore: brief.impactScore,
+          confidence,
+          coverage: brief.dataCoverage,
+          driversFa: brief.driversFa,
+          invalidationFa: brief.invalidationFa,
+        },
+        {
+          kind: "asset",
+          titleFa: `${brief.symbol} — ${brief.persianName}`,
+          assetSymbol: brief.symbol,
+          assetNameFa: brief.persianName,
+          statusFa: brief.statusFa,
+          biasFa: brief.biasFa,
+          impactScore: brief.impactScore,
+          confidence,
+          coverage: brief.dataCoverage,
+          driversFa: brief.driversFa,
+          invalidationFa: brief.invalidationFa,
+          dataQualityLabelFa: brief.coverageLabelFa,
+        },
+      ),
+    };
+  });
+}
+
 export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const snapshot = getDashboardSignalSnapshot();
   const signals = snapshot.byKey as SignalMap;
   const marketData = await fetchPublicCoinGeckoMarketData();
+  const generatedAt = new Date().toISOString();
   const reliability = asRecord(getDashboardReliabilityReport());
   const freshness = asRecord(getDashboardFreshnessReport());
   const regime = asRecord(getDashboardMarketRegime());
   const liquidity = asRecord(getDashboardLiquidityReport());
   const risk = asRecord(getDashboardRiskReport());
   const assetBuilds = TARGET_ASSETS.map((asset) => buildAssetBrief(asset, signals, marketData[asset.symbol]));
-  const assets = assetBuilds.map((asset) => asset.brief);
-  const humanizedDiversity = validateHumanizedMeaningDiversity(assets.map((asset) => asset.humanized));
-  if (!humanizedDiversity.valid) {
-    console.warn(`CMIP ${HUMANIZER_VERSION} repetition warning`, humanizedDiversity);
-  }
-  const averageCoverage = Math.round(assets.reduce((sum, asset) => sum + asset.dataCoverage, 0) / Math.max(1, assets.length));
-  const averageConfidence = Math.round(assets.reduce((sum, asset) => sum + asset.confidence, 0) / Math.max(1, assets.length));
+  const preliminaryAssets = assetBuilds.map((asset) => asset.brief);
+  const averageConfidence = Math.round(preliminaryAssets.reduce((sum, asset) => sum + asset.confidence, 0) / Math.max(1, preliminaryAssets.length));
   const sourceHealthCoverage = sourceHealthCoverageFrom(reliability);
-  const freshnessCoverage = freshnessCoverageFrom(freshness);
-  const liquidityScore = numberFrom(liquidity.liquidityHealthScore) ?? numberFrom(liquidity.score) ?? numberFrom(liquidity.cryptoLiquidityProxyScore);
+  const rawLiquidityScore = numberFrom(liquidity.liquidityHealthScore) ?? numberFrom(liquidity.score) ?? numberFrom(liquidity.cryptoLiquidityProxyScore);
   const riskScore = numberFrom(risk.riskScore) ?? numberFrom(risk.score);
-  const macroScore = macroPressureScore({
+  const rawMacroScore = macroPressureScore({
     dxyChangePct: signalValue(signals, "dxy_trend_24h"),
     us10yChange: signalValue(signals, "us10y_trend_24h"),
     nasdaqChangePct: signalValue(signals, "nasdaq_trend_24h"),
     goldChangePct: signalValue(signals, "gold_trend_24h"),
   });
-  const stableScore = stablecoinLiquidityScore({
+  const rawStableScore = stablecoinLiquidityScore({
     totalStablecoin7dPct: signalValue(signals, "stablecoin_market_cap_7d"),
     usdtSupply7dPct: signalValue(signals, "usdt_supply_7d"),
     usdcSupply7dPct: signalValue(signals, "usdc_supply_7d"),
   });
   const forecast = forecastBadge();
   const layerState = buildCompactDataConfidence(signals, assetBuilds, forecast);
-  const drivers = buildMainDrivers(signals, assets, layerState);
-  const signalAlignment = signalAlignmentFrom(assets, drivers);
-  const assetsWithCoverageBelow50 = assets.filter((asset) => asset.dataCoverage < 50).length;
-  const priceDataMissingForAnyTargetAsset = assetBuilds.some((asset) => !asset.priceDataAvailable);
-  const criticalMissingPenalty =
-    (layerState.stablecoinDataMissing ? 10 : 0) +
-    (priceDataMissingForAnyTargetAsset ? 8 : 0) +
-    (layerState.macroCoverage < 50 ? 6 : 0) +
-    (sourceHealthCoverage < 50 ? 6 : 0);
-  const globalCoverage = Math.round(
+  const dataEvidence = buildDataEvidence(signals, marketData, generatedAt);
+  const engineInputs = buildConfidenceEngines(signals, marketData, generatedAt);
+  const coverageProbe = applyConfidenceGuard({ rawConfidence: 100, reportMode: "public_market_brief", engines: engineInputs });
+  const preliminaryDrivers = buildMainDrivers(signals, preliminaryAssets, layerState, dataEvidence, coverageProbe);
+  const signalAlignment = signalAlignmentFrom(preliminaryAssets, preliminaryDrivers);
+  const rawConfidence = Math.round(
     clamp(
-      0.4 * averageCoverage + 0.25 * layerState.coreLayerCoverage + 0.2 * sourceHealthCoverage + 0.15 * freshnessCoverage,
+      0.35 * averageConfidence +
+        0.25 * coverageProbe.dataCoverageWeighted +
+        0.2 * signalAlignment +
+        0.2 * sourceHealthCoverage,
       0,
       100,
     ),
   );
-  let globalConfidence = Math.round(
-    clamp(
-      0.35 * averageConfidence + 0.25 * globalCoverage + 0.2 * signalAlignment + 0.2 * sourceHealthCoverage - criticalMissingPenalty,
-      0,
-      100,
-    ),
-  );
-  if (assetsWithCoverageBelow50 >= 4) globalConfidence = Math.min(globalConfidence, 58);
-  if (forecast.conclusiveCount < 100) globalConfidence = Math.min(globalConfidence, 65);
-  if (!layerState.derivativesPublicReady) globalConfidence = Math.min(globalConfidence, 62);
-  if (priceDataMissingForAnyTargetAsset) globalConfidence = Math.min(globalConfidence, 60);
-  if (layerState.stablecoinDataMissing) globalConfidence = Math.min(globalConfidence, 55);
-  globalConfidence = capPublicConfidence({
-    confidence: globalConfidence,
-    coverage: globalCoverage,
-    freshness: freshnessCoverage,
-    assetCoverageBelowHalf: globalCoverage < 50,
-  });
+  const confidenceGuard = applyConfidenceGuard({ rawConfidence, reportMode: "public_market_brief", engines: engineInputs });
+  const globalConfidence = confidenceGuard.finalConfidence;
+  const globalCoverage = confidenceGuard.dataCoverageWeighted;
+  const assets = capAssetsForReport(assetBuilds, confidenceGuard.confidenceCap);
+  const drivers = buildMainDrivers(signals, assets, layerState, dataEvidence, confidenceGuard);
+  const humanizedDiversity = validateHumanizedMeaningDiversity(assets.map((asset) => asset.humanized));
+  if (!humanizedDiversity.valid) console.warn(`CMIP ${HUMANIZER_VERSION} repetition warning`, humanizedDiversity);
+
+  const stablecoinMissing = confidenceGuard.missingCriticalData.includes("stablecoinLiquidity");
+  const macroMissing = confidenceGuard.missingCriticalData.includes("macro");
+  const liquidityScore = stablecoinMissing ? null : rawLiquidityScore;
+  const macroScore = macroMissing ? null : rawMacroScore;
+  const stableScore = dataEvidence.stablecoin.interpretation === "unavailable" ? null : rawStableScore;
   const mode = dataModeFrom(freshness, globalCoverage);
   const totalLiquidityDirection: LiquidityLayerDirection = liquidityScore === null ? "mixed" : liquidityScore <= 40 ? "pressure" : liquidityScore <= 60 ? "neutral" : "supportive";
-  const stablecoinLiquidityDirection = liquidityDirectionFromScore(stableScore);
-  const liquidityExplanationFa = liquidityNarrative({ total: totalLiquidityDirection, stablecoin: stablecoinLiquidityDirection });
+  const stablecoinLiquidityDirection: LiquidityLayerDirection =
+    dataEvidence.stablecoin.interpretation === "supportive"
+      ? "supportive"
+      : dataEvidence.stablecoin.interpretation === "pressure"
+        ? "pressure"
+        : dataEvidence.stablecoin.interpretation === "mixed"
+          ? "mixed"
+          : "neutral";
+  const liquidityExplanationFa = stablecoinMissing
+    ? "تغییرات تاریخی ۷ و ۳۰ روزه استیبل‌کوین کامل نیست؛ امتیاز و ادعای جهت‌دار نقدینگی در گزارش عمومی غیرفعال شده است."
+    : liquidityNarrative({ total: totalLiquidityDirection, stablecoin: stablecoinLiquidityDirection });
   const liquidityStateFa =
     liquidityScore === null
       ? "نقدینگی نامطمئن"
@@ -1288,11 +1728,12 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
               ? "ریسک متوسط"
               : "ریسک پایین";
   const macroPressureFa = macroScore === null ? "داده کلان محدود" : macroScore < -20 ? "فشار کلان" : macroScore > 20 ? "حمایت کلان نسبی" : "کلان دوگانه";
+  const etfEvidenceAvailable = dataEvidence.etf.btc.interpretation !== "unavailable" || dataEvidence.etf.eth.interpretation !== "unavailable";
   const marketSummaryFa =
     globalConfidence < 40
       ? "پوشش و اعتماد به کیفیت تحلیل برای سناریوی قطعی کافی نیست؛ گزارش فقط وضعیت داده و محرک‌های قابل پایش را نشان می‌دهد."
-      : "بازار کریپتو فعلاً جهت قطعی ندارد. نقدینگی تحت فشار است و جریان ETF هم حمایت قوی نشان نمی‌دهد. بنابراین وضعیت کلی بیشتر احتیاطی است تا صعودی یا نزولی قطعی.";
-  const marketReasoningFa = `این جمع‌بندی از ترکیب «${liquidityStateFa}»، «${macroPressureFa}» و «${riskLevelFa}» ساخته شده است. جریان ETF و کیفیت نقدینگی هنوز پشتوانه هم‌زمان و پایداری برای یک جهت قطعی ایجاد نکرده‌اند.`;
+      : `بازار کریپتو فعلاً جهت قطعی ندارد. ${liquidityScore === null ? "داده تاریخی نقدینگی برای نتیجه‌گیری جهت‌دار کامل نیست." : `وضعیت نقدینگی «${liquidityStateFa}» است.`} ${etfEvidenceAvailable ? "ارقام ETF در بخش شواهد عددی ثبت شده‌اند." : "جریان ETF عددی در دسترس نیست."}`;
+  const marketReasoningFa = `این جمع‌بندی بر پایه پوشش وزنی ${formatNumber(globalCoverage, 0)}٪، وضعیت «${macroPressureFa}» و «${riskLevelFa}» ساخته شده است. ${confidenceGuard.capReasonsFa.length ? `سقف اعتماد به دلیل ${confidenceGuard.capReasonsFa.join("، ")} اعمال شده است.` : "محدودیت بحرانی تازه‌ای ثبت نشده است."}`;
   const marketVerdictHumanized = humanizeReportBlock(
     {
       statusFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "نتیجه قطعی مجاز نیست" : "فضای کلی بازار با داده محدود")),
@@ -1325,8 +1766,29 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     globalCoverage,
     liquidityStateFa,
     liquidityExplanationFa,
+    confidenceGuard,
   });
-  const generatedAt = new Date().toISOString();
+  const audit: PublicReportAudit = {
+    reportId: `cmip-${generatedAt}`,
+    generatedAt,
+    mode,
+    rawConfidence: confidenceGuard.rawConfidence,
+    confidenceCap: confidenceGuard.confidenceCap,
+    finalConfidence: confidenceGuard.finalConfidence,
+    capReasons: confidenceGuard.capReasons,
+    weightedCoverage: confidenceGuard.dataCoverageWeighted,
+    sources: (Object.entries(engineInputs) as Array<[ConfidenceEngineKey, ConfidenceEngineInput]>).map(([category, engine]) => ({
+      category,
+      sourceName: engine.sourceName,
+      sourceUrl: engine.sourceUrl,
+      fetchedAt: engine.fetchedAt,
+      latestDataTimestamp: engine.latestDataTimestamp,
+      freshnessStatus: engine.freshnessStatus,
+      parseStatus: engine.parseStatus,
+      numericFieldsAvailable: engine.numericFieldsAvailable,
+    })),
+    engines: engineInputs,
+  };
 
   return {
     generatedAt,
@@ -1335,6 +1797,9 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     updateFrequencyLabel: "بروزرسانی عمومی هر ۳۰ دقیقه؛ داده‌های کلان و ETF ممکن است با تأخیر باشند.",
     globalConfidence,
     globalCoverage,
+    confidenceGuard,
+    dataEvidence,
+    audit,
     targetUniverseLabelFa: TARGET_ASSET_UNIVERSE_LABEL_FA,
     marketVerdict: {
       regime: String(regime.regime ?? regime.currentRegime ?? "limited"),
@@ -1366,13 +1831,20 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     operationalDashboard,
     reportRecord: {
       raw_engine_output: {
-        globalCoverage,
-        globalConfidence,
+        rawConfidence,
+        weightedCoverage: globalCoverage,
+        confidenceCap: confidenceGuard.confidenceCap,
+        finalConfidence: globalConfidence,
+        rawLiquidityScore,
         liquidityScore,
         stableScore,
+        rawMacroScore,
         macroScore,
         riskScore,
         forecast,
+        capReasons: confidenceGuard.capReasons,
+        engines: engineInputs,
+        dataEvidence,
       },
       humanized_report_output: {
         marketVerdict: marketVerdictHumanized,

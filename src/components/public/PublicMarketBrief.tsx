@@ -5,7 +5,7 @@ import { HumanReportBlock } from "@/components/reporting/HumanReportBlock";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { cn, formatNumber } from "@/lib/utils";
+import { cn, formatNumber, formatScore } from "@/lib/utils";
 
 function percent(value: number) {
   return `${formatNumber(value, 0)}٪`;
@@ -50,10 +50,16 @@ const assetIconMap: Record<string, { icon: string; tone: string }> = {
   ADA: { icon: "A", tone: "border-blue-400/45 bg-blue-400/12 text-blue-200" },
 };
 
-function assetIcon(symbol: string) {
+function assetIcon(symbol: string, size: "sm" | "md" = "md") {
   const item = assetIconMap[symbol] ?? { icon: symbol.slice(0, 1), tone: "border-[#344560] bg-[#111a28] text-[#eef3fc]" };
   return (
-    <span className={cn("inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-black", item.tone)}>
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full border font-black",
+        size === "sm" ? "h-4 w-4 text-[8px]" : "h-8 w-8 text-sm",
+        item.tone,
+      )}
+    >
       {item.icon}
     </span>
   );
@@ -170,13 +176,13 @@ function OperationalDashboard({ brief }: { brief: PublicMarketBriefData }) {
           />
           <MetricTile
             label="نقدینگی"
-            value={liquidityScore === null ? "ناموجود" : `${formatNumber(liquidityScore, 0)}/100`}
+            value={liquidityScore === null ? "ناموجود" : formatScore(liquidityScore)}
             detail={operation.liquidity.labelFa}
             tone={liquidityScore === null ? "neutral" : liquidityScore <= 40 ? "bad" : liquidityScore <= 60 ? "warn" : "good"}
           />
           <MetricTile
             label="ریسک"
-            value={riskScore === null ? "نامعلوم" : `${formatNumber(riskScore, 0)}/100`}
+            value={riskScore === null ? "نامعلوم" : formatScore(riskScore)}
             detail={brief.marketVerdict.riskLevelFa}
             tone={riskScore === null ? "neutral" : riskScore >= 65 ? "bad" : riskScore >= 45 ? "warn" : "good"}
           />
@@ -240,8 +246,9 @@ function MainAlertsDashboard({ brief }: { brief: PublicMarketBriefData }) {
               <p className="mt-2 line-clamp-4 text-xs leading-6 text-[#aab6ca]">{alert.whyFa}</p>
               <div className="mt-3 flex flex-wrap gap-1">
                 {alert.affectedAssets.map((asset) => (
-                  <span key={`${alert.id}-${asset}`} className="rounded-md border border-[#33415c] px-2 py-1 text-[10px] text-[#cfd8ea]">
-                    {asset}
+                  <span key={`${alert.id}-${asset}`} className="inline-flex items-center gap-1.5 rounded-md border border-[#33415c] px-2 py-1 text-[10px] text-[#cfd8ea]">
+                    {assetIcon(asset, "sm")}
+                    <span>{asset}</span>
                   </span>
                 ))}
               </div>
@@ -295,7 +302,7 @@ function LiquidityDashboard({ brief }: { brief: PublicMarketBriefData }) {
                   {engine.statusFa}
                 </Badge>
               </div>
-              <div className="mt-3 text-2xl font-black tabular-nums text-[#f5c842]">{engine.score === null ? "ناموجود" : `${formatNumber(engine.score, 0)}/100`}</div>
+              <div className="mt-3 text-2xl font-black tabular-nums text-[#f5c842]">{engine.score === null ? "ناموجود" : formatScore(engine.score)}</div>
               <div className="mt-3 space-y-2 border-t border-[#26334a] pt-3 text-[11px] leading-5 text-[#aab6ca]">
                 <div className="flex items-center justify-between gap-2">
                   <span>پوشش داده</span>
@@ -479,8 +486,9 @@ function MainDrivers({ drivers }: { drivers: PublicDriver[] }) {
             <HumanReportBlock {...driver.humanized} compact />
             <div className="mt-3 flex flex-wrap gap-1">
               {driver.affectedAssets.slice(0, 8).map((asset) => (
-                <span key={asset} className="rounded-sm border bg-muted/35 px-2 py-1 text-[10px] text-muted-foreground">
-                  {asset}
+                <span key={asset} className="inline-flex items-center gap-1.5 rounded-sm border bg-muted/35 px-2 py-1 text-[10px] text-muted-foreground">
+                  {assetIcon(asset, "sm")}
+                  <span>{asset}</span>
                 </span>
               ))}
             </div>
@@ -583,7 +591,6 @@ export function PublicMarketBrief({ brief }: { brief: PublicMarketBriefData }) {
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge variant="success">C.M.I.P Market Brief</Badge>
               <Badge variant="outline">{brief.dataModeFa}</Badge>
-              <Badge variant="warning">بدون سیگنال معامله</Badge>
             </div>
             <h1 className="text-2xl font-black text-[#eef3fc] md:text-3xl">گزارش فشرده وضعیت بازار کریپتو</h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-[#aab6ca]">

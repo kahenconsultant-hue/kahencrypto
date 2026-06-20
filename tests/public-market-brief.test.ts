@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { TARGET_ASSETS } from "../src/lib/assets/targetAssets";
 import { capAssetConfidenceByPublicQuality, classifyAssetBias, etfFlowScore, impactStatusLabelFa, volumeLiquidityScore, weightedImpactScore } from "../src/lib/intelligence/assetScoring";
 import { HUMANIZER_VERSION, humanizeReportBlock, renderHumanizedBlockText, validateHumanizedBlock, validateHumanizedMeaningDiversity } from "../src/lib/intelligence/humanReport";
+import { formatScore } from "../src/lib/utils";
 import { forecastPublicBadgeState, publicModuleStatus, shouldRenderPublicModule } from "../src/lib/intelligence/moduleGating";
 
 test("target asset registry contains exactly the Iran-relevant public watchlist", () => {
@@ -102,7 +103,7 @@ test("humanized report blocks are valid and render human explanation before tech
     { impactScore: -12, confidence: 64, coverage: 72, driversFa: ["مومنتوم قیمت: فشارزا"], invalidationFa: "اگر محرک‌ها تغییر کنند، سناریو بازنگری می‌شود." },
     { kind: "asset", titleFa: "TRX — ترون", assetSymbol: "TRX", statusFa: "خنثی", confidence: 64, coverage: 72, impactScore: -12 },
   );
-  assert.equal(HUMANIZER_VERSION, "cmip-humanizer-v1.2");
+  assert.equal(HUMANIZER_VERSION, "cmip-humanizer-v1.3");
   assert.equal(validateHumanizedBlock(block), true);
   assert.match(block.watch_next, /بروزرسانی بعدی/);
   assert.match(block.non_advisory_note, /توصیه مالی نیست/);
@@ -110,11 +111,30 @@ test("humanized report blocks are valid and render human explanation before tech
 
   const rendered = renderHumanizedBlockText(block);
   assert.ok(rendered.indexOf("۱. روایت بازار") < rendered.indexOf("۴. برای رصد بعدی"));
+  assert.match(rendered, /۲\. مسیر تشخیص ترید/);
   assert.ok(rendered.indexOf("۴. برای رصد بعدی") < rendered.indexOf("۶. جزئیات فنی"));
   assert.ok(rendered.indexOf("۶. جزئیات فنی") < rendered.indexOf("۷. جزئیات Audit"));
 });
 
-test("humanizer v1.2 does not echo raw engine jargon or robotic phrases in human sections", () => {
+test("market humanizer keeps market narrative and reasoning distinct", () => {
+  const block = humanizeReportBlock(
+    { summaryFa: "بازار فعلاً جهت قطعی ندارد.", confidence: 64, coverage: 78 },
+    {
+      kind: "market",
+      confidence: 64,
+      coverage: 78,
+      reasoningFa: "این نتیجه از ضعف نقدینگی، نبود حمایت پایدار ETF و فشار نرخ‌ها ساخته شده است.",
+    },
+  );
+  assert.notEqual(block.human_summary, block.reasoning);
+  assert.match(block.user_meaning, /تریدر/);
+});
+
+test("public score formatter uses Persian digits for numerator and denominator", () => {
+  assert.equal(formatScore(45), "۴۵/۱۰۰");
+});
+
+test("humanizer v1.3 does not echo raw engine jargon or robotic phrases in human sections", () => {
   const block = humanizeReportBlock(
     {
       impactScore: -4,
@@ -145,6 +165,13 @@ test("humanizer v1.2 does not echo raw engine jargon or robotic phrases in human
   assert.match(block.reasoning, /حرکت قیمت|حجم معاملات|داده/);
 });
 
+test("public header uses CMIP logo and omits API and no-signal controls", () => {
+  const source = readFileSync(new URL("../src/components/layout/header.tsx", import.meta.url), "utf8");
+  assert.match(source, /cmip-logo\.jpg/);
+  assert.equal(source.includes('href="/api/v1/overview"'), false);
+  assert.equal(source.includes("بدون سیگنال معامله"), false);
+});
+
 test("asset user meanings are not repeated across the public watchlist", () => {
   const blocks = TARGET_ASSETS.map((asset, index) =>
     humanizeReportBlock(
@@ -167,6 +194,7 @@ test("public market brief component no longer contains obvious raw customer-faci
   assert.match(source, /lg:grid-cols-5/);
   assert.equal(source.includes("assetPairs"), false);
   assert.equal(source.includes("خلاصه انسانی"), false);
+  assert.equal(source.includes("/100"), false);
 });
 
 test("public brief builder avoids raw public-facing jargon outside audit details", () => {

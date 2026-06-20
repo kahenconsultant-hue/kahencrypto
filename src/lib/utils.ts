@@ -16,6 +16,10 @@ export function formatNumber(value: number, digits = 1) {
   }).format(value);
 }
 
+export function formatScore(value: number, maximum = 100) {
+  return `${formatNumber(value, 0)}/${formatNumber(maximum, 0)}`;
+}
+
 export function formatCompactUsd(value: number) {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";

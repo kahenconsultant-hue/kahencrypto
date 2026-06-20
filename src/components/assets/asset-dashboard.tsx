@@ -10,7 +10,7 @@ import { Metric } from "@/components/ui/metric";
 import { Progress } from "@/components/ui/progress";
 import { Tabs } from "@/components/ui/tabs";
 import { assetStatusKey, dataSourceStatusLabels, moduleDataSourceStatus } from "@/lib/data-source-status";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, formatScore } from "@/lib/utils";
 import { humanizeReportBlock } from "@/lib/intelligence/humanReport";
 import { generateAssetImpactProfile } from "@/server/analytics/asset-impact-engine";
 import { generateSmartAlerts } from "@/server/alerts/smart-alert-engine";
@@ -143,8 +143,8 @@ function SourceTransparency({ sources }: { sources: SourceSignal[] }) {
           </div>
           <p className="mt-2 line-clamp-3 text-[11px] leading-5 text-muted-foreground">{source.signalFa}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <Badge variant="outline">اطمینان {source.confidence}%</Badge>
-            <Badge variant="outline">اعتبار {source.reliabilityScore}/100</Badge>
+            <Badge variant="outline">اطمینان {formatNumber(source.confidence, 0)}٪</Badge>
+            <Badge variant="outline">اعتبار {formatScore(source.reliabilityScore)}</Badge>
             <Badge variant="outline">کیفیت داده {source.dataQuality ? dataSourceStatusLabels[source.dataQuality] : dataSourceStatusLabels[source.status]}</Badge>
             <span>آخرین بروزرسانی: {new Date(source.lastUpdatedAt).toLocaleString("fa-IR")}</span>
           </div>
@@ -178,7 +178,7 @@ function HorizonPanel({ intelligence }: { intelligence: HorizonIntelligence }) {
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">اطمینان {intelligence.confidence}%</Badge>
+            <Badge variant="outline">اطمینان {formatNumber(intelligence.confidence, 0)}٪</Badge>
             <Badge variant={statusVariant(intelligence.dataQuality)}>{dataSourceStatusLabels[intelligence.dataQuality]}</Badge>
             <Badge variant="muted">آخرین بروزرسانی: {new Date(intelligence.lastUpdatedAt).toLocaleString("fa-IR")}</Badge>
           </div>
@@ -191,11 +191,11 @@ function HorizonPanel({ intelligence }: { intelligence: HorizonIntelligence }) {
           </div>
           <SignalBlock title="سطح اطمینان تحلیل" value={intelligence.forecast.analysisConfidenceText} />
           <div className="grid gap-3 md:grid-cols-5">
-            <Metric label="Risk (ریسک)" value={`${intelligence.quantitativeScores.marketRiskScore}/100`} tone="warn" progress={intelligence.quantitativeScores.marketRiskScore} />
-            <Metric label="Liquidity (نقدینگی)" value={`${intelligence.quantitativeScores.liquidityScore}/100`} tone="neutral" progress={intelligence.quantitativeScores.liquidityScore} />
-            <Metric label="Macro (کلان)" value={`${intelligence.quantitativeScores.macroStressScore}/100`} tone="warn" progress={intelligence.quantitativeScores.macroStressScore} />
-            <Metric label="Narrative (روایت)" value={`${intelligence.quantitativeScores.narrativeStrength}/100`} tone="neutral" progress={intelligence.quantitativeScores.narrativeStrength} />
-            <Metric label="Volatility (نوسان)" value={`${intelligence.quantitativeScores.volatilityRisk}/100`} tone="warn" progress={intelligence.quantitativeScores.volatilityRisk} />
+            <Metric label="Risk (ریسک)" value={formatScore(intelligence.quantitativeScores.marketRiskScore)} tone="warn" progress={intelligence.quantitativeScores.marketRiskScore} />
+            <Metric label="Liquidity (نقدینگی)" value={formatScore(intelligence.quantitativeScores.liquidityScore)} tone="neutral" progress={intelligence.quantitativeScores.liquidityScore} />
+            <Metric label="Macro (کلان)" value={formatScore(intelligence.quantitativeScores.macroStressScore)} tone="warn" progress={intelligence.quantitativeScores.macroStressScore} />
+            <Metric label="Narrative (روایت)" value={formatScore(intelligence.quantitativeScores.narrativeStrength)} tone="neutral" progress={intelligence.quantitativeScores.narrativeStrength} />
+            <Metric label="Volatility (نوسان)" value={formatScore(intelligence.quantitativeScores.volatilityRisk)} tone="warn" progress={intelligence.quantitativeScores.volatilityRisk} />
           </div>
           <Progress value={intelligence.confidence} className="mt-4" />
         </CardContent>
@@ -339,9 +339,9 @@ export function AssetDashboard({ assetKey }: { assetKey: keyof typeof assetIntel
             </p>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <Metric label="Macro (کلان)" value={`${asset.macroPressure}/100`} tone={asset.macroPressure >= 70 ? "warn" : "neutral"} progress={asset.macroPressure} />
-            <Metric label="Liquidity (نقدینگی)" value={`${asset.liquidityScore}/100`} tone={asset.liquidityScore >= 60 ? "good" : "neutral"} progress={asset.liquidityScore} />
-            <Metric label="Sentiment (سنتیمنت)" value={`${asset.sentimentScore}/100`} tone={asset.sentimentScore >= 70 ? "warn" : "neutral"} progress={asset.sentimentScore} />
+            <Metric label="Macro (کلان)" value={formatScore(asset.macroPressure)} tone={asset.macroPressure >= 70 ? "warn" : "neutral"} progress={asset.macroPressure} />
+            <Metric label="Liquidity (نقدینگی)" value={formatScore(asset.liquidityScore)} tone={asset.liquidityScore >= 60 ? "good" : "neutral"} progress={asset.liquidityScore} />
+            <Metric label="Sentiment (سنتیمنت)" value={formatScore(asset.sentimentScore)} tone={asset.sentimentScore >= 70 ? "warn" : "neutral"} progress={asset.sentimentScore} />
           </div>
         </CardContent>
       </Card>
@@ -423,7 +423,7 @@ export function AssetDashboard({ assetKey }: { assetKey: keyof typeof assetIntel
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                     <Badge variant="outline">{source.sourceType}</Badge>
-                    <Badge variant="outline">اعتبار {source.reliabilityScore}/100</Badge>
+                    <Badge variant="outline">اعتبار {formatScore(source.reliabilityScore)}</Badge>
                     <Badge variant="outline">{source.updateFrequency}</Badge>
                   </div>
                   <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{source.notes}</p>

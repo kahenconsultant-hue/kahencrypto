@@ -48,7 +48,7 @@ import {
   getDashboardSourceSummary as summarizeSources,
   getDashboardUsdtRiskCenter,
 } from "@/server/dashboard/dashboard-service";
-import { formatCompactUsd, formatNumber, severityColor } from "@/lib/utils";
+import { formatCompactUsd, formatNumber, formatScore, severityColor } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataSourceBadge } from "@/components/ui/data-source-badge";
@@ -417,7 +417,7 @@ function formatOptionalSignedScore(value: number | null | undefined) {
 }
 
 function formatOptionalProgressScore(value: number | null | undefined) {
-  return typeof value === "number" ? `${formatNumber(value, 0)}/100` : "ناموجود";
+  return typeof value === "number" ? formatScore(value) : "ناموجود";
 }
 
 function optionalProgress(value: number | null | undefined) {
@@ -463,7 +463,7 @@ export function ReliabilityStatusPanel() {
       </CardHeader>
       <CardContent className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="grid gap-2 md:grid-cols-2 xl:col-span-2 xl:grid-cols-5">
-          <Metric label="امتیاز تازگی" value={`${freshness.summary.overallFreshnessScore}/100`} tone={freshness.summary.overallFreshnessScore >= 70 ? "good" : freshness.summary.overallFreshnessScore >= 45 ? "warn" : "bad"} progress={freshness.summary.overallFreshnessScore} />
+          <Metric label="امتیاز تازگی" value={formatScore(freshness.summary.overallFreshnessScore)} tone={freshness.summary.overallFreshnessScore >= 70 ? "good" : freshness.summary.overallFreshnessScore >= 45 ? "warn" : "bad"} progress={freshness.summary.overallFreshnessScore} />
           <Metric label="منابع سالم" value={`${freshness.summary.healthySources}/${freshness.summary.enabledSources}`} tone={freshness.summary.healthySources ? "good" : "warn"} />
           <Metric label="منابع کهنه" value={`${freshness.summary.staleSources + freshness.summary.obsoleteSources}`} tone={freshness.summary.staleSources + freshness.summary.obsoleteSources ? "warn" : "good"} />
           <Metric label="سیگنال‌های کهنه" value={`${freshness.summary.staleSignals + freshness.summary.obsoleteSignals}`} tone={freshness.summary.staleSignals + freshness.summary.obsoleteSignals ? "warn" : "good"} />
@@ -616,7 +616,7 @@ export function BasicIntelligencePanel() {
         <div className="space-y-4">
           <p className="text-sm leading-7 text-muted-foreground">{sanitizePublicIntelligenceText(intelligence.summaryFa)}</p>
           <div className="grid gap-3 md:grid-cols-4">
-            <Metric label="ریسک پایه" value={riskScore === undefined ? "ناموجود" : `${riskScore}/100`} tone={riskScore === undefined ? "warn" : riskScore >= 65 ? "bad" : riskScore >= 45 ? "warn" : "good"} progress={riskScore} />
+            <Metric label="ریسک پایه" value={riskScore === undefined ? "ناموجود" : formatScore(riskScore)} tone={riskScore === undefined ? "warn" : riskScore >= 65 ? "bad" : riskScore >= 45 ? "warn" : "good"} progress={riskScore} />
             <Metric label="فشار غالب" value={labelOrRaw(pressureLabels, intelligence.dominantPressure)} tone="neutral" />
             <Metric label="رژیم" value={labelOrRaw(regimeLabels, intelligence.regime)} tone="neutral" />
             <Metric label="اطمینان کل" value={intelligence.confidence.score === null ? "ناموجود" : `${intelligence.confidence.score}%`} tone={intelligence.confidence.score !== null && intelligence.confidence.score >= 58 ? "good" : "warn"} progress={intelligence.confidence.score ?? undefined} />
@@ -762,10 +762,10 @@ export function MarketRegimePanel() {
             <div className="max-w-3xl text-sm leading-7 text-muted-foreground">{marketRegime.interpretationFa}</div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <Metric label="Risk (ریسک)" value={`${marketRegime.riskScore}/100`} tone="warn" progress={marketRegime.riskScore} />
-            <Metric label="Liquidity (نقدینگی)" value={`${marketRegime.liquidityScore}/100`} tone="neutral" progress={marketRegime.liquidityScore} />
-            <Metric label="Leverage (اهرم معاملاتی)" value={`${marketRegime.leverageScore}/100`} tone="warn" progress={marketRegime.leverageScore} />
-            <Metric label="Macro (کلان)" value={`${marketRegime.stressScore}/100`} tone="neutral" progress={marketRegime.stressScore} />
+            <Metric label="Risk (ریسک)" value={formatScore(marketRegime.riskScore)} tone="warn" progress={marketRegime.riskScore} />
+            <Metric label="Liquidity (نقدینگی)" value={formatScore(marketRegime.liquidityScore)} tone="neutral" progress={marketRegime.liquidityScore} />
+            <Metric label="Leverage (اهرم معاملاتی)" value={formatScore(marketRegime.leverageScore)} tone="warn" progress={marketRegime.leverageScore} />
+            <Metric label="Macro (کلان)" value={formatScore(marketRegime.stressScore)} tone="neutral" progress={marketRegime.stressScore} />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-md border bg-secondary/25 p-3">
@@ -907,7 +907,7 @@ export function TopAlertsPanel() {
                   <div className="metric-label">داده‌های استفاده‌شده در این هشدار</div>
                   <div className="flex flex-wrap gap-2 text-[11px]">
                     {typeof alert.dataCoveragePercent === "number" ? <Badge variant="outline">coverage {alert.dataCoveragePercent}%</Badge> : null}
-                    {typeof alert.alertQualityScore === "number" ? <Badge variant={alert.alertQualityScore >= 65 ? "success" : alert.alertQualityScore >= 45 ? "warning" : "danger"}>quality {alert.alertQualityScore}/100</Badge> : null}
+                    {typeof alert.alertQualityScore === "number" ? <Badge variant={alert.alertQualityScore >= 65 ? "success" : alert.alertQualityScore >= 45 ? "warning" : "danger"}>quality {formatScore(alert.alertQualityScore)}</Badge> : null}
                     {typeof alert.crossConfirmationCount === "number" ? <Badge variant="muted">{alert.crossConfirmationCount} source confirmations</Badge> : null}
                   </div>
                 </div>
@@ -1221,7 +1221,7 @@ export function CausalMarketGraphPanel() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-4">
-          <Metric label="سلامت graph" value={`${formatNumber(graph.graphHealthScore, 0)}/100`} tone={graph.graphHealthScore >= 70 ? "good" : graph.graphHealthScore >= 45 ? "warn" : "bad"} detail="بر اساس edgeهای فعال، کیفیت داده و مسیرهای suppressed." />
+          <Metric label="سلامت graph" value={formatScore(graph.graphHealthScore)} tone={graph.graphHealthScore >= 70 ? "good" : graph.graphHealthScore >= 45 ? "warn" : "bad"} detail="بر اساس edgeهای فعال، کیفیت داده و مسیرهای suppressed." />
           <Metric label="اطمینان" value={typeof confidenceScore === "number" ? `${confidenceScore}%` : "ناموجود"} tone={typeof confidenceScore === "number" && confidenceScore >= 65 ? "good" : "warn"} detail={sanitizePublicIntelligenceText(graph.confidence.explanation)} />
           <Metric label="مسیرهای فعال" value={`${graph.activeEdges.length}`} tone={graph.activeEdges.length >= 5 ? "good" : "warn"} detail={`${graph.suppressedEdges.length} مسیر suppressed یا داده ناکافی.`} />
           <Metric label="ورودی‌های ناقص" value={`${graph.missingInputs.length}`} tone={graph.missingInputs.length ? "warn" : "good"} detail={graph.missingInputs.slice(0, 3).join("، ") || "ورودی ناقص کلیدی دیده نشد."} />
@@ -1451,7 +1451,7 @@ export function LiquidityPanel() {
           ) : null}
           {liquidityEngine.v2State ? <Badge variant="warning">{sanitizePublicIntelligenceText(liquidityEngine.v2State.replaceAll("_", " "))}</Badge> : null}
           <LastUpdated />
-          <div className={`text-2xl font-semibold number-tabular ${liquidityEngine.strictLiquidityClass === "stress" || liquidityEngine.strictLiquidityClass === "weak" ? "text-amber-200" : signedScoreColor(liquidityEngine.liquidityScoreSigned)}`}>{liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore}/100</div>
+          <div className={`text-2xl font-semibold number-tabular ${liquidityEngine.strictLiquidityClass === "stress" || liquidityEngine.strictLiquidityClass === "weak" ? "text-amber-200" : signedScoreColor(liquidityEngine.liquidityScoreSigned)}`}>{formatScore(liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore)}</div>
         </div>
       </CardHeader>
       <CardContent>
@@ -1465,7 +1465,7 @@ export function LiquidityPanel() {
               <Badge variant={liquidityStack.finalLiquidityClass === "stress" || liquidityStack.finalLiquidityClass === "weak" ? "warning" : liquidityStack.finalLiquidityClass === "expansion" ? "success" : "outline"}>
                 {liquidityStack.finalLiquidityLabelFa}
               </Badge>
-              <Badge variant="outline">score {liquidityStack.finalLiquidityScore ?? "ناموجود"}/100</Badge>
+              <Badge variant="outline">score {liquidityStack.finalLiquidityScore === null ? "ناموجود" : formatScore(liquidityStack.finalLiquidityScore)}</Badge>
               <Badge variant="outline">confidence {liquidityStack.finalConfidence}%</Badge>
             </div>
           </div>
@@ -1478,7 +1478,7 @@ export function LiquidityPanel() {
                     {engine.status === "connected" ? "فعال" : engine.status === "degraded" ? "ناقص" : "Missing"}
                   </Badge>
                 </div>
-                <div className="mt-2 number-tabular">score: {engine.score ?? "ناموجود"}/100</div>
+                <div className="mt-2 number-tabular">score: {engine.score === null ? "ناموجود" : formatScore(engine.score)}</div>
                 <div className="text-muted-foreground">coverage {engine.coverage}% · confidence {engine.confidence}%</div>
                 <div className="text-muted-foreground">classification: {engine.classification}</div>
               </div>
@@ -1538,14 +1538,14 @@ export function LiquidityPanel() {
         ) : null}
         <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Metric label="نقدینگی کلان" value={formatOptionalSignedScore(macroLiquidityScore)} tone={typeof macroLiquidityScore === "number" ? (macroLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
-          <Metric label="سلامت نقدینگی" value={`${liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore}/100`} tone={(liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore) < 45 ? "warn" : (liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore) >= 60 ? "good" : "neutral"} progress={liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore} />
+          <Metric label="سلامت نقدینگی" value={formatScore(liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore)} tone={(liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore) < 45 ? "warn" : (liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore) >= 60 ? "good" : "neutral"} progress={liquidityEngine.liquidityHealthScore ?? liquidityEngine.liquidityScore} />
           <Metric label="نقدینگی کریپتو" value={formatOptionalSignedScore(cryptoLiquidityScore)} tone={typeof cryptoLiquidityScore === "number" ? (cryptoLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
           <Metric label="نقدینگی اسپات واقعی" value={formatOptionalSignedScore(realSpotLiquidityScore)} tone={typeof realSpotLiquidityScore === "number" ? (realSpotLiquidityScore >= 0 ? "good" : "bad") : "neutral"} />
           <Metric label="نقدینگی اهرمی" value={formatOptionalProgressScore(leveragedLiquidityScore)} tone={typeof leveragedLiquidityScore === "number" && leveragedLiquidityScore >= 70 ? "warn" : "neutral"} progress={optionalProgress(leveragedLiquidityScore)} />
           <Metric label="پایداری نقدینگی" value={formatOptionalProgressScore(liquiditySustainabilityScore)} tone={typeof liquiditySustainabilityScore === "number" ? (liquiditySustainabilityScore >= 58 ? "good" : "warn") : "neutral"} progress={optionalProgress(liquiditySustainabilityScore)} />
-          <Metric label="جریان نهادی" value={`${liquidityEngine.institutionalFlow}/100`} tone={liquidityEngine.institutionalFlow >= 55 ? "good" : "warn"} progress={liquidityEngine.institutionalFlow} />
-          <Metric label="رشد استیبل‌کوین" value={`${liquidityEngine.stablecoinExpansion}/100`} tone={liquidityEngine.stablecoinExpansion >= 55 ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
-          <Metric label="حرارت سفته‌بازی" value={`${liquidityEngine.speculativeHeat}/100`} tone={liquidityEngine.speculativeHeat >= 70 ? "warn" : "neutral"} progress={liquidityEngine.speculativeHeat} />
+          <Metric label="جریان نهادی" value={formatScore(liquidityEngine.institutionalFlow)} tone={liquidityEngine.institutionalFlow >= 55 ? "good" : "warn"} progress={liquidityEngine.institutionalFlow} />
+          <Metric label="رشد استیبل‌کوین" value={formatScore(liquidityEngine.stablecoinExpansion)} tone={liquidityEngine.stablecoinExpansion >= 55 ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
+          <Metric label="حرارت سفته‌بازی" value={formatScore(liquidityEngine.speculativeHeat)} tone={liquidityEngine.speculativeHeat >= 70 ? "warn" : "neutral"} progress={liquidityEngine.speculativeHeat} />
           <Metric label="استیبل‌کوین (Stablecoin)" value={labelOrRaw(biasLabels, liquidityEngine.stablecoinTrend)} tone={liquidityEngine.stablecoinTrend === "bullish" ? "good" : "neutral"} progress={liquidityEngine.stablecoinExpansion} />
           <Metric label="جریان ETF" value={labelOrRaw(biasLabels, liquidityEngine.etfFlowStatus)} tone={liquidityEngine.etfFlowStatus === "bearish" ? "bad" : "good"} progress={liquidityEngine.institutionalFlow} />
           <Metric label="فشار اهرم معاملاتی" value={formatOptionalProgressScore(leverageStress)} tone={typeof leverageStress === "number" && leverageStress >= 70 ? "warn" : "neutral"} progress={optionalProgress(leverageStress)} />
@@ -1884,7 +1884,7 @@ export function SentimentPanel() {
                   </div>
                   <p className="mt-2 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(headline.title)}</p>
                   <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-                    کانال انتقال: {labelOrRaw(channelLabels, headline.transmissionChannel)} · relevance {headline.marketRelevanceScore}/100 · شدت {headline.severity} · تازگی {headline.novelty}
+                    کانال انتقال: {labelOrRaw(channelLabels, headline.transmissionChannel)} · relevance {formatScore(headline.marketRelevanceScore)} · شدت {headline.severity} · تازگی {headline.novelty}
                   </p>
                 </div>
               ))}
@@ -1918,10 +1918,10 @@ export function UsdtRiskPanel() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
           <div className="rounded-md border bg-secondary/30 p-3 md:col-span-2 xl:col-span-1">
             <div className="grid gap-3 md:grid-cols-2">
-              <Metric label="USDT Risk Score" value={`${usdtRiskCenter.usdtRiskScore}/100`} tone={usdtRiskCenter.usdtRiskScore >= 55 ? "warn" : "neutral"} progress={usdtRiskCenter.usdtRiskScore} />
-              <Metric label="USDT Stability Score" value={`${usdtRiskCenter.usdtStabilityScore}/100`} tone={usdtRiskCenter.usdtStabilityScore >= 60 ? "good" : "warn"} progress={usdtRiskCenter.usdtStabilityScore} />
-              <Metric label="Network Distribution" value={usdtRiskCenter.networkDistributionScore === null ? "ناموجود" : `${usdtRiskCenter.networkDistributionScore}/100`} tone="warn" progress={usdtRiskCenter.networkDistributionScore ?? undefined} />
-              <Metric label="Freeze Risk" value={`${usdtRiskCenter.freezeRiskScore}/100`} tone={usdtRiskCenter.freezeRiskScore >= 45 ? "warn" : "neutral"} progress={usdtRiskCenter.freezeRiskScore} />
+              <Metric label="USDT Risk Score" value={formatScore(usdtRiskCenter.usdtRiskScore)} tone={usdtRiskCenter.usdtRiskScore >= 55 ? "warn" : "neutral"} progress={usdtRiskCenter.usdtRiskScore} />
+              <Metric label="USDT Stability Score" value={formatScore(usdtRiskCenter.usdtStabilityScore)} tone={usdtRiskCenter.usdtStabilityScore >= 60 ? "good" : "warn"} progress={usdtRiskCenter.usdtStabilityScore} />
+              <Metric label="Network Distribution" value={usdtRiskCenter.networkDistributionScore === null ? "ناموجود" : formatScore(usdtRiskCenter.networkDistributionScore)} tone="warn" progress={usdtRiskCenter.networkDistributionScore ?? undefined} />
+              <Metric label="Freeze Risk" value={formatScore(usdtRiskCenter.freezeRiskScore)} tone={usdtRiskCenter.freezeRiskScore >= 45 ? "warn" : "neutral"} progress={usdtRiskCenter.freezeRiskScore} />
             </div>
             <p className="mt-3 text-xs leading-6 text-muted-foreground">{sanitizePublicIntelligenceText(usdtRiskCenter.summaryFa)}</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1938,7 +1938,7 @@ export function UsdtRiskPanel() {
                 <div key={component.label} className="flex items-center justify-between gap-3 rounded-sm border bg-black/10 p-2 text-xs">
                   <span>{component.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="number-tabular">{component.value === null ? "ناموجود" : `${component.value}/100`}</span>
+                    <span className="number-tabular">{component.value === null ? "ناموجود" : formatScore(component.value)}</span>
                     <Badge variant={component.status === "available" ? "success" : "warning"}>{component.status === "available" ? "موجود" : "ناموجود"}</Badge>
                   </div>
                 </div>
@@ -2279,7 +2279,7 @@ export function DataQualityPanel() {
                     <td className="px-3 py-2">
                       {signalFreshness ? <Badge variant={freshnessVariant(signalFreshness.freshnessState)}>{freshnessStateLabelsFa[signalFreshness.freshnessState]}</Badge> : "ناموجود"}
                     </td>
-                    <td className="px-3 py-2 number-tabular">{signal.reliability}/100</td>
+                    <td className="px-3 py-2 number-tabular">{formatScore(signal.reliability)}</td>
                     <td className="px-3 py-2">{signal.timestamp ? new Date(signal.timestamp).toLocaleString("fa-IR") : "ناموجود"}</td>
                     <td className="px-3 py-2 text-muted-foreground">{sanitizePublicIntelligenceText(signal.error ?? signal.estimatedReason ?? signalFreshness?.warningFa ?? "داده مستقیم از اتصال داده دریافت شده است.")}</td>
                   </tr>

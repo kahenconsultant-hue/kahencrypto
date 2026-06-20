@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -43,14 +44,15 @@ export function Sidebar() {
 
   return (
     <aside className="hidden h-screen w-64 shrink-0 border-l bg-card/80 p-3 lg:sticky lg:top-0 lg:block">
-      <Link href="/" className="mb-5 flex items-center gap-3 rounded-md border bg-secondary/40 p-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <BarChart3 className="h-5 w-5" aria-hidden />
-        </div>
-        <div>
-          <div className="text-sm font-black">C.M.I.P</div>
-          <div className="text-[11px] leading-5 text-muted-foreground">تحلیل کلان، نقدینگی و ریسک بازار کریپتو</div>
-        </div>
+      <Link href="/" className="mb-5 flex items-center justify-center rounded-md border bg-secondary/40 p-3">
+        <Image
+          src="/cmip-logo.jpg"
+          alt="CMIP - Crypto Macro Intelligence Platform"
+          width={202}
+          height={99}
+          priority
+          className="h-auto w-full max-w-[180px] object-contain invert mix-blend-screen"
+        />
       </Link>
 
       <nav className="space-y-1">

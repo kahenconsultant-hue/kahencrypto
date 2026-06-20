@@ -1204,7 +1204,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
   const assets = assetBuilds.map((asset) => asset.brief);
   const humanizedDiversity = validateHumanizedMeaningDiversity(assets.map((asset) => asset.humanized));
   if (!humanizedDiversity.valid) {
-    console.warn("CMIP humanizer v1.2 repetition warning", humanizedDiversity);
+    console.warn(`CMIP ${HUMANIZER_VERSION} repetition warning`, humanizedDiversity);
   }
   const averageCoverage = Math.round(assets.reduce((sum, asset) => sum + asset.dataCoverage, 0) / Math.max(1, assets.length));
   const averageConfidence = Math.round(assets.reduce((sum, asset) => sum + asset.confidence, 0) / Math.max(1, assets.length));
@@ -1292,6 +1292,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
     globalConfidence < 40
       ? "پوشش و اعتماد به کیفیت تحلیل برای سناریوی قطعی کافی نیست؛ گزارش فقط وضعیت داده و محرک‌های قابل پایش را نشان می‌دهد."
       : "بازار کریپتو فعلاً جهت قطعی ندارد. نقدینگی تحت فشار است و جریان ETF هم حمایت قوی نشان نمی‌دهد. بنابراین وضعیت کلی بیشتر احتیاطی است تا صعودی یا نزولی قطعی.";
+  const marketReasoningFa = `این جمع‌بندی از ترکیب «${liquidityStateFa}»، «${macroPressureFa}» و «${riskLevelFa}» ساخته شده است. جریان ETF و کیفیت نقدینگی هنوز پشتوانه هم‌زمان و پایداری برای یک جهت قطعی ایجاد نکرده‌اند.`;
   const marketVerdictHumanized = humanizeReportBlock(
     {
       statusFa: String(regime.regimeFa ?? regime.labelFa ?? (globalConfidence < 40 ? "نتیجه قطعی مجاز نیست" : "فضای کلی بازار با داده محدود")),
@@ -1309,7 +1310,7 @@ export async function buildPublicMarketBrief(): Promise<PublicMarketBrief> {
       coverage: globalCoverage,
       impactScore: macroScore,
       riskLabelFa: riskLevelFa,
-      reasoningFa: marketSummaryFa,
+      reasoningFa: marketReasoningFa,
       invalidationFa: "اگر دو محرک اصلی در دو بروزرسانی متوالی خلاف جهت فعلی حرکت کنند، سناریوی بازار باید بازنگری شود.",
     },
   );

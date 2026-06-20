@@ -55,7 +55,7 @@ export function HumanReportBlock(props: HumanReportBlockProps) {
         <p className="mt-1 text-muted-foreground">{props.human_summary}</p>
       </section>
       <section>
-        <div className="font-black text-foreground">۲. معنی برای کاربر</div>
+        <div className="font-black text-foreground">۲. مسیر تشخیص ترید</div>
         <p className="mt-1 text-muted-foreground">{props.user_meaning}</p>
       </section>
       <section>

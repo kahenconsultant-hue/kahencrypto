@@ -1,7 +1,8 @@
 import { clamp } from "@/lib/intelligence/moduleGating";
 import { impactStatusLabelFa } from "@/lib/intelligence/assetScoring";
+import { formatNumber } from "@/lib/utils";
 
-export const HUMANIZER_VERSION = "cmip-humanizer-v1.2";
+export const HUMANIZER_VERSION = "cmip-humanizer-v1.3";
 export const NON_ADVISORY_NOTE = "این گزارش توصیه مالی نیست؛ فقط وضعیت فعلی بازار را خلاصه می‌کند.";
 
 export type HumanizedReportBlock = {
@@ -306,7 +307,7 @@ function assetMeaning(context: HumanReportContext, confidence: number | null, co
   const symbol = symbolFromContext(context);
   const name = assetNameFromContext(context);
   if (symbol === "USDT") {
-    return "برای کاربر عادی، تغییر وضعیت تتر بیشتر درباره کیفیت نقدینگی و ریسک ثبات بازار مهم است، نه انتخاب جهت قیمت.";
+    return "برای تریدر، تغییر وضعیت تتر بیشتر درباره کیفیت نقدینگی و ریسک ثبات بازار مهم است، نه انتخاب جهت قیمت.";
   }
   const assetSpecificMeaning: Record<string, string> = {
     BTC: "برای بیت‌کوین، تصمیم عجولانه پرریسک است؛ ETF، دلار و بازده اوراق هنوز باید با هم هم‌جهت شوند.",
@@ -447,11 +448,11 @@ function driverSummary(context: HumanReportContext) {
 
 function driverMeaning(context: HumanReportContext) {
   const title = context.titleFa ?? "این محرک";
-  if (/ETF/.test(title)) return "برای کاربر عادی یعنی جریان سرمایه نهادی در بیت‌کوین و اتریوم باید جدا از نوسان لحظه‌ای قیمت دیده شود.";
-  if (/استیبل/.test(title)) return "برای کاربر عادی یعنی کیفیت نقدینگی نقدی بازار هنوز یکی از نقاط اصلی رصد است.";
-  if (/کلان|دلار|اوراق/.test(title)) return "برای کاربر عادی یعنی فضای دلار، نرخ بهره و دارایی‌های ریسکی می‌تواند روی رمزارزها فشار یا آرامش ایجاد کند.";
-  if (/سنتیمنت|خبر/.test(title)) return "برای کاربر عادی یعنی خبرهای مهم می‌توانند برداشت بازار را تغییر دهند، اما خبر ضعیف یا تکراری کافی نیست.";
-  return "برای کاربر عادی یعنی این عامل فقط بخشی از تصویر بازار است و باید کنار بقیه داده‌ها بررسی شود.";
+  if (/ETF/.test(title)) return "برای تریدر، جریان سرمایه نهادی در بیت‌کوین و اتریوم باید جدا از نوسان لحظه‌ای قیمت دیده شود.";
+  if (/استیبل/.test(title)) return "برای تریدر، کیفیت نقدینگی نقدی بازار هنوز یکی از نقاط اصلی رصد است.";
+  if (/کلان|دلار|اوراق/.test(title)) return "برای تریدر، فضای دلار، نرخ بهره و دارایی‌های ریسکی می‌تواند روی رمزارزها فشار یا آرامش ایجاد کند.";
+  if (/سنتیمنت|خبر/.test(title)) return "برای تریدر، خبرهای مهم می‌توانند برداشت بازار را تغییر دهند، اما خبر ضعیف یا تکراری کافی نیست.";
+  return "برای تریدر، این عامل فقط بخشی از تصویر بازار است و باید کنار بقیه داده‌ها بررسی شود.";
 }
 
 function marketSummary(rawBlock: Record<string, unknown>, context: HumanReportContext, impactScore: number | null, confidence: number | null) {
@@ -459,6 +460,13 @@ function marketSummary(rawBlock: Record<string, unknown>, context: HumanReportCo
   if (summary && !containsForbiddenHumanJargon(summary)) return summary;
   if (confidence !== null && confidence < 45) return "بازار هنوز تصویر روشنی نمی‌دهد و بهتر است فعلاً با نگاه احتیاطی دنبال شود.";
   return "بازار کریپتو فعلاً جهت قطعی ندارد. نقدینگی تحت فشار است و جریان ETF هم حمایت قوی نشان نمی‌دهد. بنابراین وضعیت کلی بیشتر احتیاطی است تا صعودی یا نزولی قطعی.";
+}
+
+function marketReasoning(rawBlock: Record<string, unknown>, context: HumanReportContext) {
+  const summary = coerceString(rawBlock.summaryFa);
+  const candidate = context.reasoningFa?.trim();
+  if (candidate && candidate !== summary?.trim() && !containsForbiddenHumanJargon(candidate)) return candidate;
+  return "این نتیجه از کنار هم گذاشتن وضعیت نقدینگی، جریان ETF، فشار دلار و بازده اوراق و سطح ریسک فعلی به دست آمده است. چون این محرک‌ها هنوز حمایت هم‌زمان و پایدار نشان نمی‌دهند، جهت بازار قطعی تلقی نمی‌شود.";
 }
 
 function containsForbiddenHumanJargon(value: string) {
@@ -476,10 +484,10 @@ export function humanizeReportBlock(rawBlock: unknown, context: HumanReportConte
   const invalidation = context.invalidationFa ?? coerceString(raw.invalidationFa);
   const cleanReasoning = context.kind === "asset"
     ? assetReasoning(context, drivers, coverage)
-    : context.kind === "driver"
+      : context.kind === "driver"
       ? driverReasons(drivers, [coerceString(raw.explanationFa) ?? context.reasoningFa ?? "این عامل با بخشی از داده‌های فعلی هم‌خوانی دارد."])[0]
       : context.kind === "market"
-        ? marketSummary(raw, context, impactScore, confidence)
+        ? marketReasoning(raw, context)
         : driverReasons(drivers, [coerceString(raw.explanationFa) ?? context.reasoningFa ?? "برداشت فعلی از ترکیب داده‌های موجود ساخته شده است."])[0];
   const watchNext =
     context.watchNextFa ??
@@ -506,15 +514,15 @@ export function humanizeReportBlock(rawBlock: unknown, context: HumanReportConte
         : context.kind === "driver"
           ? driverMeaning(context)
           : context.kind === "market"
-            ? "برای کاربر عادی یعنی باید تصمیم را به یک محرک تنها گره نزد و تغییر چند داده اصلی را در کنار هم دید."
-            : "برای کاربر عادی یعنی این بخش فقط بخشی از تصویر بازار را توضیح می‌دهد.",
+            ? "برای تریدر، مسیر تشخیص زمانی معتبرتر است که نقدینگی، ETF و محرک‌های کلان در چند بروزرسانی هم‌جهت شوند؛ تکیه بر یک عامل برای تصمیم کافی نیست."
+            : "برای تریدر، این بخش فقط بخشی از تصویر بازار را توضیح می‌دهد.",
     reasoning: cleanReasoning,
     watch_next: watchNext,
     confidence_explanation: confidenceInterpretationFa(confidence),
     technical_details: {
-      "پوشش داده": coverage === null ? "داده معتبر در دسترس نیست" : `${Math.round(clamp(coverage, 0, 100))}٪`,
-      "اعتماد عددی موتور": confidence === null ? "داده معتبر در دسترس نیست" : `${Math.round(clamp(confidence, 0, 100))}٪`,
-      "اثر کلی بازار": impactScore === null ? "داده معتبر در دسترس نیست" : `${Math.round(clamp(impactScore, -100, 100))} از ۱۰۰ — ${impactInterpretationFa(impactScore)}`,
+      "پوشش داده": coverage === null ? "داده معتبر در دسترس نیست" : `${formatNumber(clamp(coverage, 0, 100), 0)}٪`,
+      "اعتماد عددی موتور": confidence === null ? "داده معتبر در دسترس نیست" : `${formatNumber(clamp(confidence, 0, 100), 0)}٪`,
+      "اثر کلی بازار": impactScore === null ? "داده معتبر در دسترس نیست" : `${formatNumber(clamp(impactScore, -100, 100), 0)} از ${formatNumber(100, 0)} — ${impactInterpretationFa(impactScore)}`,
       "وضعیت کلی": context.statusFa ?? context.biasFa ?? coerceString(raw.statusFa) ?? coerceString(raw.biasFa) ?? "نیازمند رصد",
       "کیفیت داده": dataLabel,
     },
@@ -532,7 +540,7 @@ export function humanizeReportBlock(rawBlock: unknown, context: HumanReportConte
 export function renderHumanizedBlockText(block: HumanizedReportBlock) {
   return [
     `۱. روایت بازار\n${block.human_summary}`,
-    `۲. معنی برای کاربر\n${block.user_meaning}`,
+    `۲. مسیر تشخیص ترید\n${block.user_meaning}`,
     `۳. دلیل\n${block.reasoning}`,
     `۴. برای رصد بعدی\n${block.watch_next}`,
     `۵. اعتماد و کیفیت داده\n${block.confidence_explanation}`,

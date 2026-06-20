@@ -1,5 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
-import { Bell, Braces, FlaskConical, Search } from "lucide-react";
+import { Bell, FlaskConical, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -11,10 +12,18 @@ export function Header() {
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="success">گزارش بروز شده بازار</Badge>
             <Badge variant="outline">فارسی راست‌چین</Badge>
-            <Badge variant="warning">بدون سیگنال معامله</Badge>
           </div>
-          <h1 className="mt-2 text-xl font-black md:text-2xl">C.M.I.P</h1>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground md:text-sm">Crypto Macro Intelligence Platform · پلتفرم هوشمند تحلیل کلان بازار کریپتو</p>
+          <div className="mt-2 flex items-center gap-3">
+            <Image
+              src="/cmip-logo.jpg"
+              alt="CMIP - Crypto Macro Intelligence Platform"
+              width={202}
+              height={99}
+              priority
+              className="h-14 w-auto object-contain invert mix-blend-screen md:h-16"
+            />
+            <p className="max-w-sm text-xs leading-5 text-muted-foreground md:text-sm">پلتفرم هوشمند تحلیل کلان بازار کریپتو</p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -32,13 +41,6 @@ export function Header() {
           >
             <FlaskConical className="h-4 w-4" aria-hidden />
             Audit
-          </Link>
-          <Link
-            href="/api/v1/overview"
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <Braces className="h-4 w-4" aria-hidden />
-            API
           </Link>
         </div>
       </div>

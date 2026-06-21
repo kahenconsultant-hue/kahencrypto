@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", label: "Market Brief", icon: LayoutDashboard },
+  { href: "/dashboard", label: "داشبورد بازار", icon: LayoutDashboard },
   { href: "/audit", label: "Intelligence Lab", icon: FlaskConical },
   { href: "/assets/btc", label: "BTC", icon: Bitcoin },
   { href: "/assets/eth", label: "ETH", icon: Activity },
@@ -44,7 +44,7 @@ export function Sidebar() {
 
   return (
     <aside className="hidden h-screen w-64 shrink-0 border-l bg-card/80 p-3 lg:sticky lg:top-0 lg:block">
-      <Link href="/" className="mb-5 flex items-center justify-center rounded-md border bg-secondary/40 p-3">
+      <Link href="/dashboard" className="mb-5 flex items-center justify-center rounded-md border bg-secondary/40 p-3">
         <Image
           src="/cmip-logo.jpg"
           alt="CMIP - Crypto Macro Intelligence Platform"

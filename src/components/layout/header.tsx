@@ -1,8 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, FlaskConical, Search } from "lucide-react";
+import { Bell, FlaskConical, LogOut, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { logoutAction } from "@/app/(public)/auth-actions";
 
 export function Header() {
   return (
@@ -10,7 +11,7 @@ export function Header() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="success">گزارش بروز شده بازار</Badge>
+            <Badge variant="success">داشبورد بروز شده بازار</Badge>
             <Badge variant="outline">فارسی راست‌چین</Badge>
           </div>
           <div className="mt-2 flex items-center gap-3">
@@ -42,6 +43,7 @@ export function Header() {
             <FlaskConical className="h-4 w-4" aria-hidden />
             Audit
           </Link>
+          <form action={logoutAction}><Button type="submit" variant="outline"><LogOut className="h-4 w-4" aria-hidden />خروج</Button></form>
         </div>
       </div>
     </header>

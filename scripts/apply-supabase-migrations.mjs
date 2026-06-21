@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "pg";
 
@@ -19,18 +19,9 @@ function loadDotenvLocal() {
 
 loadDotenvLocal();
 
-const migrations = [
-  "202605230001_initial_crypto_macro_schema.sql",
-  "202605250001_ingestion_foundation.sql",
-  "202605250002_ingestion_runs_dead_letters.sql",
-  "202605250003_production_persistence_activation.sql",
-  "202605250004_sources_source_key_constraint.sql",
-  "202605250005_normalized_events_clusters.sql",
-  "202605250006_normalized_events_conflict_key.sql",
-  "202605250007_free_data_proxy_model.sql",
-  "202605250008_data_foundation_contracts.sql",
-  "202605250010_etf_daily_flows.sql",
-];
+const migrations = readdirSync(join("supabase", "migrations"))
+  .filter((file) => /^\d+_.+\.sql$/.test(file))
+  .sort((left, right) => left.localeCompare(right));
 
 function connectionConfig() {
   if (process.env.SUPABASE_DATABASE_URL) {

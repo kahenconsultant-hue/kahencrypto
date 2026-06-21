@@ -11,6 +11,7 @@
     "ingest:scheduler": "node scripts/local-ingestion-scheduler.mjs",
     "supabase:migrate": "node scripts/apply-supabase-migrations.mjs",
     "verify:supabase": "node scripts/verify-supabase-ingestion.mjs",
+    "admin:ensure": "node scripts/ensure-cmip-admin.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "npx tsx --test tests/*.test.ts"

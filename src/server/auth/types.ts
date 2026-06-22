@@ -10,6 +10,19 @@ export const CUSTOMER_STATUSES = [
 export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
 export type AccountRole = "customer" | "user" | "analyst" | "admin";
 
+export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
+  PENDING_PAYMENT: "در انتظار پرداخت",
+  PAYMENT_SUBMITTED: "پرداخت ثبت‌شده",
+  ACTIVE: "فعال",
+  SUSPENDED: "تعلیق‌شده",
+  REJECTED: "ردشده",
+  DISABLED: "غیرفعال",
+};
+
+export function customerStatusFa(status: CustomerStatus) {
+  return CUSTOMER_STATUS_LABELS[status];
+}
+
 export type CustomerAccount = {
   id: string;
   email: string;
@@ -47,4 +60,3 @@ export function accountFromRow(row: Record<string, unknown>): CustomerAccount {
     lastLoginAt: typeof row.last_login_at === "string" ? row.last_login_at : null,
   };
 }
-

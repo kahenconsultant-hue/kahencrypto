@@ -121,3 +121,22 @@ test("sample dashboard is clearly structural and does not claim live values", ()
   assert.match(sample, /شامل داده زنده یا جزئیات کامل موتور نیست/);
   assert.match(sample, /فعال‌سازی پس از ثبت‌نام و تأیید دستی انجام می‌شود/);
 });
+
+test("admin customer list exposes responsive manual status controls", () => {
+  const page = source("../src/app/admin/users/page.tsx");
+  const form = source("../src/components/admin/CustomerStatusForm.tsx");
+  assert.match(page, /CustomerStatusForm/);
+  assert.match(page, /md:hidden/);
+  assert.match(page, /تغییر دستی وضعیت دسترسی/);
+  assert.match(form, /updateCustomerStatusAction/);
+  assert.match(form, /CUSTOMER_STATUSES\.map/);
+  assert.match(form, /ذخیره وضعیت/);
+});
+
+test("manual status update preserves notes and protects administrator accounts", () => {
+  const actions = source("../src/app/admin/users/actions.ts");
+  assert.match(actions, /previous\.role === "admin" && status !== previous\.status/);
+  assert.match(actions, /if \(adminNotes !== undefined\) changes\.admin_notes/);
+  assert.match(actions, /updateCustomerStatus\(parsed\.data\.userId, parsed\.data\.status\)/);
+  assert.match(actions, /sendActivationEmail/);
+});

@@ -9,6 +9,7 @@ import { createSupabaseAnonServerClient, createSupabaseServiceRoleClient } from 
 
 export type AuthActionState = {
   message: string;
+  success?: boolean;
   fieldErrors?: Record<string, string[]>;
 };
 
@@ -35,6 +36,10 @@ const registerSchema = z
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email("ایمیل معتبر وارد کنید."),
   password: z.string().min(1, "رمز عبور الزامی است."),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("ایمیل معتبر وارد کنید."),
 });
 
 function fields(formData: FormData) {
@@ -103,8 +108,23 @@ export async function loginAction(_previous: AuthActionState, formData: FormData
   redirect("/pending-activation");
 }
 
+export async function forgotPasswordAction(_previous: AuthActionState, formData: FormData): Promise<AuthActionState> {
+  const parsed = forgotPasswordSchema.safeParse(fields(formData));
+  if (!parsed.success) return { message: "ایمیل معتبر وارد کنید.", fieldErrors: parsed.error.flatten().fieldErrors };
+  const authClient = createSupabaseAnonServerClient();
+  if (!authClient) return { message: "سرویس بازیابی رمز عبور پیکربندی نشده است." };
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://kahencrypto.vercel.app").replace(/\/$/, "");
+  const { error } = await authClient.auth.resetPasswordForEmail(parsed.data.email, {
+    redirectTo: `${appUrl}/reset-password`,
+  });
+  if (error) return { message: "ارسال لینک بازیابی در حال حاضر ممکن نیست. کمی بعد دوباره تلاش کنید." };
+  return {
+    success: true,
+    message: "اگر این ایمیل در CMIP ثبت شده باشد، لینک تغییر رمز برای آن ارسال می‌شود.",
+  };
+}
+
 export async function logoutAction() {
   await clearSessionCookies();
   redirect("/login");
 }
-

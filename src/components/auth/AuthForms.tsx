@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { LoaderCircle, LockKeyhole, Mail, UserRound } from "lucide-react";
-import { loginAction, registerAction, type AuthActionState } from "@/app/(public)/auth-actions";
+import { forgotPasswordAction, loginAction, registerAction, type AuthActionState } from "@/app/(public)/auth-actions";
 
 const initialState: AuthActionState = { message: "" };
 const inputClass = "h-11 w-full rounded-md border border-[#2f3d58] bg-[#0d1522] px-3 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20";
@@ -52,9 +52,22 @@ export function LoginForm() {
     <form action={action} className="space-y-4" noValidate>
       <label className="block text-sm"><span className="mb-1.5 flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" />ایمیل</span><input name="email" type="email" autoComplete="email" dir="ltr" className={inputClass} required /><FieldError errors={state.fieldErrors?.email} /></label>
       <label className="block text-sm"><span className="mb-1.5 flex items-center gap-2 text-muted-foreground"><LockKeyhole className="h-4 w-4" />رمز عبور</span><input name="password" type="password" autoComplete="current-password" dir="ltr" className={inputClass} required /><FieldError errors={state.fieldErrors?.password} /></label>
+      <div className="text-left"><Link href="/forgot-password" className="text-xs font-bold text-primary hover:underline">رمز عبور را فراموش کرده‌اید؟</Link></div>
       {state.message ? <div role="alert" className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-xs leading-6 text-red-200">{state.message}</div> : null}
       <SubmitButton label="ورود به CMIP" />
       <p className="text-center text-xs text-muted-foreground">هنوز ثبت‌نام نکرده‌اید؟ <Link href="/register" className="font-bold text-primary">درخواست دسترسی</Link></p>
+    </form>
+  );
+}
+
+export function ForgotPasswordForm() {
+  const [state, action] = useActionState(forgotPasswordAction, initialState);
+  return (
+    <form action={action} className="space-y-4" noValidate>
+      <label className="block text-sm"><span className="mb-1.5 flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" />ایمیل حساب</span><input name="email" type="email" autoComplete="email" dir="ltr" className={inputClass} required /><FieldError errors={state.fieldErrors?.email} /></label>
+      {state.message ? <div role="status" className={state.success ? "rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-xs leading-6 text-emerald-100" : "rounded-md border border-red-400/30 bg-red-400/10 p-3 text-xs leading-6 text-red-200"}>{state.message}</div> : null}
+      <SubmitButton label="ارسال لینک تغییر رمز" />
+      <p className="text-center text-xs text-muted-foreground"><Link href="/login" className="font-bold text-primary">بازگشت به ورود</Link></p>
     </form>
   );
 }

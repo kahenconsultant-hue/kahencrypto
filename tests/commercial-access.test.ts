@@ -17,7 +17,31 @@ test("commercial homepage is public and live intelligence moved to the protected
   assert.match(dashboard, /buildPublicMarketBrief/);
   assert.match(shell, /"\/"/);
   assert.match(shell, /"\/sample-dashboard"/);
+  assert.match(shell, /"\/forgot-password"/);
+  assert.match(shell, /"\/reset-password"/);
   assert.equal(shell.includes('"/dashboard"'), false);
+});
+
+test("login offers a complete Supabase password recovery flow", () => {
+  const forms = source("../src/components/auth/AuthForms.tsx");
+  const actions = source("../src/app/(public)/auth-actions.ts");
+  const reset = source("../src/components/auth/ResetPasswordForm.tsx");
+  assert.match(forms, /href="\/forgot-password"/);
+  assert.match(actions, /resetPasswordForEmail/);
+  assert.match(actions, /\/reset-password/);
+  assert.match(reset, /exchangeCodeForSession/);
+  assert.match(reset, /type: "recovery"/);
+  assert.match(reset, /updateUser\(\{ password \}\)/);
+});
+
+test("global typography uses the requested Persian font roles with a bundled fallback", () => {
+  const layout = source("../src/app/layout.tsx");
+  const css = source("../src/app/globals.css");
+  assert.match(layout, /@fontsource\/vazirmatn\/600\.css/);
+  assert.match(css, /--font-heading: "Yekan Bakh"/);
+  assert.match(css, /--font-numeric: Dana/);
+  assert.match(css, /font-family: var\(--font-body\)/);
+  assert.equal(css.includes("font-weight: 400"), false);
 });
 
 test("public homepage exposes one subscription and the required customer journeys", () => {

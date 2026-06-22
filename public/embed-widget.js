@@ -6,7 +6,7 @@
 
   if (!target) return;
 
-  target.innerHTML = '<div style="font-family:Tahoma,Arial,sans-serif;background:#080d16;color:#e6edf5;border:1px solid #263244;border-radius:8px;padding:12px">در حال دریافت هوش کلان کریپتو...</div>';
+  target.innerHTML = '<div style="font-family:Vazirmatn,Tahoma,Arial,sans-serif;font-weight:600;background:#080d16;color:#e6edf5;border:1px solid #263244;border-radius:8px;padding:12px">در حال دریافت هوش کلان کریپتو...</div>';
 
   fetch(apiBase + "/api/v1/wordpress")
     .then(function (response) {
@@ -16,7 +16,7 @@
       const regime = payload.widgets.regime;
       const alerts = payload.widgets.alerts || [];
       target.innerHTML =
-        '<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;background:#080d16;color:#e6edf5;border:1px solid #263244;border-radius:8px;padding:14px;line-height:1.8">' +
+        '<div dir="rtl" style="font-family:Vazirmatn,Tahoma,Arial,sans-serif;font-weight:600;background:#080d16;color:#e6edf5;border:1px solid #263244;border-radius:8px;padding:14px;line-height:1.8">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><strong>Crypto Macro Intelligence</strong><span style="color:#fbbf24">' +
         regime.active +
         "</span></div>" +
@@ -32,6 +32,6 @@
         "</div>";
     })
     .catch(function () {
-      target.innerHTML = '<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;background:#080d16;color:#fecaca;border:1px solid #7f1d1d;border-radius:8px;padding:12px">خطا در دریافت widget.</div>';
+      target.innerHTML = '<div dir="rtl" style="font-family:Vazirmatn,Tahoma,Arial,sans-serif;font-weight:600;background:#080d16;color:#fecaca;border:1px solid #7f1d1d;border-radius:8px;padding:12px">خطا در دریافت widget.</div>';
     });
 })();

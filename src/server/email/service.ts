@@ -64,14 +64,14 @@ export async function sendRegistrationEmails(account: CustomerAccount) {
       to: adminEmail,
       subject: "ثبت‌نام جدید در CMIP",
       templateKey: "admin_new_registration",
-      html: `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif"><h2>ثبت‌نام جدید در CMIP</h2><p>نام: ${name}</p><p>ایمیل: ${escapeHtml(account.email)}</p><p>تلفن/تلگرام: ${contact}</p><p>وضعیت: PENDING_PAYMENT</p><p>زمان: ${escapeHtml(account.createdAt)}</p><p><a href="${appUrl}/admin/users/${account.id}">مشاهده حساب در پنل ادمین</a></p><p>اطلاعات پرداخت باید طبق فرایند دستی ارسال شود.</p></div>`,
+      html: `<div dir="rtl" style="font-family:Vazirmatn,Tahoma,Arial,sans-serif;font-weight:600"><h2>ثبت‌نام جدید در CMIP</h2><p>نام: ${name}</p><p>ایمیل: ${escapeHtml(account.email)}</p><p>تلفن/تلگرام: ${contact}</p><p>وضعیت: PENDING_PAYMENT</p><p>زمان: ${escapeHtml(account.createdAt)}</p><p><a href="${appUrl}/admin/users/${account.id}">مشاهده حساب در پنل ادمین</a></p><p>اطلاعات پرداخت باید طبق فرایند دستی ارسال شود.</p></div>`,
     }),
     sendEmail({
       userId: account.id,
       to: account.email,
       subject: "ثبت‌نام شما در CMIP دریافت شد",
       templateKey: "customer_registration_received",
-      html: `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif"><p>سلام ${name}،</p><p>ثبت‌نام شما برای دسترسی کامل به داشبورد تحلیلی CMIP دریافت شد.</p><p>اطلاعات پرداخت از طریق ایمیل برای شما ارسال خواهد شد. پس از انجام پرداخت و تأیید ادمین، دسترسی کامل فعال می‌شود.</p><p>CMIP ابزار تحلیل بازار است و سیگنال خرید و فروش یا تضمین سود ارائه نمی‌دهد.</p><p>با احترام،<br/>تیم CMIP</p></div>`,
+      html: `<div dir="rtl" style="font-family:Vazirmatn,Tahoma,Arial,sans-serif;font-weight:600"><p>سلام ${name}،</p><p>ثبت‌نام شما برای دسترسی کامل به داشبورد تحلیلی CMIP دریافت شد.</p><p>اطلاعات پرداخت از طریق ایمیل برای شما ارسال خواهد شد. پس از انجام پرداخت و تأیید ادمین، دسترسی کامل فعال می‌شود.</p><p>CMIP ابزار تحلیل بازار است و سیگنال خرید و فروش یا تضمین سود ارائه نمی‌دهد.</p><p>با احترام،<br/>تیم CMIP</p></div>`,
     }),
   ]);
 }
@@ -83,7 +83,6 @@ export async function sendActivationEmail(account: CustomerAccount) {
     to: account.email,
     subject: "دسترسی کامل CMIP برای شما فعال شد",
     templateKey: "customer_access_activated",
-    html: `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif"><p>سلام ${escapeHtml(account.fullName)}،</p><p>دسترسی کامل شما به داشبورد تحلیلی CMIP فعال شد.</p><p><a href="${appUrl}/login">ورود به حساب کاربری</a></p><p>با احترام،<br/>تیم CMIP</p></div>`,
+    html: `<div dir="rtl" style="font-family:Vazirmatn,Tahoma,Arial,sans-serif;font-weight:600"><p>سلام ${escapeHtml(account.fullName)}،</p><p>دسترسی کامل شما به داشبورد تحلیلی CMIP فعال شد.</p><p><a href="${appUrl}/login">ورود به حساب کاربری</a></p><p>با احترام،<br/>تیم CMIP</p></div>`,
   });
 }
-

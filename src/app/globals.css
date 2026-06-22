@@ -4,6 +4,9 @@
 
 @layer base {
   :root {
+    --font-body: Vazirmatn, Tahoma, Arial, sans-serif;
+    --font-heading: "Yekan Bakh", "Yekan Bakh FaNum", var(--font-body);
+    --font-numeric: Dana, "Dana FaNum", Peyda, "Peyda ExtraBold", var(--font-body);
     --background: 220 32% 6%;
     --foreground: 210 28% 92%;
     --card: 222 30% 9%;
@@ -37,9 +40,32 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: Vazirmatn, IRANSans, Tahoma, Arial, sans-serif;
+    font-family: var(--font-body);
+    font-weight: 600;
     letter-spacing: 0;
     min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    font-weight: 900;
+  }
+
+  table,
+  input,
+  textarea,
+  select,
+  button {
+    font-family: var(--font-body);
+  }
+
+  table {
+    font-weight: 600;
   }
 
   ::selection {
@@ -53,7 +79,7 @@
     direction: rtl;
     unicode-bidi: plaintext;
     text-align: right;
-    font-family: Vazirmatn, IRANSans, Tahoma, Arial, sans-serif;
+    font-family: var(--font-body);
   }
 
   .numeric-row,
@@ -78,6 +104,8 @@
   }
 
   .metric-value {
+    font-family: var(--font-numeric);
+    font-weight: 900;
     direction: ltr;
     unicode-bidi: isolate;
     white-space: nowrap;
@@ -101,6 +129,8 @@
   }
 
   .number-tabular {
+    font-family: var(--font-numeric);
+    font-weight: 900;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -111,17 +141,11 @@
   .report-fa {
     direction: rtl;
     unicode-bidi: plaintext;
-    font-family: Vazirmatn, IRANSans, Tahoma, Arial, sans-serif;
+    font-family: var(--font-body);
   }
 
   .report-fa {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
-}
-
-.font-semibold,
-.font-bold,
-.font-black {
-  font-weight: 400;
 }

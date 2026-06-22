@@ -124,6 +124,9 @@ export function PublicHomepage() {
             className="h-auto w-full"
           />
         </div>
+      </section>
+
+      <section aria-label="دسترسی به داشبورد" className="border-b border-[#9a713d]/20 bg-[#01050c]">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 px-4 py-7 md:flex-row md:px-6">
           <div className="text-center md:text-right">
             <p className="text-sm font-bold text-[#ead8bd]">قطب‌نمای رژیم بازار رمزارز؛ برای فهم کیفیت حرکت بازار، نه فقط جهت قیمت.</p>

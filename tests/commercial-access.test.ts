@@ -47,24 +47,24 @@ test("global typography uses the requested Persian font roles with a bundled fal
 test("public homepage exposes one subscription and the required customer journeys", () => {
   const homepage = source("../src/components/marketing/PublicHomepage.tsx");
   assert.match(homepage, /یک آبونمان/);
-  assert.match(homepage, /تحلیل ۳۶۰ درجه‌ای از وضعیت واقعی بازار/);
+  assert.match(homepage, /cmip-gold-hero\.jpg/);
   assert.match(homepage, /href="\/register"/);
   assert.match(homepage, /href="\/login"/);
   assert.match(homepage, /href="\/sample-dashboard"/);
   assert.match(homepage, /سیگنال خرید و فروش، توصیه مالی یا تضمین سود ارائه نمی‌دهد/);
   for (const image of [
-    "cmip-360-market-analysis.jpg",
-    "cmip-analysis-pipeline.jpg",
-    "cmip-global-persian-dashboard.jpg",
-    "cmip-multilayer-analysis.jpg",
-    "cmip-noise-filter.jpg",
+    "cmip-gold-hero.jpg",
+    "cmip-gold-noise-filter.jpg",
+    "cmip-gold-positioning.jpg",
+    "cmip-gold-process.jpg",
+    "cmip-gold-membership.jpg",
   ]) {
     assert.match(homepage, new RegExp(image));
   }
   for (const asset of ["USDT", "BTC", "ETH", "TRX", "TON", "SOL", "XRP", "DOGE", "BNB", "ADA"]) {
     assert.match(homepage, new RegExp(`"${asset}"`));
   }
-  assert.match(homepage, /تصویر مفهومی محصول/);
+  assert.match(homepage, /تصاویر صفحه نمای مفهومی محصول‌اند/);
   for (const forbidden of ["Basic Plan", "Pro Plan", "Enterprise Plan", "تضمین سود"]) {
     if (forbidden === "تضمین سود") continue;
     assert.equal(homepage.includes(forbidden), false);

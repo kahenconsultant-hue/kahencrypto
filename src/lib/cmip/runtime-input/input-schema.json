@@ -1,0 +1,1254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cmip.local/runtime-input/input-schema.v1.json",
+  "title": "CMIP Normalized Runtime Input Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cmip_runtime_input"],
+  "properties": {
+    "cmip_runtime_input": {
+      "$ref": "#/$defs/runtimeInput"
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "score0To100": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "sourceRefs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "requiredSourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "horizon": {
+      "type": "string",
+      "enum": ["1D", "7D", "30D", "90D"]
+    },
+    "assetSymbol": {
+      "type": "string",
+      "enum": ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "TON", "DOGE", "ADA"]
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["age_seconds", "max_age_seconds", "is_stale"],
+      "properties": {
+        "age_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "max_age_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "is_stale": {
+          "type": "boolean"
+        }
+      }
+    },
+    "calculation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "formula", "inputs", "version"],
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "formula": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "numericDataPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "observed_at", "source_refs", "quality", "freshness", "status", "calculation"],
+      "properties": {
+        "value": {
+          "type": ["number", "null"]
+        },
+        "unit": {
+          "type": ["string", "null"]
+        },
+        "observed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        },
+        "quality": {
+          "$ref": "#/$defs/score0To100"
+        },
+        "freshness": {
+          "$ref": "#/$defs/freshness"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "missing", "stale", "conflict", "proxy"]
+        },
+        "calculation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/calculation"
+            }
+          ]
+        }
+      }
+    },
+    "categoricalDataPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "observed_at", "source_refs", "quality", "freshness", "status", "calculation"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"]
+        },
+        "unit": {
+          "type": ["string", "null"]
+        },
+        "observed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        },
+        "quality": {
+          "$ref": "#/$defs/score0To100"
+        },
+        "freshness": {
+          "$ref": "#/$defs/freshness"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "missing", "stale", "conflict", "proxy"]
+        },
+        "calculation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/calculation"
+            }
+          ]
+        }
+      }
+    },
+    "runtimeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "meta",
+        "run_context",
+        "sources",
+        "market",
+        "assets",
+        "etf",
+        "stablecoins",
+        "derivatives",
+        "options",
+        "macro",
+        "cross_asset",
+        "breadth",
+        "news",
+        "historical_evidence",
+        "decision_memory",
+        "data_quality"
+      ],
+      "properties": {
+        "meta": {
+          "$ref": "#/$defs/meta"
+        },
+        "run_context": {
+          "$ref": "#/$defs/runContext"
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "market": {
+          "$ref": "#/$defs/market"
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/asset"
+          }
+        },
+        "etf": {
+          "$ref": "#/$defs/etf"
+        },
+        "stablecoins": {
+          "$ref": "#/$defs/stablecoins"
+        },
+        "derivatives": {
+          "$ref": "#/$defs/derivatives"
+        },
+        "options": {
+          "$ref": "#/$defs/options"
+        },
+        "macro": {
+          "$ref": "#/$defs/macro"
+        },
+        "cross_asset": {
+          "$ref": "#/$defs/crossAsset"
+        },
+        "breadth": {
+          "$ref": "#/$defs/breadth"
+        },
+        "news": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/newsEvent"
+          }
+        },
+        "historical_evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/historicalEvidence"
+          }
+        },
+        "decision_memory": {
+          "$ref": "#/$defs/decisionMemory"
+        },
+        "data_quality": {
+          "$ref": "#/$defs/dataQuality"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spec_version", "input_id", "generated_at", "data_cutoff", "timezone", "environment"],
+      "properties": {
+        "spec_version": {
+          "const": "CMIP-RUNTIME-INPUT-1.0"
+        },
+        "input_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data_cutoff": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "environment": {
+          "type": "string",
+          "enum": ["development", "preview", "production"]
+        }
+      }
+    },
+    "runContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_type", "requested_horizons", "previous_report_id", "previous_input_id", "triggered_by", "requested_at"],
+      "properties": {
+        "run_type": {
+          "type": "string",
+          "enum": ["manual", "scheduled", "regeneration", "backfill"]
+        },
+        "requested_horizons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/horizon"
+          }
+        },
+        "previous_report_id": {
+          "type": ["string", "null"]
+        },
+        "previous_input_id": {
+          "type": ["string", "null"]
+        },
+        "triggered_by": {
+          "type": "string",
+          "enum": ["admin", "scheduler", "system", "test"]
+        },
+        "requested_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "provider", "source_type", "url", "retrieved_at", "published_at", "fields", "status", "tier"],
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "provider": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source_type": {
+          "type": "string",
+          "enum": ["api", "web", "official_release", "exchange", "database", "manual", "derived"]
+        },
+        "url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "published_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "partial", "failed", "stale", "conflict"]
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["primary", "secondary", "fallback", "proxy"]
+        }
+      }
+    },
+    "market": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_crypto_market_cap", "total_crypto_volume_24h", "btc_dominance", "eth_dominance", "fear_greed_index", "market_regime_proxy"],
+      "properties": {
+        "total_crypto_market_cap": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "total_crypto_volume_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "btc_dominance": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "eth_dominance": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "fear_greed_index": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "market_regime_proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value", "status", "method", "source_refs"],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": ["risk_on", "mild_risk_on", "neutral", "mild_risk_off", "risk_off", "unavailable"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["available", "missing", "stale", "conflict", "proxy"]
+            },
+            "method": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "source_refs": {
+              "$ref": "#/$defs/sourceRefs"
+            }
+          }
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "asset_id",
+        "name",
+        "identity_status",
+        "price",
+        "market_cap",
+        "volume_24h",
+        "change_24h",
+        "change_7d",
+        "change_30d",
+        "realized_volatility_30d",
+        "relative_strength_vs_btc_7d",
+        "relative_strength_vs_btc_30d",
+        "trend_state",
+        "source_refs"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/assetSymbol"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "identity_status": {
+          "type": "string",
+          "enum": ["verified", "conflict", "unavailable"]
+        },
+        "price": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "market_cap": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "volume_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "change_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "change_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "change_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "realized_volatility_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "relative_strength_vs_btc_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "relative_strength_vs_btc_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "trend_state": {
+          "type": "string",
+          "enum": ["strong_up", "up", "neutral", "down", "strong_down", "unavailable"]
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        }
+      }
+    },
+    "etf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["btc", "eth"],
+      "properties": {
+        "btc": {
+          "$ref": "#/$defs/etfAsset"
+        },
+        "eth": {
+          "$ref": "#/$defs/etfAsset"
+        }
+      }
+    },
+    "etfAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["daily_net_flow", "flow_7d", "flow_30d", "flow_acceleration", "positive_streak_days", "negative_streak_days", "latest_trading_date", "fund_breakdown", "source_refs"],
+      "properties": {
+        "daily_net_flow": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "flow_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "flow_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "flow_acceleration": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "positive_streak_days": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "negative_streak_days": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "latest_trading_date": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "fund_breakdown": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/etfFund"
+          }
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        }
+      }
+    },
+    "etfFund": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fund_id", "ticker", "issuer", "daily_net_flow", "aum", "source_refs"],
+      "properties": {
+        "fund_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ticker": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "issuer": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "daily_net_flow": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "aum": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        }
+      }
+    },
+    "stablecoins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_market_cap", "change_1d", "change_7d", "change_30d", "usdt_supply", "usdc_supply", "usdt_change_7d", "usdt_change_30d", "usdc_change_7d", "usdc_change_30d", "exchange_reserves", "chain_flows"],
+      "properties": {
+        "total_market_cap": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "change_1d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "change_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "change_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "usdt_supply": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "usdc_supply": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "usdt_change_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "usdt_change_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "usdc_change_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "usdc_change_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "exchange_reserves": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/numericDataPoint"
+            }
+          ]
+        },
+        "chain_flows": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/numericDataPoint"
+            }
+          ]
+        }
+      }
+    },
+    "derivatives": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["market_open_interest", "market_open_interest_change_24h", "btc_open_interest", "eth_open_interest", "btc_funding", "eth_funding", "funding_by_exchange", "liquidations_24h", "long_liquidations_24h", "short_liquidations_24h", "futures_basis", "long_short_ratio"],
+      "properties": {
+        "market_open_interest": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "market_open_interest_change_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "btc_open_interest": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "eth_open_interest": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "btc_funding": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "eth_funding": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "funding_by_exchange": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exchangeFunding"
+          }
+        },
+        "liquidations_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "long_liquidations_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "short_liquidations_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "futures_basis": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "long_short_ratio": {
+          "$ref": "#/$defs/numericDataPoint"
+        }
+      }
+    },
+    "exchangeFunding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exchange", "asset", "funding_rate", "interval", "source_refs"],
+      "properties": {
+        "exchange": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "asset": {
+          "type": "string",
+          "enum": ["BTC", "ETH"]
+        },
+        "funding_rate": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "interval": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["btc_put_call_ratio", "eth_put_call_ratio", "btc_iv", "eth_iv", "btc_25d_skew", "eth_25d_skew", "term_structure", "max_pain", "gamma_risk"],
+      "properties": {
+        "btc_put_call_ratio": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "eth_put_call_ratio": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "btc_iv": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "eth_iv": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "btc_25d_skew": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "eth_25d_skew": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "term_structure": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/optionsTermPoint"
+          }
+        },
+        "max_pain": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        },
+        "gamma_risk": {
+          "$ref": "#/$defs/nullableNumericDataPoint"
+        }
+      }
+    },
+    "nullableNumericDataPoint": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/numericDataPoint"
+        }
+      ]
+    },
+    "optionsTermPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset", "tenor", "implied_volatility", "source_refs"],
+      "properties": {
+        "asset": {
+          "type": "string",
+          "enum": ["BTC", "ETH"]
+        },
+        "tenor": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "implied_volatility": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        }
+      }
+    },
+    "macro": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dxy", "us_2y", "us_10y", "real_yield_10y", "yield_curve_2s10s", "nasdaq", "sp500", "vix", "gold", "oil", "fed_policy_rate", "fed_expectation", "us_m2", "global_liquidity_proxy"],
+      "properties": {
+        "dxy": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "us_2y": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "us_10y": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "real_yield_10y": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "yield_curve_2s10s": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "nasdaq": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "sp500": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "vix": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "gold": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "oil": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "fed_policy_rate": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "fed_expectation": {
+          "$ref": "#/$defs/categoricalDataPoint"
+        },
+        "us_m2": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "global_liquidity_proxy": {
+          "$ref": "#/$defs/numericDataPoint"
+        }
+      }
+    },
+    "crossAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["btc_nasdaq_correlation", "btc_dxy_correlation", "btc_gold_correlation", "btc_us10y_correlation", "btc_eth_correlation"],
+      "properties": {
+        "btc_nasdaq_correlation": {
+          "$ref": "#/$defs/correlationArray"
+        },
+        "btc_dxy_correlation": {
+          "$ref": "#/$defs/correlationArray"
+        },
+        "btc_gold_correlation": {
+          "$ref": "#/$defs/correlationArray"
+        },
+        "btc_us10y_correlation": {
+          "$ref": "#/$defs/correlationArray"
+        },
+        "btc_eth_correlation": {
+          "$ref": "#/$defs/correlationArray"
+        }
+      }
+    },
+    "correlationArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/correlation"
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window", "value", "sample_count", "method", "observed_at", "source_refs", "calculation"],
+      "properties": {
+        "window": {
+          "type": "string",
+          "enum": ["7D", "30D", "90D"]
+        },
+        "value": {
+          "type": ["number", "null"],
+          "minimum": -1,
+          "maximum": 1
+        },
+        "sample_count": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "method": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "observed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        },
+        "calculation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/calculation"
+            }
+          ]
+        }
+      }
+    },
+    "breadth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assets_above_ma_7d", "assets_above_ma_30d", "positive_assets_24h", "positive_assets_7d", "altcoin_season_index", "btc_leadership", "eth_participation", "selected_asset_breadth"],
+      "properties": {
+        "assets_above_ma_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "assets_above_ma_30d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "positive_assets_24h": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "positive_assets_7d": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "altcoin_season_index": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "btc_leadership": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "eth_participation": {
+          "$ref": "#/$defs/numericDataPoint"
+        },
+        "selected_asset_breadth": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/selectedAssetBreadth"
+          }
+        }
+      }
+    },
+    "selectedAssetBreadth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "above_ma_7d", "above_ma_30d", "return_24h_positive", "return_7d_positive", "source_refs"],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/assetSymbol"
+        },
+        "above_ma_7d": {
+          "type": ["boolean", "null"]
+        },
+        "above_ma_30d": {
+          "type": ["boolean", "null"]
+        },
+        "return_24h_positive": {
+          "type": ["boolean", "null"]
+        },
+        "return_7d_positive": {
+          "type": ["boolean", "null"]
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        }
+      }
+    },
+    "newsEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["news_id", "headline", "summary", "category", "importance", "sentiment", "affected_assets", "published_at", "retrieved_at", "source_refs", "verification_status", "duplicate_group_id"],
+      "properties": {
+        "news_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "headline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 900
+        },
+        "category": {
+          "type": "string",
+          "enum": ["macro", "regulation", "etf", "institutional", "exchange", "security", "protocol", "geopolitical", "market", "other"]
+        },
+        "importance": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "sentiment": {
+          "type": "string",
+          "enum": ["positive", "negative", "neutral", "mixed"]
+        },
+        "affected_assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assetSymbol"
+          }
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        },
+        "verification_status": {
+          "type": "string",
+          "enum": ["verified", "single_source", "conflicting", "unverified"]
+        },
+        "duplicate_group_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "historicalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "hypothesis", "event_definition", "period_start", "period_end", "sample_size", "forward_horizons", "results", "limitations", "method_version", "source_refs", "status"],
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "hypothesis": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "event_definition": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "period_start": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "period_end": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "sample_size": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "forward_horizons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/horizon"
+          }
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/historicalResult"
+          }
+        },
+        "limitations": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "method_version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/sourceRefs"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["verified", "partial", "unavailable"]
+        }
+      }
+    },
+    "historicalResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["horizon", "positive_rate", "median_return", "mean_return", "max_drawdown", "sample_size", "return_unit"],
+      "properties": {
+        "horizon": {
+          "$ref": "#/$defs/horizon"
+        },
+        "positive_rate": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "median_return": {
+          "type": ["number", "null"]
+        },
+        "mean_return": {
+          "type": ["number", "null"]
+        },
+        "max_drawdown": {
+          "type": ["number", "null"]
+        },
+        "sample_size": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "return_unit": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "decisionMemory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "previous_report", "previous_engine_scores", "previous_coin_postures", "registered_decisions", "weekly_evaluation"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["available", "partial", "unavailable"]
+        },
+        "previous_report": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["report_id", "published_at", "posture"],
+              "properties": {
+                "report_id": {
+                  "$ref": "#/$defs/nonEmptyString"
+                },
+                "published_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "posture": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              }
+            }
+          ]
+        },
+        "previous_engine_scores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine_id", "score"],
+            "properties": {
+              "engine_id": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "score": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        "previous_coin_postures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "posture", "score"],
+            "properties": {
+              "symbol": {
+                "$ref": "#/$defs/assetSymbol"
+              },
+              "posture": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "score": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        "registered_decisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["report_id", "horizon", "expected_posture", "evaluation_status"],
+            "properties": {
+              "report_id": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "horizon": {
+                "$ref": "#/$defs/horizon"
+              },
+              "expected_posture": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "evaluation_status": {
+                "$ref": "#/$defs/nonEmptyString"
+              }
+            }
+          }
+        },
+        "weekly_evaluation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accuracy", "sample_size", "status"],
+          "properties": {
+            "accuracy": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "sample_size": {
+              "type": ["integer", "null"],
+              "minimum": 0
+            },
+            "status": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        }
+      }
+    },
+    "dataQuality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall_coverage", "freshness_score", "source_agreement", "critical_missing_fields", "stale_fields", "conflicts", "failed_sources", "quality_by_domain"],
+      "properties": {
+        "overall_coverage": {
+          "$ref": "#/$defs/score0To100"
+        },
+        "freshness_score": {
+          "$ref": "#/$defs/score0To100"
+        },
+        "source_agreement": {
+          "$ref": "#/$defs/score0To100"
+        },
+        "critical_missing_fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "stale_fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "failed_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "quality_by_domain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["market", "assets", "etf", "stablecoins", "derivatives", "options", "macro", "cross_asset", "breadth", "news", "historical_evidence", "decision_memory"],
+          "properties": {
+            "market": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "assets": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "etf": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "stablecoins": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "derivatives": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "options": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "macro": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "cross_asset": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "breadth": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "news": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "historical_evidence": {
+              "$ref": "#/$defs/score0To100"
+            },
+            "decision_memory": {
+              "$ref": "#/$defs/score0To100"
+            }
+          }
+        }
+      }
+    }
+  }
+}

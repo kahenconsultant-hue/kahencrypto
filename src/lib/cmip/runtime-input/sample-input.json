@@ -1,0 +1,644 @@
+{
+  "cmip_runtime_input": {
+    "meta": {
+      "spec_version": "CMIP-RUNTIME-INPUT-1.0",
+      "input_id": "cmip-runtime-fixture-2026-01-15T120000Z",
+      "generated_at": "2026-01-15T12:00:00Z",
+      "data_cutoff": "2026-01-15T11:45:00Z",
+      "timezone": "Europe/Paris",
+      "environment": "development"
+    },
+    "run_context": {
+      "run_type": "scheduled",
+      "requested_horizons": ["1D", "7D", "30D"],
+      "previous_report_id": null,
+      "previous_input_id": null,
+      "triggered_by": "test",
+      "requested_at": "2026-01-15T11:50:00Z"
+    },
+    "sources": [
+      {
+        "source_id": "src-fixture-market",
+        "provider": "CMIP fixture market normalizer",
+        "source_type": "api",
+        "url": "https://example.com/cmip/fixture/market",
+        "retrieved_at": "2026-01-15T11:45:00Z",
+        "published_at": "2026-01-15T11:40:00Z",
+        "fields": ["market.total_crypto_market_cap", "market.btc_dominance", "assets.price"],
+        "status": "ok",
+        "tier": "primary"
+      },
+      {
+        "source_id": "src-fixture-assets",
+        "provider": "CMIP fixture asset registry",
+        "source_type": "database",
+        "url": null,
+        "retrieved_at": "2026-01-15T11:44:00Z",
+        "published_at": null,
+        "fields": ["assets.asset_id", "assets.identity_status"],
+        "status": "ok",
+        "tier": "primary"
+      },
+      {
+        "source_id": "src-fixture-identity",
+        "provider": "CMIP fixture identity review",
+        "source_type": "manual",
+        "url": null,
+        "retrieved_at": "2026-01-15T11:42:00Z",
+        "published_at": null,
+        "fields": ["assets.TON.identity_status"],
+        "status": "conflict",
+        "tier": "fallback"
+      },
+      {
+        "source_id": "src-fixture-etf",
+        "provider": "CMIP fixture ETF flow normalizer",
+        "source_type": "web",
+        "url": "https://example.com/cmip/fixture/etf-flows",
+        "retrieved_at": "2026-01-15T11:35:00Z",
+        "published_at": "2026-01-14T22:00:00Z",
+        "fields": ["etf.btc.daily_net_flow", "etf.eth.daily_net_flow"],
+        "status": "ok",
+        "tier": "primary"
+      },
+      {
+        "source_id": "src-fixture-stablecoins",
+        "provider": "CMIP fixture stablecoin normalizer",
+        "source_type": "api",
+        "url": "https://example.com/cmip/fixture/stablecoins",
+        "retrieved_at": "2026-01-15T11:30:00Z",
+        "published_at": "2026-01-15T11:00:00Z",
+        "fields": ["stablecoins.total_market_cap", "stablecoins.usdt_supply"],
+        "status": "ok",
+        "tier": "primary"
+      },
+      {
+        "source_id": "src-fixture-derivatives",
+        "provider": "CMIP fixture derivatives normalizer",
+        "source_type": "exchange",
+        "url": "https://example.com/cmip/fixture/derivatives",
+        "retrieved_at": "2026-01-15T11:32:00Z",
+        "published_at": "2026-01-15T11:25:00Z",
+        "fields": ["derivatives.market_open_interest", "derivatives.btc_funding"],
+        "status": "partial",
+        "tier": "secondary"
+      },
+      {
+        "source_id": "src-fixture-options",
+        "provider": "CMIP fixture options premium source",
+        "source_type": "api",
+        "url": "https://example.com/cmip/fixture/options",
+        "retrieved_at": "2026-01-15T11:31:00Z",
+        "published_at": null,
+        "fields": ["options.btc_iv", "options.gamma_risk"],
+        "status": "failed",
+        "tier": "fallback"
+      },
+      {
+        "source_id": "src-fixture-macro",
+        "provider": "CMIP fixture macro source",
+        "source_type": "official_release",
+        "url": "https://example.com/cmip/fixture/macro",
+        "retrieved_at": "2026-01-15T11:20:00Z",
+        "published_at": "2026-01-14T21:00:00Z",
+        "fields": ["macro.dxy", "macro.us_10y", "macro.us_m2"],
+        "status": "stale",
+        "tier": "primary"
+      },
+      {
+        "source_id": "src-fixture-derived",
+        "provider": "CMIP fixture derived normalizer",
+        "source_type": "derived",
+        "url": null,
+        "retrieved_at": "2026-01-15T11:46:00Z",
+        "published_at": null,
+        "fields": ["cross_asset", "breadth", "market.market_regime_proxy"],
+        "status": "ok",
+        "tier": "proxy"
+      },
+      {
+        "source_id": "src-fixture-news",
+        "provider": "CMIP fixture concise news registry",
+        "source_type": "web",
+        "url": "https://example.com/cmip/fixture/news",
+        "retrieved_at": "2026-01-15T11:25:00Z",
+        "published_at": "2026-01-15T10:10:00Z",
+        "fields": ["news.headline", "news.summary"],
+        "status": "ok",
+        "tier": "secondary"
+      },
+      {
+        "source_id": "src-fixture-news-conflict",
+        "provider": "CMIP fixture disputed news registry",
+        "source_type": "web",
+        "url": "https://example.com/cmip/fixture/news-conflict",
+        "retrieved_at": "2026-01-15T11:28:00Z",
+        "published_at": "2026-01-15T10:35:00Z",
+        "fields": ["news.verification_status"],
+        "status": "conflict",
+        "tier": "secondary"
+      },
+      {
+        "source_id": "src-fixture-history",
+        "provider": "CMIP fixture historical evidence store",
+        "source_type": "database",
+        "url": null,
+        "retrieved_at": "2026-01-15T11:15:00Z",
+        "published_at": null,
+        "fields": ["historical_evidence"],
+        "status": "ok",
+        "tier": "primary"
+      },
+      {
+        "source_id": "src-fixture-memory",
+        "provider": "CMIP fixture decision memory store",
+        "source_type": "database",
+        "url": null,
+        "retrieved_at": "2026-01-15T11:10:00Z",
+        "published_at": null,
+        "fields": ["decision_memory"],
+        "status": "partial",
+        "tier": "primary"
+      }
+    ],
+    "market": {
+      "total_crypto_market_cap": {
+        "value": 3500000000000,
+        "unit": "USD",
+        "observed_at": "2026-01-15T11:45:00Z",
+        "source_refs": ["src-fixture-market"],
+        "quality": 92,
+        "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false },
+        "status": "available",
+        "calculation": null
+      },
+      "total_crypto_volume_24h": {
+        "value": 142000000000,
+        "unit": "USD",
+        "observed_at": "2026-01-15T11:45:00Z",
+        "source_refs": ["src-fixture-market"],
+        "quality": 90,
+        "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false },
+        "status": "available",
+        "calculation": null
+      },
+      "btc_dominance": {
+        "value": 56.2,
+        "unit": "percent",
+        "observed_at": "2026-01-15T11:45:00Z",
+        "source_refs": ["src-fixture-market"],
+        "quality": 91,
+        "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false },
+        "status": "available",
+        "calculation": null
+      },
+      "eth_dominance": {
+        "value": 13.8,
+        "unit": "percent",
+        "observed_at": "2026-01-15T11:45:00Z",
+        "source_refs": ["src-fixture-market"],
+        "quality": 91,
+        "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false },
+        "status": "available",
+        "calculation": null
+      },
+      "fear_greed_index": {
+        "value": 58,
+        "unit": "index_points",
+        "observed_at": "2026-01-15T11:00:00Z",
+        "source_refs": ["src-fixture-market"],
+        "quality": 84,
+        "freshness": { "age_seconds": 3600, "max_age_seconds": 86400, "is_stale": false },
+        "status": "available",
+        "calculation": null
+      },
+      "market_regime_proxy": {
+        "value": "neutral",
+        "status": "proxy",
+        "method": "fixture blend of market breadth, ETF flow and macro context; no final scoring",
+        "source_refs": ["src-fixture-derived"]
+      }
+    },
+    "assets": [
+      {
+        "symbol": "BTC",
+        "asset_id": "crypto:bitcoin",
+        "name": "Bitcoin",
+        "identity_status": "verified",
+        "price": { "value": 98000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 93, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 1940000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 92, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 58000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 90, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": 1.4, "unit": "percent", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-derived"], "quality": 88, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_return_window", "formula": "price_now / price_24h_prior - 1", "inputs": ["BTC fixture price now", "BTC fixture price 24h prior"], "version": "fixture-v1" } },
+        "change_7d": { "value": 4.8, "unit": "percent", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-derived"], "quality": 87, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_return_window", "formula": "price_now / price_7d_prior - 1", "inputs": ["BTC fixture price now", "BTC fixture price 7d prior"], "version": "fixture-v1" } },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": 0, "unit": "percent", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-derived"], "quality": 88, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_relative_strength", "formula": "BTC return minus BTC return", "inputs": ["BTC 7D return"], "version": "fixture-v1" } },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "up",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "ETH",
+        "asset_id": "crypto:ethereum",
+        "name": "Ethereum",
+        "identity_status": "verified",
+        "price": { "value": 3600, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 92, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 434000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 91, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 25000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 89, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "USDT",
+        "asset_id": "crypto:tether-usd",
+        "name": "Tether",
+        "identity_status": "verified",
+        "price": { "value": 0.9996, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 91, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 139000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 90, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 72000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 89, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "BNB",
+        "asset_id": "crypto:bnb",
+        "name": "BNB",
+        "identity_status": "verified",
+        "price": { "value": 690, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 89, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 96000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 88, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 2100000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 86, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "SOL",
+        "asset_id": "crypto:solana",
+        "name": "Solana",
+        "identity_status": "verified",
+        "price": { "value": 190, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 89, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 90000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 88, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 5200000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 86, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "XRP",
+        "asset_id": "crypto:xrp",
+        "name": "XRP",
+        "identity_status": "verified",
+        "price": { "value": 2.42, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 88, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 136000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 87, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 4300000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 86, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "TRX",
+        "asset_id": "crypto:tron",
+        "name": "TRON",
+        "identity_status": "verified",
+        "price": { "value": 0.28, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 88, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 24000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 87, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 900000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 85, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "TON",
+        "asset_id": "crypto:toncoin",
+        "name": "Toncoin",
+        "identity_status": "conflict",
+        "price": { "value": null, "unit": "USD", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "market_cap": { "value": null, "unit": "USD", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "volume_24h": { "value": null, "unit": "USD", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": ["src-fixture-identity"], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 3600, "is_stale": false }, "status": "conflict", "calculation": null },
+        "trend_state": "unavailable",
+        "source_refs": ["src-fixture-identity"]
+      },
+      {
+        "symbol": "DOGE",
+        "asset_id": "crypto:dogecoin",
+        "name": "Dogecoin",
+        "identity_status": "verified",
+        "price": { "value": 0.34, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 87, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 50000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 86, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 3400000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 84, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      },
+      {
+        "symbol": "ADA",
+        "asset_id": "crypto:cardano",
+        "name": "Cardano",
+        "identity_status": "verified",
+        "price": { "value": 0.95, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market", "src-fixture-assets"], "quality": 87, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "market_cap": { "value": 34000000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 86, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "volume_24h": { "value": 1200000000, "unit": "USD", "observed_at": "2026-01-15T11:45:00Z", "source_refs": ["src-fixture-market"], "quality": 84, "freshness": { "age_seconds": 900, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+        "change_24h": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "realized_volatility_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_7d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "relative_strength_vs_btc_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+        "trend_state": "neutral",
+        "source_refs": ["src-fixture-market", "src-fixture-assets"]
+      }
+    ],
+    "etf": {
+      "btc": {
+        "daily_net_flow": { "value": 250000000, "unit": "USD", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 88, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+        "flow_7d": { "value": 1250000000, "unit": "USD", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-derived"], "quality": 82, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_window_sum", "formula": "sum daily net flow over 7D", "inputs": ["BTC ETF fixture daily flows"], "version": "fixture-v1" } },
+        "flow_30d": { "value": null, "unit": "USD", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 2592000, "is_stale": false }, "status": "missing", "calculation": null },
+        "flow_acceleration": { "value": null, "unit": "USD", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 172800, "is_stale": false }, "status": "missing", "calculation": null },
+        "positive_streak_days": { "value": 3, "unit": "days", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 83, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+        "negative_streak_days": { "value": 0, "unit": "days", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 83, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+        "latest_trading_date": "2026-01-14",
+        "fund_breakdown": [
+          {
+            "fund_id": "fixture-btc-fund-1",
+            "ticker": "FBTC",
+            "issuer": "Fixture Bitcoin Trust",
+            "daily_net_flow": { "value": 120000000, "unit": "USD", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 82, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+            "aum": { "value": 31000000000, "unit": "USD", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 82, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+            "source_refs": ["src-fixture-etf"]
+          }
+        ],
+        "source_refs": ["src-fixture-etf"]
+      },
+      "eth": {
+        "daily_net_flow": { "value": 45000000, "unit": "USD", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 84, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+        "flow_7d": { "value": null, "unit": "USD", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 172800, "is_stale": false }, "status": "missing", "calculation": null },
+        "flow_30d": { "value": null, "unit": "USD", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 2592000, "is_stale": false }, "status": "missing", "calculation": null },
+        "flow_acceleration": { "value": null, "unit": "USD", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 172800, "is_stale": false }, "status": "missing", "calculation": null },
+        "positive_streak_days": { "value": 1, "unit": "days", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 82, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+        "negative_streak_days": { "value": 0, "unit": "days", "observed_at": "2026-01-14T22:00:00Z", "source_refs": ["src-fixture-etf"], "quality": 82, "freshness": { "age_seconds": 49500, "max_age_seconds": 172800, "is_stale": false }, "status": "available", "calculation": null },
+        "latest_trading_date": "2026-01-14",
+        "fund_breakdown": [],
+        "source_refs": ["src-fixture-etf"]
+      }
+    },
+    "stablecoins": {
+      "total_market_cap": { "value": 205000000000, "unit": "USD", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-stablecoins"], "quality": 88, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "change_1d": { "value": 0.4, "unit": "percent", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-derived"], "quality": 80, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_supply_change", "formula": "supply_now / supply_1d_prior - 1", "inputs": ["stablecoin total market cap fixture"], "version": "fixture-v1" } },
+      "change_7d": { "value": 1.6, "unit": "percent", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-derived"], "quality": 80, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_supply_change", "formula": "supply_now / supply_7d_prior - 1", "inputs": ["stablecoin total market cap fixture"], "version": "fixture-v1" } },
+      "change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 2592000, "is_stale": false }, "status": "missing", "calculation": null },
+      "usdt_supply": { "value": 139000000000, "unit": "USD", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-stablecoins"], "quality": 88, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "usdc_supply": { "value": 52000000000, "unit": "USD", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-stablecoins"], "quality": 86, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "usdt_change_7d": { "value": 1.2, "unit": "percent", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-derived"], "quality": 79, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_supply_change", "formula": "usdt_supply_now / usdt_supply_7d_prior - 1", "inputs": ["USDT fixture supply"], "version": "fixture-v1" } },
+      "usdt_change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 2592000, "is_stale": false }, "status": "missing", "calculation": null },
+      "usdc_change_7d": { "value": 2.3, "unit": "percent", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-derived"], "quality": 79, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_supply_change", "formula": "usdc_supply_now / usdc_supply_7d_prior - 1", "inputs": ["USDC fixture supply"], "version": "fixture-v1" } },
+      "usdc_change_30d": { "value": null, "unit": "percent", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 2592000, "is_stale": false }, "status": "missing", "calculation": null },
+      "exchange_reserves": null,
+      "chain_flows": { "value": 480000000, "unit": "USD", "observed_at": "2026-01-15T11:30:00Z", "source_refs": ["src-fixture-derived"], "quality": 58, "freshness": { "age_seconds": 1800, "max_age_seconds": 86400, "is_stale": false }, "status": "proxy", "calculation": { "method": "fixture_proxy_chain_flow", "formula": "normalized exchange inflow proxy", "inputs": ["stablecoin fixture supply", "market fixture volume"], "version": "fixture-v1" } }
+    },
+    "derivatives": {
+      "market_open_interest": { "value": 78000000000, "unit": "USD", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 75, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "market_open_interest_change_24h": { "value": 2.1, "unit": "percent", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derived"], "quality": 70, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_derivatives_change", "formula": "open_interest_now / open_interest_24h_prior - 1", "inputs": ["market open interest fixture"], "version": "fixture-v1" } },
+      "btc_open_interest": { "value": 41000000000, "unit": "USD", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 76, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "eth_open_interest": { "value": 18000000000, "unit": "USD", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 76, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "btc_funding": { "value": 0.012, "unit": "percent_8h", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 74, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "eth_funding": { "value": 0.009, "unit": "percent_8h", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 74, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "funding_by_exchange": [
+        {
+          "exchange": "Fixture Exchange",
+          "asset": "BTC",
+          "funding_rate": { "value": 0.011, "unit": "percent_8h", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 72, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+          "interval": "8h",
+          "source_refs": ["src-fixture-derivatives"]
+        }
+      ],
+      "liquidations_24h": { "value": 310000000, "unit": "USD_24h", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 73, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "long_liquidations_24h": { "value": 170000000, "unit": "USD_24h", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 73, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "short_liquidations_24h": { "value": 140000000, "unit": "USD_24h", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 73, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "futures_basis": { "value": 5.4, "unit": "annualized_percent", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 70, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null },
+      "long_short_ratio": { "value": 1.08, "unit": "ratio", "observed_at": "2026-01-15T11:32:00Z", "source_refs": ["src-fixture-derivatives"], "quality": 70, "freshness": { "age_seconds": 1680, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": null }
+    },
+    "options": {
+      "btc_put_call_ratio": { "value": null, "unit": "ratio", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null },
+      "eth_put_call_ratio": null,
+      "btc_iv": null,
+      "eth_iv": null,
+      "btc_25d_skew": null,
+      "eth_25d_skew": null,
+      "term_structure": [],
+      "max_pain": null,
+      "gamma_risk": { "value": null, "unit": "USD", "observed_at": null, "source_refs": [], "quality": 0, "freshness": { "age_seconds": null, "max_age_seconds": 86400, "is_stale": false }, "status": "missing", "calculation": null }
+    },
+    "macro": {
+      "dxy": { "value": 104.2, "unit": "index_points", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 70, "freshness": { "age_seconds": 53100, "max_age_seconds": 3600, "is_stale": true }, "status": "stale", "calculation": null },
+      "us_2y": { "value": 4.05, "unit": "percent", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 70, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "us_10y": { "value": 4.28, "unit": "percent", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 70, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "real_yield_10y": { "value": 1.92, "unit": "percent", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 68, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "yield_curve_2s10s": { "value": 0.23, "unit": "percentage_points", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 68, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "nasdaq": { "value": 20150, "unit": "index_points", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 72, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "sp500": { "value": 6120, "unit": "index_points", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 72, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "vix": { "value": 16.5, "unit": "index_points", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 72, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "gold": { "value": 2420, "unit": "USD_per_ounce", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 70, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "oil": { "value": 76.2, "unit": "USD_per_barrel", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 70, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "fed_policy_rate": { "value": 4.5, "unit": "percent", "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 75, "freshness": { "age_seconds": 53100, "max_age_seconds": 2592000, "is_stale": false }, "status": "available", "calculation": null },
+      "fed_expectation": { "value": "hold_bias", "unit": null, "observed_at": "2026-01-14T21:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 62, "freshness": { "age_seconds": 53100, "max_age_seconds": 86400, "is_stale": false }, "status": "available", "calculation": null },
+      "us_m2": { "value": 21300000000000, "unit": "USD", "observed_at": "2025-12-31T00:00:00Z", "source_refs": ["src-fixture-macro"], "quality": 55, "freshness": { "age_seconds": 1339200, "max_age_seconds": 2678400, "is_stale": false }, "status": "available", "calculation": null },
+      "global_liquidity_proxy": { "value": 58, "unit": "index_points", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 60, "freshness": { "age_seconds": 840, "max_age_seconds": 86400, "is_stale": false }, "status": "proxy", "calculation": { "method": "fixture_global_liquidity_proxy", "formula": "normalized proxy from M2, DXY and rates fixtures", "inputs": ["macro.us_m2", "macro.dxy", "macro.us_10y"], "version": "fixture-v1" } }
+    },
+    "cross_asset": {
+      "btc_nasdaq_correlation": [
+        { "window": "30D", "value": 0.42, "sample_count": 30, "method": "daily log returns", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "calculation": { "method": "fixture_correlation", "formula": "pearson correlation of daily returns", "inputs": ["BTC daily returns", "NASDAQ daily returns"], "version": "fixture-v1" } }
+      ],
+      "btc_dxy_correlation": [
+        { "window": "30D", "value": -0.31, "sample_count": 30, "method": "daily log returns", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "calculation": { "method": "fixture_correlation", "formula": "pearson correlation of daily returns", "inputs": ["BTC daily returns", "DXY daily returns"], "version": "fixture-v1" } }
+      ],
+      "btc_gold_correlation": [
+        { "window": "30D", "value": 0.12, "sample_count": 30, "method": "daily log returns", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "calculation": { "method": "fixture_correlation", "formula": "pearson correlation of daily returns", "inputs": ["BTC daily returns", "gold daily returns"], "version": "fixture-v1" } }
+      ],
+      "btc_us10y_correlation": [
+        { "window": "30D", "value": -0.18, "sample_count": 30, "method": "daily log returns", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "calculation": { "method": "fixture_correlation", "formula": "pearson correlation of daily returns", "inputs": ["BTC daily returns", "US10Y daily changes"], "version": "fixture-v1" } }
+      ],
+      "btc_eth_correlation": [
+        { "window": "30D", "value": 0.78, "sample_count": 30, "method": "daily log returns", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "calculation": { "method": "fixture_correlation", "formula": "pearson correlation of daily returns", "inputs": ["BTC daily returns", "ETH daily returns"], "version": "fixture-v1" } }
+      ]
+    },
+    "breadth": {
+      "assets_above_ma_7d": { "value": 6, "unit": "assets", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 78, "freshness": { "age_seconds": 840, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_breadth_count", "formula": "count selected assets above 7D moving average", "inputs": ["selected asset fixture prices"], "version": "fixture-v1" } },
+      "assets_above_ma_30d": { "value": 5, "unit": "assets", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 78, "freshness": { "age_seconds": 840, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_breadth_count", "formula": "count selected assets above 30D moving average", "inputs": ["selected asset fixture prices"], "version": "fixture-v1" } },
+      "positive_assets_24h": { "value": 6, "unit": "assets", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 78, "freshness": { "age_seconds": 840, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_breadth_count", "formula": "count selected assets with positive 24h returns", "inputs": ["selected asset fixture returns"], "version": "fixture-v1" } },
+      "positive_assets_7d": { "value": 7, "unit": "assets", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 78, "freshness": { "age_seconds": 840, "max_age_seconds": 3600, "is_stale": false }, "status": "available", "calculation": { "method": "fixture_breadth_count", "formula": "count selected assets with positive 7D returns", "inputs": ["selected asset fixture returns"], "version": "fixture-v1" } },
+      "altcoin_season_index": { "value": 46, "unit": "percent", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 62, "freshness": { "age_seconds": 840, "max_age_seconds": 86400, "is_stale": false }, "status": "proxy", "calculation": { "method": "fixture_altcoin_breadth_proxy", "formula": "selected asset outperformance share versus BTC", "inputs": ["selected asset fixture returns", "BTC fixture return"], "version": "fixture-v1" } },
+      "btc_leadership": { "value": 67, "unit": "percent", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 62, "freshness": { "age_seconds": 840, "max_age_seconds": 86400, "is_stale": false }, "status": "proxy", "calculation": { "method": "fixture_leadership_proxy", "formula": "BTC relative strength percentile in selected universe", "inputs": ["selected asset fixture returns"], "version": "fixture-v1" } },
+      "eth_participation": { "value": 52, "unit": "percent", "observed_at": "2026-01-15T11:46:00Z", "source_refs": ["src-fixture-derived"], "quality": 62, "freshness": { "age_seconds": 840, "max_age_seconds": 86400, "is_stale": false }, "status": "proxy", "calculation": { "method": "fixture_participation_proxy", "formula": "ETH relative strength percentile in selected universe", "inputs": ["selected asset fixture returns"], "version": "fixture-v1" } },
+      "selected_asset_breadth": [
+        { "symbol": "BTC", "above_ma_7d": true, "above_ma_30d": true, "return_24h_positive": true, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "ETH", "above_ma_7d": true, "above_ma_30d": false, "return_24h_positive": true, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "USDT", "above_ma_7d": null, "above_ma_30d": null, "return_24h_positive": null, "return_7d_positive": null, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "BNB", "above_ma_7d": true, "above_ma_30d": true, "return_24h_positive": false, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "SOL", "above_ma_7d": true, "above_ma_30d": true, "return_24h_positive": true, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "XRP", "above_ma_7d": false, "above_ma_30d": false, "return_24h_positive": false, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "TRX", "above_ma_7d": true, "above_ma_30d": true, "return_24h_positive": true, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "TON", "above_ma_7d": null, "above_ma_30d": null, "return_24h_positive": null, "return_7d_positive": null, "source_refs": ["src-fixture-identity"] },
+        { "symbol": "DOGE", "above_ma_7d": false, "above_ma_30d": false, "return_24h_positive": true, "return_7d_positive": false, "source_refs": ["src-fixture-derived"] },
+        { "symbol": "ADA", "above_ma_7d": true, "above_ma_30d": false, "return_24h_positive": true, "return_7d_positive": true, "source_refs": ["src-fixture-derived"] }
+      ]
+    },
+    "news": [
+      {
+        "news_id": "news-fixture-etf-001",
+        "headline": "Fixture ETF flows remain positive in the sample window",
+        "summary": "Concise fixture summary indicating positive ETF demand in a non-live normalized input example.",
+        "category": "etf",
+        "importance": "medium",
+        "sentiment": "positive",
+        "affected_assets": ["BTC", "ETH"],
+        "published_at": "2026-01-15T10:10:00Z",
+        "retrieved_at": "2026-01-15T11:25:00Z",
+        "source_refs": ["src-fixture-news"],
+        "verification_status": "verified",
+        "duplicate_group_id": "fixture-etf-flow-group"
+      },
+      {
+        "news_id": "news-fixture-reg-001",
+        "headline": "Fixture regulatory note has conflicting source treatment",
+        "summary": "Concise fixture summary retained for audit only because source treatment is conflicting.",
+        "category": "regulation",
+        "importance": "medium",
+        "sentiment": "mixed",
+        "affected_assets": ["USDT"],
+        "published_at": "2026-01-15T10:35:00Z",
+        "retrieved_at": "2026-01-15T11:28:00Z",
+        "source_refs": ["src-fixture-news-conflict"],
+        "verification_status": "conflicting",
+        "duplicate_group_id": "fixture-reg-conflict-group"
+      }
+    ],
+    "historical_evidence": [
+      {
+        "evidence_id": "hist-fixture-liquidity-verified",
+        "hypothesis": "Stablecoin supply expansion often coincides with stronger short-horizon crypto breadth.",
+        "event_definition": "Seven-day stablecoin market cap change is positive and breadth improves.",
+        "period_start": "2021-01-01",
+        "period_end": "2025-12-31",
+        "sample_size": 42,
+        "forward_horizons": ["7D", "30D"],
+        "results": [
+          { "horizon": "7D", "positive_rate": 57.1, "median_return": 1.8, "mean_return": 2.2, "max_drawdown": -6.4, "sample_size": 42, "return_unit": "percent" }
+        ],
+        "limitations": "Fixture evidence only; not current research output.",
+        "method_version": "fixture-historical-v1",
+        "source_refs": ["src-fixture-history"],
+        "status": "verified"
+      },
+      {
+        "evidence_id": "hist-fixture-etf-partial",
+        "hypothesis": "ETF inflow streaks can support BTC beta when macro conditions are neutral.",
+        "event_definition": "Three or more positive ETF flow days with neutral DXY context.",
+        "period_start": "2024-01-01",
+        "period_end": "2025-12-31",
+        "sample_size": 9,
+        "forward_horizons": ["7D"],
+        "results": [
+          { "horizon": "7D", "positive_rate": 44.4, "median_return": 0.6, "mean_return": 0.4, "max_drawdown": -4.8, "sample_size": 9, "return_unit": "percent" }
+        ],
+        "limitations": "Partial fixture sample has few observations and should not drive final scoring.",
+        "method_version": "fixture-historical-v1",
+        "source_refs": ["src-fixture-history"],
+        "status": "partial"
+      },
+      {
+        "evidence_id": "hist-fixture-options-unavailable",
+        "hypothesis": "Options skew could indicate downside hedging pressure.",
+        "event_definition": "BTC 25-delta skew exceeds a configured threshold.",
+        "period_start": null,
+        "period_end": null,
+        "sample_size": null,
+        "forward_horizons": ["7D", "30D"],
+        "results": [],
+        "limitations": "Options fixture source is unavailable, so no statistical result is stored.",
+        "method_version": "fixture-historical-v1",
+        "source_refs": ["src-fixture-history"],
+        "status": "unavailable"
+      }
+    ],
+    "decision_memory": {
+      "status": "partial",
+      "previous_report": null,
+      "previous_engine_scores": [
+        { "engine_id": "fixture-engine-placeholder", "score": null }
+      ],
+      "previous_coin_postures": [],
+      "registered_decisions": [],
+      "weekly_evaluation": {
+        "accuracy": null,
+        "sample_size": null,
+        "status": "insufficient_fixture_history"
+      }
+    },
+    "data_quality": {
+      "overall_coverage": 74,
+      "freshness_score": 68,
+      "source_agreement": 76,
+      "critical_missing_fields": ["options.btc_iv", "options.eth_iv"],
+      "stale_fields": ["macro.dxy"],
+      "conflicts": ["assets.TON.identity_status", "news.news-fixture-reg-001"],
+      "failed_sources": ["src-fixture-options"],
+      "quality_by_domain": {
+        "market": 90,
+        "assets": 78,
+        "etf": 82,
+        "stablecoins": 84,
+        "derivatives": 74,
+        "options": 15,
+        "macro": 68,
+        "cross_asset": 66,
+        "breadth": 72,
+        "news": 70,
+        "historical_evidence": 65,
+        "decision_memory": 40
+      }
+    }
+  }
+}

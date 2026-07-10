@@ -13,6 +13,7 @@
     "verify:supabase": "node scripts/verify-supabase-ingestion.mjs",
     "admin:ensure": "node scripts/ensure-cmip-admin.mjs",
     "cmip:validate-sample": "tsx scripts/cmip-validate-sample.ts",
+    "cmip:validate-runtime-input": "tsx scripts/cmip-validate-runtime-input.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"

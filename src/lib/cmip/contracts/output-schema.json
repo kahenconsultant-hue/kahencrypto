@@ -1,0 +1,868 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cmip.local/contracts/output-schema.v1.json",
+  "title": "CMIP Daily Investment Committee Decision Object Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cmip_report"],
+  "properties": {
+    "cmip_report": {
+      "$ref": "#/definitions/cmipReport"
+    }
+  },
+  "definitions": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "score0To100": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "nullableScore0To100": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "weight0To1": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "finiteNumberOrNull": {
+      "type": ["number", "null"]
+    },
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/nonEmptyString"
+      }
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/nonEmptyString"
+      }
+    },
+    "posture": {
+      "type": "string",
+      "enum": ["increase_selective_risk", "maintain_risk", "reduce_risk", "defensive"]
+    },
+    "evidenceVerdict": {
+      "type": "string",
+      "enum": ["confirmed", "partially_confirmed", "not_confirmed", "contradicted", "insufficient_data"]
+    },
+    "historicalStatus": {
+      "type": "string",
+      "enum": ["verified", "partial", "unavailable"]
+    },
+    "identityStatus": {
+      "type": "string",
+      "enum": ["verified", "conflict", "unavailable"]
+    },
+    "assetSymbol": {
+      "type": "string",
+      "enum": ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "TON", "DOGE", "ADA"]
+    },
+    "jsonValue": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/jsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/jsonValue"
+          }
+        }
+      ]
+    },
+    "cmipReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "meta",
+        "decision",
+        "executive_summary",
+        "engine_scores",
+        "reasons",
+        "delta",
+        "attribution",
+        "scenarios",
+        "triggers",
+        "coins",
+        "confidence",
+        "decision_memory",
+        "charts",
+        "audit"
+      ],
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/meta"
+        },
+        "decision": {
+          "$ref": "#/definitions/decision"
+        },
+        "executive_summary": {
+          "$ref": "#/definitions/executiveSummary"
+        },
+        "engine_scores": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/engineScore"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "$ref": "#/definitions/reason"
+          }
+        },
+        "delta": {
+          "$ref": "#/definitions/delta"
+        },
+        "attribution": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/attributionItem"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "$ref": "#/definitions/scenario"
+          }
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/trigger"
+          }
+        },
+        "coins": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/definitions/coinDecision"
+          }
+        },
+        "confidence": {
+          "$ref": "#/definitions/confidence"
+        },
+        "decision_memory": {
+          "$ref": "#/definitions/decisionMemory"
+        },
+        "charts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/chart"
+          }
+        },
+        "audit": {
+          "$ref": "#/definitions/audit"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spec_version",
+        "generated_at",
+        "data_cutoff",
+        "timezone",
+        "report_id",
+        "model_version",
+        "prompt_version",
+        "schema_version",
+        "scoring_version"
+      ],
+      "properties": {
+        "spec_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data_cutoff": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "report_id": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "model_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "prompt_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "schema_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "scoring_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["posture", "score", "confidence", "plain_language", "model_action", "drivers"],
+      "properties": {
+        "posture": {
+          "$ref": "#/definitions/posture"
+        },
+        "score": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "confidence": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "plain_language": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "model_action": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "drivers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["positive", "negative"],
+          "properties": {
+            "positive": {
+              "$ref": "#/definitions/stringList"
+            },
+            "negative": {
+              "$ref": "#/definitions/stringList"
+            }
+          }
+        }
+      }
+    },
+    "executiveSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary_30s", "watch_list", "view_change_conditions"],
+      "properties": {
+        "summary_30s": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "watch_list": {
+          "$ref": "#/definitions/stringList"
+        },
+        "view_change_conditions": {
+          "$ref": "#/definitions/stringList"
+        }
+      }
+    },
+    "engineScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine_id", "score", "status", "weight", "contribution", "data_quality", "inputs", "missing_reasons", "method_version"],
+      "properties": {
+        "engine_id": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "score": {
+          "$ref": "#/definitions/nullableScore0To100"
+        },
+        "status": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "weight": {
+          "$ref": "#/definitions/weight0To1"
+        },
+        "contribution": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        },
+        "data_quality": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_refs", "calc_refs"],
+          "properties": {
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            },
+            "calc_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            }
+          }
+        },
+        "missing_reasons": {
+          "$ref": "#/definitions/stringList"
+        },
+        "method_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason_id",
+        "title",
+        "current_observation",
+        "meaning",
+        "why_it_matters",
+        "historical_evidence",
+        "today_vs_history",
+        "evidence_verdict",
+        "decision_impact",
+        "invalidation",
+        "source_refs"
+      ],
+      "properties": {
+        "reason_id": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "current_observation": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "meaning": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "why_it_matters": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "historical_evidence": {
+          "$ref": "#/definitions/historicalEvidence"
+        },
+        "today_vs_history": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "evidence_verdict": {
+          "$ref": "#/definitions/evidenceVerdict"
+        },
+        "decision_impact": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "invalidation": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "source_refs": {
+          "$ref": "#/definitions/sourceRefs"
+        }
+      }
+    },
+    "historicalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "sample_definition", "sample_size", "period", "result", "limitations"],
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/historicalStatus"
+        },
+        "sample_definition": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "sample_size": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "period": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end"],
+          "properties": {
+            "start": {
+              "type": ["string", "null"]
+            },
+            "end": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "result": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/historicalResult"
+            }
+          ]
+        },
+        "limitations": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "historicalResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "success_rate", "median_forward_return", "max_adverse_excursion", "max_favorable_excursion", "dispersion"],
+      "properties": {
+        "summary": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "success_rate": {
+          "$ref": "#/definitions/nullableScore0To100"
+        },
+        "median_forward_return": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        },
+        "max_adverse_excursion": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        },
+        "max_favorable_excursion": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        },
+        "dispersion": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        }
+      }
+    },
+    "delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous_report_id", "status", "unavailable_reason", "changes"],
+      "properties": {
+        "previous_report_id": {
+          "type": ["string", "null"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["available", "unavailable"]
+        },
+        "unavailable_reason": {
+          "type": ["string", "null"]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/deltaItem"
+          }
+        }
+      }
+    },
+    "deltaItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["section", "previous", "current", "change_summary", "impact"],
+      "properties": {
+        "section": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "previous": {
+          "$ref": "#/definitions/jsonValue"
+        },
+        "current": {
+          "$ref": "#/definitions/jsonValue"
+        },
+        "change_summary": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "impact": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        }
+      }
+    },
+    "attributionItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driver_id", "title", "impact", "contribution", "source_refs"],
+      "properties": {
+        "driver_id": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "impact": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        },
+        "contribution": {
+          "$ref": "#/definitions/finiteNumberOrNull"
+        },
+        "source_refs": {
+          "$ref": "#/definitions/sourceRefs"
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario", "probability", "time_horizon", "conditions", "expected_effect", "calibration_status"],
+      "properties": {
+        "scenario": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "probability": {
+          "$ref": "#/definitions/nullableScore0To100"
+        },
+        "time_horizon": {
+          "type": "string",
+          "enum": ["1D", "7D", "30D"]
+        },
+        "conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        },
+        "expected_effect": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "calibration_status": {
+          "type": "string",
+          "enum": ["backtested", "prototype", "insufficient_data"]
+        }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger_id", "threshold", "current_state", "effect", "new_posture", "source_refs"],
+      "properties": {
+        "trigger_id": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "threshold": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "current_state": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "effect": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "new_posture": {
+          "$ref": "#/definitions/posture"
+        },
+        "source_refs": {
+          "$ref": "#/definitions/sourceRefs"
+        }
+      }
+    },
+    "coinDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "identity_status", "price", "posture", "score", "risk", "plain_language", "why", "historical_context", "trigger", "confidence", "source_refs"],
+      "properties": {
+        "symbol": {
+          "$ref": "#/definitions/assetSymbol"
+        },
+        "identity_status": {
+          "$ref": "#/definitions/identityStatus"
+        },
+        "price": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "posture": {
+          "$ref": "#/definitions/posture"
+        },
+        "score": {
+          "$ref": "#/definitions/nullableScore0To100"
+        },
+        "risk": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "plain_language": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "why": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        },
+        "historical_context": {
+          "$ref": "#/definitions/historicalStatus"
+        },
+        "trigger": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "confidence": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "source_refs": {
+          "$ref": "#/definitions/sourceRefs"
+        }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "final", "cap", "components"],
+      "properties": {
+        "raw": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "final": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "cap": {
+          "$ref": "#/definitions/nullableScore0To100"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/confidenceComponent"
+          }
+        }
+      }
+    },
+    "confidenceComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "value", "weight", "rationale"],
+      "properties": {
+        "component": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "value": {
+          "$ref": "#/definitions/score0To100"
+        },
+        "weight": {
+          "$ref": "#/definitions/weight0To1"
+        },
+        "rationale": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "decisionMemory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "previous_decisions", "weekly_evaluation_status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["available", "unavailable"]
+        },
+        "previous_decisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["report_id", "posture", "score", "confidence", "outcome_status"],
+            "properties": {
+              "report_id": {
+                "$ref": "#/definitions/nonEmptyString"
+              },
+              "posture": {
+                "$ref": "#/definitions/posture"
+              },
+              "score": {
+                "$ref": "#/definitions/score0To100"
+              },
+              "confidence": {
+                "$ref": "#/definitions/score0To100"
+              },
+              "outcome_status": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            }
+          }
+        },
+        "weekly_evaluation_status": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chart_id", "type", "title", "description", "x_key", "series", "data", "unit", "source_refs", "accessibility_summary"],
+      "properties": {
+        "chart_id": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["bar", "line", "area", "waterfall", "radar", "heatmap"]
+        },
+        "title": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "description": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "x_key": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "label", "unit", "format"],
+            "properties": {
+              "key": {
+                "$ref": "#/definitions/nonEmptyString"
+              },
+              "label": {
+                "$ref": "#/definitions/nonEmptyString"
+              },
+              "unit": {
+                "$ref": "#/definitions/nonEmptyString"
+              },
+              "format": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            }
+          }
+        },
+        "data": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "null"]
+            }
+          }
+        },
+        "unit": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "source_refs": {
+          "$ref": "#/definitions/sourceRefs"
+        },
+        "accessibility_summary": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "calculations", "missing_data", "conflicts", "warnings"],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/sourceReference"
+          }
+        },
+        "calculations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/calculationTrace"
+          }
+        },
+        "missing_data": {
+          "$ref": "#/definitions/stringList"
+        },
+        "conflicts": {
+          "$ref": "#/definitions/stringList"
+        },
+        "warnings": {
+          "$ref": "#/definitions/stringList"
+        }
+      }
+    },
+    "sourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "url", "observed_at", "fields"],
+      "properties": {
+        "ref": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "name": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        }
+      }
+    },
+    "calculationTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "formula_version", "inputs", "result", "notes"],
+      "properties": {
+        "ref": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "formula_version": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_refs", "calc_refs"],
+          "properties": {
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            },
+            "calc_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            }
+          }
+        },
+        "result": {
+          "$ref": "#/definitions/jsonValue"
+        },
+        "notes": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

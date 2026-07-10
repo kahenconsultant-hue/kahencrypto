@@ -20,6 +20,7 @@ export function validateCmipReportSemantics(envelope: CmipReportEnvelope): CmipV
   errors.push(...validateCmipAssetUniverse(report.coins));
   errors.push(...validateAuditSources(report.audit.sources));
   errors.push(...validateDateOrder(report.meta.generated_at, report.meta.data_cutoff));
+  errors.push(...validateDecisionAbstention(report.decision));
 
   const sourceRefs = new Set(report.audit.sources.map((source) => source.ref));
   report.reasons.forEach((reason, reasonIndex) => {
@@ -97,6 +98,88 @@ export function validateCmipReportSemantics(envelope: CmipReportEnvelope): CmipV
 
   errors.push(...validateScenarios(report.scenarios));
   errors.push(...validateUniqueChartIds(report.charts));
+
+  return errors;
+}
+
+function validateDecisionAbstention(decision: CmipReportEnvelope["cmip_report"]["decision"]): CmipValidationError[] {
+  const errors: CmipValidationError[] = [];
+  const decisionPath = "$.cmip_report.decision";
+
+  if (decision.posture === "abstain") {
+    if (decision.abstention === null) {
+      errors.push({
+        path: `${decisionPath}.abstention`,
+        message: "posture=abstain requires a non-null abstention object.",
+        keyword: "cmipAbstentionRequired",
+      });
+      return errors;
+    }
+
+    if (decision.abstention.reason_codes.length === 0) {
+      errors.push({
+        path: `${decisionPath}.abstention.reason_codes`,
+        message: "Abstention reason_codes must not be empty.",
+        keyword: "cmipAbstentionReasonCodesRequired",
+      });
+    }
+
+    if (decision.abstention.blocking_conditions.length === 0) {
+      errors.push({
+        path: `${decisionPath}.abstention.blocking_conditions`,
+        message: "Abstention blocking_conditions must not be empty.",
+        keyword: "cmipAbstentionBlockingConditionsRequired",
+      });
+    }
+
+    if (decision.abstention.required_evidence_to_resume.length === 0) {
+      errors.push({
+        path: `${decisionPath}.abstention.required_evidence_to_resume`,
+        message: "Abstention required_evidence_to_resume must not be empty.",
+        keyword: "cmipAbstentionResumeEvidenceRequired",
+      });
+    }
+
+    const publishedReasonCodes = decision.abstention.reason_codes as readonly string[];
+    if (publishedReasonCodes.includes("schema_invalid")) {
+      errors.push({
+        path: `${decisionPath}.abstention.reason_codes`,
+        message: "schema_invalid cannot be used as a published-report abstention reason.",
+        keyword: "cmipAbstentionSchemaInvalidReason",
+      });
+    }
+
+    if (decision.score !== null) {
+      const hasSeparateBlockingConflict = decision.abstention.reason_codes.some((reason) =>
+        ["critical_source_failure", "identity_conflict", "unresolved_primary_source_conflict"].includes(reason),
+      );
+      if (!hasSeparateBlockingConflict) {
+        errors.push({
+          path: `${decisionPath}.abstention.reason_codes`,
+          message: "An abstain decision with a numeric score must explain a separate material blocking condition.",
+          keyword: "cmipAbstentionNumericScoreBlockingReason",
+        });
+      }
+    }
+
+    return errors;
+  }
+
+  if (decision.abstention !== null) {
+    errors.push({
+      path: `${decisionPath}.abstention`,
+      message: "Non-abstain decisions require abstention=null.",
+      keyword: "cmipDirectionalAbstentionMustBeNull",
+    });
+  }
+
+  if (decision.score === null) {
+    errors.push({
+      path: `${decisionPath}.score`,
+      message: "Non-abstain decisions require a numeric score.",
+      keyword: "cmipDirectionalScoreRequired",
+    });
+  }
 
   return errors;
 }

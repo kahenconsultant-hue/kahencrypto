@@ -6,6 +6,7 @@ import outputSchema from "../src/lib/cmip/contracts/output-schema.json";
 import sampleOutput from "../src/lib/cmip/contracts/sample-output.json";
 import { validateCmipReport } from "../src/lib/cmip/contracts/validate-report";
 import type {
+  CmipAbstentionReasonCode,
   CmipAssetSymbol,
   CmipChartType,
   CmipDecisionPosture,
@@ -53,6 +54,23 @@ function findCoin(report: MutableReportEnvelope, symbol: CmipAssetSymbol) {
   return coin;
 }
 
+function validAbstentionReport(reasonCodes: CmipAbstentionReasonCode[] = ["insufficient_data"], score: number | null = null): MutableReportEnvelope {
+  const report = mutableSample();
+  report.cmip_report.decision.posture = "abstain";
+  report.cmip_report.decision.score = score;
+  report.cmip_report.decision.confidence = 73;
+  report.cmip_report.decision.plain_language = "The model abstains because a directional posture is not sufficiently supported.";
+  report.cmip_report.decision.model_action = "Withhold a directional posture until the listed evidence is available.";
+  report.cmip_report.decision.abstention = {
+    reason_codes: reasonCodes,
+    plain_language_reason: "Directional evidence is not strong enough to support a market posture today.",
+    blocking_conditions: ["Critical input evidence is missing or conflicted."],
+    required_evidence_to_resume: ["Restore verified source coverage for the blocking input domain."],
+    previous_valid_report_policy: "keep_visible_with_stale_warning",
+  };
+  return report;
+}
+
 function createStrictAjv2020() {
   const ajv = new Ajv2020({
     allErrors: true,
@@ -72,6 +90,12 @@ test("canonical Draft 2020-12 CMIP schema compiles", () => {
   const validate = createStrictAjv2020().compile(outputSchema);
   assert.equal(typeof validate, "function");
   assert.equal(outputSchema.$schema, "https://json-schema.org/draft/2020-12/schema");
+});
+
+test("output Schema Draft 2020-12 still compiles with abstention amendment", () => {
+  const validate = createStrictAjv2020().compile(outputSchema);
+  assert.equal(typeof validate, "function");
+  assert.equal(outputSchema.definitions.posture.enum.includes("abstain"), true);
 });
 
 test("strict Draft 2020-12 validator rejects unsupported schema keywords", () => {
@@ -112,6 +136,72 @@ test("unknown format handling does not silently weaken validation", () => {
 
 test("canonical CMIP sample passes", () => {
   expectValid(mutableSample());
+});
+
+test("existing directional sample still passes with abstention null", () => {
+  const report = mutableSample();
+  assert.equal(report.cmip_report.decision.abstention, null);
+  expectValid(report);
+});
+
+test("valid abstain with null score passes", () => {
+  expectValid(validAbstentionReport(["insufficient_data"], null));
+});
+
+test("valid abstain with numeric score and explicit separate conflict passes", () => {
+  const report = validAbstentionReport(["unresolved_primary_source_conflict"], 61);
+  report.cmip_report.decision.abstention!.plain_language_reason =
+    "A directional score was calculable, but unresolved primary-source conflict blocks publication of a directional posture.";
+  report.cmip_report.decision.abstention!.blocking_conditions = ["Primary liquidity sources conflict on the same cutoff window."];
+  expectValid(report);
+});
+
+test("abstain without abstention object fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], null);
+  report.cmip_report.decision.abstention = null;
+  expectInvalid(report, "$.cmip_report.decision.abstention", /posture=abstain requires/);
+});
+
+test("directional posture with abstention object fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], null);
+  report.cmip_report.decision.posture = "maintain_risk";
+  report.cmip_report.decision.score = 61;
+  expectInvalid(report, "$.cmip_report.decision.abstention", /Non-abstain decisions require abstention=null/);
+});
+
+test("directional posture with null score fails", () => {
+  const report = mutableSample();
+  report.cmip_report.decision.score = null;
+  expectInvalid(report, "$.cmip_report.decision.score", /Non-abstain decisions require a numeric score/);
+});
+
+test("abstain with empty reason codes fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], null);
+  report.cmip_report.decision.abstention!.reason_codes = [];
+  expectInvalid(report, "$.cmip_report.decision.abstention.reason_codes", /fewer than|must not be empty/i);
+});
+
+test("abstain with unsupported reason code fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], null);
+  report.cmip_report.decision.abstention!.reason_codes = ["unsupported_reason" as CmipAbstentionReasonCode];
+  expectInvalid(report, "$.cmip_report.decision.abstention.reason_codes[0]", /supported CMIP contract enum|enum/i);
+});
+
+test("abstain using schema_invalid fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], null);
+  report.cmip_report.decision.abstention!.reason_codes = ["schema_invalid" as CmipAbstentionReasonCode];
+  expectInvalid(report, "$.cmip_report.decision.abstention.reason_codes[0]", /supported CMIP contract enum|enum/i);
+});
+
+test("abstain with empty required evidence fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], null);
+  report.cmip_report.decision.abstention!.required_evidence_to_resume = [];
+  expectInvalid(report, "$.cmip_report.decision.abstention.required_evidence_to_resume", /fewer than|must not be empty/i);
+});
+
+test("abstain with numeric score and no separate blocking conflict fails", () => {
+  const report = validAbstentionReport(["insufficient_data"], 61);
+  expectInvalid(report, "$.cmip_report.decision.abstention.reason_codes", /numeric score must explain a separate material blocking condition/);
 });
 
 test("coin array order does not affect validity", () => {

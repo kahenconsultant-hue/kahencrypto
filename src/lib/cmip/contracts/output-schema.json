@@ -48,7 +48,27 @@
     },
     "posture": {
       "type": "string",
-      "enum": ["increase_selective_risk", "maintain_risk", "reduce_risk", "defensive"]
+      "enum": ["increase_selective_risk", "maintain_risk", "reduce_risk", "defensive", "abstain"]
+    },
+    "abstentionReasonCode": {
+      "type": "string",
+      "enum": [
+        "insufficient_data",
+        "critical_source_failure",
+        "identity_conflict",
+        "unresolved_primary_source_conflict",
+        "historical_data_unavailable",
+        "model_output_repaired_but_unreliable",
+        "low_confidence"
+      ]
+    },
+    "previousValidReportPolicy": {
+      "type": "string",
+      "enum": [
+        "keep_visible_with_stale_warning",
+        "hide_directional_posture",
+        "replace_with_abstention_notice"
+      ]
     },
     "evidenceVerdict": {
       "type": "string",
@@ -233,13 +253,13 @@
     "decision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["posture", "score", "confidence", "plain_language", "model_action", "drivers"],
+      "required": ["posture", "score", "confidence", "plain_language", "model_action", "drivers", "abstention"],
       "properties": {
         "posture": {
           "$ref": "#/definitions/posture"
         },
         "score": {
-          "$ref": "#/definitions/score0To100"
+          "$ref": "#/definitions/nullableScore0To100"
         },
         "confidence": {
           "$ref": "#/definitions/score0To100"
@@ -262,6 +282,56 @@
               "$ref": "#/definitions/stringList"
             }
           }
+        },
+        "abstention": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/abstention"
+            }
+          ]
+        }
+      }
+    },
+    "abstention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason_codes",
+        "plain_language_reason",
+        "blocking_conditions",
+        "required_evidence_to_resume",
+        "previous_valid_report_policy"
+      ],
+      "properties": {
+        "reason_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/abstentionReasonCode"
+          }
+        },
+        "plain_language_reason": {
+          "$ref": "#/definitions/nonEmptyString"
+        },
+        "blocking_conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        },
+        "required_evidence_to_resume": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        },
+        "previous_valid_report_policy": {
+          "$ref": "#/definitions/previousValidReportPolicy"
         }
       }
     },

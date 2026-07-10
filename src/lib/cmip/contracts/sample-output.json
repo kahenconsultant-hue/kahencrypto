@@ -20,7 +20,8 @@
       "drivers": {
         "positive": ["ETF flow stabilization", "Stablecoin supply not contracting"],
         "negative": ["Options coverage unavailable", "Alt breadth remains mixed"]
-      }
+      },
+      "abstention": null
     },
     "executive_summary": {
       "summary_30s": "The model posture is maintain_risk because positive institutional flow is not yet broad enough to justify selective risk increase.",

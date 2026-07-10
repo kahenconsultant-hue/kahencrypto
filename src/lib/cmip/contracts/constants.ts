@@ -109,6 +109,23 @@ export const CMIP_DECISION_POSTURES = [
   "maintain_risk",
   "reduce_risk",
   "defensive",
+  "abstain",
+] as const;
+
+export const CMIP_ABSTENTION_REASON_CODES = [
+  "insufficient_data",
+  "critical_source_failure",
+  "identity_conflict",
+  "unresolved_primary_source_conflict",
+  "historical_data_unavailable",
+  "model_output_repaired_but_unreliable",
+  "low_confidence",
+] as const;
+
+export const CMIP_PREVIOUS_VALID_REPORT_POLICIES = [
+  "keep_visible_with_stale_warning",
+  "hide_directional_posture",
+  "replace_with_abstention_notice",
 ] as const;
 
 export const CMIP_EVIDENCE_VERDICTS = [

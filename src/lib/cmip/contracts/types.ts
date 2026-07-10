@@ -1,14 +1,17 @@
 import type {
+  CMIP_ABSTENTION_REASON_CODES,
   CMIP_DECISION_POSTURES,
   CMIP_EVIDENCE_VERDICTS,
   CMIP_HISTORICAL_EVIDENCE_STATUSES,
   CMIP_IDENTITY_STATUSES,
+  CMIP_PREVIOUS_VALID_REPORT_POLICIES,
   CMIP_SCENARIO_CALIBRATION_STATUSES,
   CMIP_SCENARIO_TIME_HORIZONS,
   CMIP_SUPPORTED_CHART_TYPES,
   CmipAssetSymbol,
 } from "./constants";
 
+export type CmipAbstentionReasonCode = (typeof CMIP_ABSTENTION_REASON_CODES)[number];
 export type CmipDecisionPosture = (typeof CMIP_DECISION_POSTURES)[number];
 export type CmipEvidenceVerdict = (typeof CMIP_EVIDENCE_VERDICTS)[number];
 export type CmipIdentityStatus = (typeof CMIP_IDENTITY_STATUSES)[number];
@@ -16,6 +19,7 @@ export type CmipHistoricalEvidenceStatus = (typeof CMIP_HISTORICAL_EVIDENCE_STAT
 export type CmipScenarioCalibrationStatus = (typeof CMIP_SCENARIO_CALIBRATION_STATUSES)[number];
 export type CmipChartType = (typeof CMIP_SUPPORTED_CHART_TYPES)[number];
 export type CmipScenarioTimeHorizon = (typeof CMIP_SCENARIO_TIME_HORIZONS)[number];
+export type CmipPreviousValidReportPolicy = (typeof CMIP_PREVIOUS_VALID_REPORT_POLICIES)[number];
 
 export type CmipJsonPrimitive = string | number | boolean | null;
 export type CmipJsonValue = CmipJsonPrimitive | CmipJsonValue[] | { readonly [key: string]: CmipJsonValue };
@@ -55,7 +59,7 @@ export interface CmipReportMeta {
 
 export interface CmipDecision {
   readonly posture: CmipDecisionPosture;
-  readonly score: number;
+  readonly score: number | null;
   readonly confidence: number;
   readonly plain_language: string;
   readonly model_action: string;
@@ -63,6 +67,15 @@ export interface CmipDecision {
     readonly positive: readonly string[];
     readonly negative: readonly string[];
   };
+  readonly abstention: CmipDecisionAbstention | null;
+}
+
+export interface CmipDecisionAbstention {
+  readonly reason_codes: readonly CmipAbstentionReasonCode[];
+  readonly plain_language_reason: string;
+  readonly blocking_conditions: readonly string[];
+  readonly required_evidence_to_resume: readonly string[];
+  readonly previous_valid_report_policy: CmipPreviousValidReportPolicy;
 }
 
 export interface CmipExecutiveSummary {

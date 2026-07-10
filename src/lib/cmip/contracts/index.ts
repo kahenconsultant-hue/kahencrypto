@@ -16,6 +16,7 @@ export {
 export type { CmipAssetSymbol, CmipAssetUniverseRecord } from "./constants";
 export type {
   CmipAttributionItem,
+  CmipAbstentionReasonCode,
   CmipAudit,
   CmipCalculationTrace,
   CmipChart,

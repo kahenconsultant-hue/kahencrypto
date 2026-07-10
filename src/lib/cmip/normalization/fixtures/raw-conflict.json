@@ -1,0 +1,64 @@
+{
+  "fixture_label": "CMIP Task 003 deterministic raw-conflict fixture; intentionally invalid test data",
+  "meta": {
+    "inputId": "cmip-normalization-fixture-conflict-2026-07-10",
+    "generatedAt": "2026-07-10T06:35:00Z",
+    "dataCutoff": "2026-07-10T06:30:00Z",
+    "timezone": "Europe/Paris",
+    "environment": "development"
+  },
+  "runContext": {
+    "runType": "scheduled",
+    "requestedHorizons": ["1D", "7D", "30D"],
+    "triggeredBy": "scheduler",
+    "requestedAt": "2026-07-10T06:25:00Z"
+  },
+  "sources": [
+    {
+      "source_id": "source:conflict-market",
+      "provider": "Conflicting market fixture",
+      "source_type": "api",
+      "url": "https://example.com/fixtures/conflict-market",
+      "retrieved_at": "2026-07-10T06:28:00Z",
+      "published_at": null,
+      "fields": ["market"],
+      "status": "conflict",
+      "tier": "primary"
+    },
+    {
+      "source_id": "source:conflict-assets",
+      "provider": "Conflicting assets fixture",
+      "source_type": "api",
+      "url": "https://example.com/fixtures/conflict-assets",
+      "retrieved_at": "2026-07-10T06:28:00Z",
+      "published_at": null,
+      "fields": ["assets"],
+      "status": "ok",
+      "tier": "primary"
+    }
+  ],
+  "domains": {
+    "market": {
+      "total_crypto_market_cap": { "value": 2450, "unit": "USD_BILLION", "observed_at": "2026-07-10T04:00:00Z", "source_refs": ["source:conflict-market"] },
+      "total_crypto_volume_24h": { "value": 118500, "unit": "USD_MILLION", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-market"] },
+      "btc_dominance": { "value": 54.2, "unit": "PERCENT", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-market"] },
+      "eth_dominance": { "value": 17.8, "unit": "PERCENT", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-market"] },
+      "fear_greed_index": { "value": 58, "unit": "INDEX_POINTS", "observed_at": "2026-07-10T06:00:00Z", "source_refs": ["source:conflict-market"] },
+      "market_regime_proxy": { "value": "neutral", "status": "conflict", "method": "conflicting fixture", "source_refs": ["source:conflict-market"] }
+    },
+    "assets": {
+      "assets": [
+        { "symbol": "BTC", "provider": "coingecko", "providerAssetId": "bitcoin", "source_refs": ["source:conflict-assets"], "price": { "value": 106000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "ETH", "provider": "coingecko", "providerAssetId": "ethereum", "source_refs": ["source:conflict-assets"], "price": { "value": 3500, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "USDT", "provider": "coingecko", "providerAssetId": "tether", "assetId": "crypto:tether-usd", "source_refs": ["source:conflict-assets"], "price": { "value": 0.9992, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "BNB", "provider": "coingecko", "providerAssetId": "binancecoin", "source_refs": ["source:conflict-assets"], "price": { "value": 710, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "SOL", "provider": "coingecko", "providerAssetId": "solana", "source_refs": ["source:conflict-assets"], "price": { "value": 164, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "XRP", "provider": "coingecko", "providerAssetId": "ripple", "source_refs": ["source:conflict-assets"], "price": { "value": 2.4, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "TRX", "provider": "coingecko", "providerAssetId": "tron", "source_refs": ["source:conflict-assets"], "price": { "value": 0.29, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "TON", "provider": "coingecko", "providerAssetId": "tokamak-network", "source_refs": ["source:conflict-assets"], "price": { "value": 3.12, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "DOGE", "provider": "coingecko", "providerAssetId": "dogecoin", "source_refs": ["source:conflict-assets"], "price": { "value": 0.22, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } },
+        { "symbol": "ADA", "provider": "coingecko", "providerAssetId": "cardano", "source_refs": ["source:conflict-assets"], "price": { "value": 0.72, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:conflict-assets"] } }
+      ]
+    }
+  }
+}

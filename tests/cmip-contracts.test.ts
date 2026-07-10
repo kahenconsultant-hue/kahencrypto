@@ -25,7 +25,7 @@ type DeepMutable<T> = T extends readonly (infer Item)[]
 type MutableReportEnvelope = DeepMutable<CmipReportEnvelope>;
 
 function mutableSample(): MutableReportEnvelope {
-  return structuredClone(sampleOutput) as MutableReportEnvelope;
+  return structuredClone(sampleOutput) as unknown as MutableReportEnvelope;
 }
 
 function expectValid(input: unknown): void {

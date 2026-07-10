@@ -1,0 +1,107 @@
+{
+  "fixture_label": "CMIP Task 003 deterministic raw-partial fixture; not live market data",
+  "meta": {
+    "inputId": "cmip-normalization-fixture-partial-2026-07-10",
+    "generatedAt": "2026-07-10T06:35:00Z",
+    "dataCutoff": "2026-07-10T06:30:00Z",
+    "timezone": "Europe/Paris",
+    "environment": "development"
+  },
+  "runContext": {
+    "runType": "scheduled",
+    "requestedHorizons": ["1D", "7D", "30D"],
+    "triggeredBy": "scheduler",
+    "requestedAt": "2026-07-10T06:25:00Z"
+  },
+  "sources": [
+    {
+      "source_id": "source:partial-market",
+      "provider": "Partial market fixture",
+      "source_type": "api",
+      "url": "https://example.com/fixtures/partial-market",
+      "retrieved_at": "2026-07-10T06:28:00Z",
+      "published_at": null,
+      "fields": ["market"],
+      "status": "ok",
+      "tier": "primary"
+    },
+    {
+      "source_id": "source:partial-assets",
+      "provider": "Partial assets fixture",
+      "source_type": "api",
+      "url": "https://example.com/fixtures/partial-assets",
+      "retrieved_at": "2026-07-10T06:28:00Z",
+      "published_at": null,
+      "fields": ["assets"],
+      "status": "ok",
+      "tier": "primary"
+    },
+    {
+      "source_id": "source:partial-etf",
+      "provider": "Stale ETF fixture",
+      "source_type": "official_release",
+      "url": "https://example.com/fixtures/partial-etf",
+      "retrieved_at": "2026-07-10T06:00:00Z",
+      "published_at": "2026-07-06T21:00:00Z",
+      "fields": ["etf"],
+      "status": "stale",
+      "tier": "secondary"
+    }
+  ],
+  "domains": {
+    "market": {
+      "total_crypto_market_cap": { "value": 2450, "unit": "USD_BILLION", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-market"] },
+      "total_crypto_volume_24h": { "value": 118500, "unit": "USD_MILLION", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-market"] },
+      "btc_dominance": { "value": 54.2, "unit": "PERCENT", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-market"] },
+      "eth_dominance": { "value": 17.8, "unit": "PERCENT", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-market"] },
+      "fear_greed_index": { "value": 58, "unit": "INDEX_POINTS", "observed_at": "2026-07-10T06:00:00Z", "source_refs": ["source:partial-market"] },
+      "market_regime_proxy": { "value": "neutral", "status": "available", "method": "partial fixture", "source_refs": ["source:partial-market"] }
+    },
+    "assets": {
+      "assets": [
+        { "symbol": "BTC", "provider": "coingecko", "providerAssetId": "bitcoin", "source_refs": ["source:partial-assets"], "price": { "value": 106000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 2100000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 48000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "ETH", "provider": "coingecko", "providerAssetId": "ethereum", "source_refs": ["source:partial-assets"], "price": { "value": 3500, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 420000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 22000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "USDT", "provider": "coingecko", "providerAssetId": "tether", "assetId": "crypto:tether-usd", "source_refs": ["source:partial-assets"], "price": { "value": 0.9992, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 162000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 65000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "BNB", "provider": "coingecko", "providerAssetId": "binancecoin", "source_refs": ["source:partial-assets"], "price": { "value": 710, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 104000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 1900000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "SOL", "provider": "coingecko", "providerAssetId": "solana", "source_refs": ["source:partial-assets"], "price": { "value": 164, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 79000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 4100000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "XRP", "provider": "coingecko", "providerAssetId": "ripple", "source_refs": ["source:partial-assets"], "price": { "value": 2.4, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 138000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 5100000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "TRX", "provider": "coingecko", "providerAssetId": "tron", "source_refs": ["source:partial-assets"], "price": { "value": 0.29, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 25000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 900000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "TON", "provider": "coingecko", "providerAssetId": "the-open-network", "assetId": "crypto:toncoin", "source_refs": ["source:partial-assets"], "price": { "value": 3.12, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 8000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 240000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "DOGE", "provider": "coingecko", "providerAssetId": "dogecoin", "source_refs": ["source:partial-assets"], "price": { "value": 0.22, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 33000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 1700000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } },
+        { "symbol": "ADA", "provider": "coingecko", "providerAssetId": "cardano", "source_refs": ["source:partial-assets"], "price": { "value": 0.72, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "market_cap": { "value": 26000000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] }, "volume_24h": { "value": 820000000, "unit": "USD", "observed_at": "2026-07-10T06:20:00Z", "source_refs": ["source:partial-assets"] } }
+      ]
+    },
+    "etf": {
+      "btc": {
+        "daily_net_flow": { "value": 250, "unit": "USD_MILLION", "observed_at": "2026-07-06T21:00:00Z", "source_refs": ["source:partial-etf"] },
+        "latest_trading_date": "2026-07-06",
+        "fund_breakdown": [],
+        "source_refs": ["source:partial-etf"]
+      },
+      "eth": {
+        "daily_net_flow": null,
+        "latest_trading_date": null,
+        "fund_breakdown": [],
+        "source_refs": ["source:partial-etf"]
+      }
+    },
+    "historical_evidence": [
+      {
+        "evidence_id": "historical-fixture-partial-001",
+        "hypothesis": "neutral_transition",
+        "event_definition": "Partial fixture historical comparison",
+        "period_start": "2024-01-01",
+        "period_end": "2026-06-30",
+        "sample_size": 8,
+        "forward_horizons": ["7D"],
+        "results": [
+          { "horizon": "7D", "positive_rate": 50, "median_return": null, "mean_return": null, "max_drawdown": null, "sample_size": 8, "return_unit": null }
+        ],
+        "limitations": "Small fixture sample; partial evidence only.",
+        "method_version": "fixture-history-v1",
+        "source_refs": [],
+        "status": "partial"
+      }
+    ]
+  }
+}

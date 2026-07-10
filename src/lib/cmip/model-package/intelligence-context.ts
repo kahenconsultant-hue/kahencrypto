@@ -1,0 +1,183 @@
+import {
+  CMIP_CONFLICT_TYPES,
+  CMIP_EVIDENCE_DOMAINS,
+  CMIP_EVIDENCE_DIRECTIONS,
+  CMIP_EVIDENCE_RELIABILITIES,
+  CMIP_EVIDENCE_STRENGTHS,
+  CMIP_HYPOTHESIS_IDS,
+  CMIP_INTELLIGENCE_ABSTENTION_REASON_CODES,
+  CMIP_INTELLIGENCE_DECISION_POSTURES,
+  CMIP_INTELLIGENCE_HISTORICAL_VERDICTS,
+  CMIP_INTELLIGENCE_SCENARIO_HORIZONS,
+  CMIP_INTELLIGENCE_SPEC_VERSION,
+  CMIP_REASONING_STAGES,
+} from "../intelligence-spec/constants";
+import { CMIP_INTELLIGENCE_CONTEXT_VERSION } from "./constants";
+import { stableStringifyPretty } from "./stable-json";
+
+export const CMIP_STATIC_INTELLIGENCE_CONTEXT = {
+  contextVersion: CMIP_INTELLIGENCE_CONTEXT_VERSION,
+  sourceSpecVersion: CMIP_INTELLIGENCE_SPEC_VERSION,
+  decisionPhilosophy: [
+    "No single indicator decides the final posture.",
+    "Confirmation must come from independent domains.",
+    "Contradictory evidence must remain visible.",
+    "Historical evidence is contextual, not predictive.",
+    "The engine may abstain instead of manufacturing certainty.",
+    "Decision changes require evidence changes, not language variation.",
+    "Simple Persian explanation must preserve rigor, uncertainty, limitations and traceability.",
+    "No hidden personal recommendation.",
+    "Every conclusion must be falsifiable.",
+    "Accountability is more important than persuasion.",
+  ],
+  reasoningPipeline: CMIP_REASONING_STAGES,
+  evidenceModel: {
+    domains: CMIP_EVIDENCE_DOMAINS,
+    directions: CMIP_EVIDENCE_DIRECTIONS,
+    strengths: CMIP_EVIDENCE_STRENGTHS,
+    reliabilities: CMIP_EVIDENCE_RELIABILITIES,
+    requiredItemFields: [
+      "evidence_id",
+      "domain",
+      "statement",
+      "direction",
+      "strength",
+      "importance",
+      "freshness",
+      "reliability",
+      "coverage",
+      "independence_group",
+      "conflict_level",
+      "source_quality",
+      "source_refs",
+      "supports_hypotheses",
+      "contradicts_hypotheses",
+      "limitations",
+    ],
+  },
+  evidenceQualityRules: [
+    "Evidence quality is separate from evidence importance.",
+    "High-importance low-quality evidence must not dominate.",
+    "Multiple low-quality syndicated sources do not equal one verified source.",
+    "Repeated news syndication is not independent confirmation.",
+    "Quality considers source tier, freshness, completeness, agreement, method transparency, proxy status, calculation trace, identity certainty, sample quality, survivorship bias, delay and revision risk.",
+  ],
+  independenceRules: [
+    "Repeated signals from one mechanism cannot count as independent confirmation.",
+    "Correlated signals must not be double-counted.",
+    "At least multi-domain confirmation is required for directional posture.",
+  ],
+  conflictResolutionRules: {
+    conflictTypes: CMIP_CONFLICT_TYPES,
+    rules: [
+      "Never average conflicting values silently.",
+      "Prefer authoritative primary sources when the hierarchy is explicit.",
+      "Preserve both values when unresolved.",
+      "Reduce confidence when material conflict remains.",
+      "Block identity-conflicted assets from scoring.",
+      "Distinguish short-term positive from medium-term negative evidence.",
+      "Explain material conflict in simple Persian.",
+    ],
+  },
+  hypothesisRules: {
+    hypotheses: CMIP_HYPOTHESIS_IDS,
+    rules: [
+      "Hypotheses are competing explanations.",
+      "More than one hypothesis may remain active.",
+      "No hypothesis may be accepted without minimum evidence.",
+      "Evidence from one independence group must not be counted multiple times.",
+      "Reject a hypothesis when required conditions fail.",
+      "Preserve the second-best hypothesis.",
+    ],
+  },
+  historicalEvidenceRules: {
+    verdicts: CMIP_INTELLIGENCE_HISTORICAL_VERDICTS,
+    rules: [
+      "Historical evidence is not prediction.",
+      "Statistical claims require sample size.",
+      "Small samples must be labeled.",
+      "Separate similar and different conditions.",
+      "No historical claim may come from model memory alone.",
+      "Historical evidence must come from stored, supplied or calculated data.",
+    ],
+  },
+  analogyRules: [
+    "Analogy is descriptive, not a forecast.",
+    "Similarity score must be method-based.",
+    "False similarity risk and structural differences must be shown before outcome comparison.",
+    "Unavailable analogue data remains null.",
+  ],
+  decisionMemoryRules: [
+    "Memory uses stored decisions, not model recollection.",
+    "Published decisions are not rewritten.",
+    "Corrections create revision records.",
+    "Weekly accuracy distinguishes posture, regime, scenario calibration and trigger accuracy.",
+  ],
+  decisionRules: {
+    postures: CMIP_INTELLIGENCE_DECISION_POSTURES,
+    rules: [
+      "No final posture may come solely from a composite score.",
+      "Synthesis considers quality, independence, hypothesis strength, contradiction burden, historical support, completeness, regime stability and trigger proximity.",
+      "Abstain is valid when directional evidence is materially insufficient or conflicted.",
+      "Abstain is reversible when required evidence becomes available.",
+    ],
+  },
+  scenarioRules: {
+    horizons: CMIP_INTELLIGENCE_SCENARIO_HORIZONS,
+    rules: [
+      "Scenarios are trigger-based.",
+      "Probabilities require calibration status.",
+      "Prototype probabilities must be labeled.",
+      "Probabilities sum to 100 only when mutually exclusive and collectively exhaustive.",
+      "Scenario wording must avoid certainty.",
+    ],
+  },
+  invalidationRules: [
+    "Invalidations must be measurable.",
+    "Vague invalidations are forbidden.",
+    "One isolated data spike may require confirmation.",
+    "Invalidation states whether it changes confidence, hypothesis, posture or scenario ranking.",
+  ],
+  confidenceRules: [
+    "Confidence is not market direction probability.",
+    "Missing critical data lowers confidence.",
+    "Conflicting primary sources lower confidence.",
+    "Historical support increases confidence only when structurally comparable.",
+    "Agreement between correlated signals must not be double-counted.",
+    "High confidence with weak coverage is forbidden.",
+  ],
+  auditRules: [
+    "Every conclusion must trace to source, input field, calculation, evidence item, historical record, rule and spec version.",
+    "No hidden calculation, fallback, uncited historical claim, silent conflict resolution or secret source substitution.",
+  ],
+  explanationTemplateFa: [
+    "چه اتفاقی افتاده؟",
+    "یعنی چه؟",
+    "چرا مهم است؟",
+    "در گذشته چه اتفاقی افتاده؟",
+    "امروز چه شباهتی با گذشته دارد؟",
+    "چه تفاوتی با گذشته دارد؟",
+    "آیا شواهد تاریخی نظریه را تأیید می‌کنند؟",
+    "اثر این عامل روی تصمیم امروز چیست؟",
+    "چرا این عامل به‌تنهایی کافی نیست؟",
+    "چه چیزی این تحلیل را باطل می‌کند؟",
+    "نتیجه ساده چیست؟",
+  ],
+  failureAndAbstentionRules: {
+    publishedAbstentionReasons: CMIP_INTELLIGENCE_ABSTENTION_REASON_CODES,
+    rules: [
+      "Valid abstention report is structurally valid JSON with directional posture withheld.",
+      "Invalid model output fails schema or semantics and must not be published.",
+      "Generation failure is no valid output produced.",
+      "These three states must not be conflated.",
+    ],
+  },
+} as const;
+
+export function buildIntelligenceContextContent(): string {
+  return [
+    "CMIP STATIC INTELLIGENCE SPECIFICATION",
+    "This is the approved deterministic reasoning contract. It is not runtime data.",
+    stableStringifyPretty(CMIP_STATIC_INTELLIGENCE_CONTEXT),
+  ].join("\n");
+}

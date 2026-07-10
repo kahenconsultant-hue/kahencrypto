@@ -1,0 +1,3266 @@
+{
+  "fixture_label": "CMIP Task 004 model-package abstain-context fixture; not live market data and does not generate a report",
+  "runtimeInput": {
+    "cmip_runtime_input": {
+      "meta": {
+        "spec_version": "CMIP-RUNTIME-INPUT-1.0",
+        "input_id": "cmip-model-package-fixture-abstain-runtime-2026-07-10",
+        "generated_at": "2026-07-10T06:35:00.000Z",
+        "data_cutoff": "2026-07-10T06:30:00.000Z",
+        "timezone": "Europe/Paris",
+        "environment": "development"
+      },
+      "run_context": {
+        "run_type": "scheduled",
+        "requested_horizons": [
+          "1D",
+          "7D",
+          "30D"
+        ],
+        "previous_report_id": "cmip-report-fixture-previous",
+        "previous_input_id": "cmip-input-fixture-previous",
+        "triggered_by": "scheduler",
+        "requested_at": "2026-07-10T06:25:00.000Z"
+      },
+      "sources": [
+        {
+          "source_id": "source:assets-coingecko",
+          "provider": "CoinGecko fixture adapter",
+          "source_type": "api",
+          "url": "https://example.com/fixtures/assets",
+          "retrieved_at": "2026-07-10T06:28:00.000Z",
+          "published_at": null,
+          "fields": [
+            "assets",
+            "price",
+            "market_cap",
+            "volume_24h"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:derivatives-exchange",
+          "provider": "Derivatives exchange fixture",
+          "source_type": "exchange",
+          "url": "https://example.com/fixtures/derivatives",
+          "retrieved_at": "2026-07-10T06:20:00.000Z",
+          "published_at": null,
+          "fields": [
+            "open_interest",
+            "funding",
+            "liquidations"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:derived-normalization",
+          "provider": "CMIP deterministic normalization fixture",
+          "source_type": "derived",
+          "url": null,
+          "retrieved_at": "2026-07-10T06:28:00.000Z",
+          "published_at": null,
+          "fields": [
+            "derived_changes",
+            "breadth",
+            "correlations"
+          ],
+          "status": "ok",
+          "tier": "proxy"
+        },
+        {
+          "source_id": "source:etf-official",
+          "provider": "ETF issuer flow fixture",
+          "source_type": "official_release",
+          "url": "https://example.com/fixtures/etf",
+          "retrieved_at": "2026-07-10T06:00:00.000Z",
+          "published_at": "2026-07-09T21:00:00.000Z",
+          "fields": [
+            "etf_flows"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:historical-db",
+          "provider": "CMIP historical evidence fixture database",
+          "source_type": "database",
+          "url": null,
+          "retrieved_at": "2026-07-10T06:05:00.000Z",
+          "published_at": null,
+          "fields": [
+            "historical_evidence"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:macro-market",
+          "provider": "Macro market fixture",
+          "source_type": "api",
+          "url": "https://example.com/fixtures/macro-market",
+          "retrieved_at": "2026-07-10T06:15:00.000Z",
+          "published_at": null,
+          "fields": [
+            "dxy",
+            "yields",
+            "indices",
+            "commodities"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:macro-release",
+          "provider": "Official macro release fixture",
+          "source_type": "official_release",
+          "url": "https://example.com/fixtures/macro-release",
+          "retrieved_at": "2026-07-10T06:15:00.000Z",
+          "published_at": "2026-07-01T12:00:00.000Z",
+          "fields": [
+            "fed_policy_rate",
+            "us_m2"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:market-index",
+          "provider": "Market aggregate fixture",
+          "source_type": "api",
+          "url": "https://example.com/fixtures/market",
+          "retrieved_at": "2026-07-10T06:28:00.000Z",
+          "published_at": null,
+          "fields": [
+            "market",
+            "dominance",
+            "fear_greed"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:memory-store",
+          "provider": "CMIP decision memory fixture store",
+          "source_type": "database",
+          "url": null,
+          "retrieved_at": "2026-07-10T06:05:00.000Z",
+          "published_at": null,
+          "fields": [
+            "decision_memory"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        },
+        {
+          "source_id": "source:news-registry",
+          "provider": "Normalized news fixture",
+          "source_type": "web",
+          "url": "https://example.com/fixtures/news",
+          "retrieved_at": "2026-07-10T06:10:00.000Z",
+          "published_at": "2026-07-10T05:00:00.000Z",
+          "fields": [
+            "news"
+          ],
+          "status": "ok",
+          "tier": "secondary"
+        },
+        {
+          "source_id": "source:options-vendor",
+          "provider": "Options vendor fixture",
+          "source_type": "api",
+          "url": "https://example.com/fixtures/options",
+          "retrieved_at": "2026-07-10T06:05:00.000Z",
+          "published_at": null,
+          "fields": [
+            "options"
+          ],
+          "status": "partial",
+          "tier": "secondary"
+        },
+        {
+          "source_id": "source:stablecoin-api",
+          "provider": "Stablecoin supply fixture",
+          "source_type": "api",
+          "url": "https://example.com/fixtures/stablecoins",
+          "retrieved_at": "2026-07-10T06:10:00.000Z",
+          "published_at": null,
+          "fields": [
+            "stablecoin_supply"
+          ],
+          "status": "ok",
+          "tier": "primary"
+        }
+      ],
+      "market": {
+        "total_crypto_market_cap": {
+          "value": 2450000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:20:00.000Z",
+          "source_refs": [
+            "source:market-index"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 600,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_BILLION * 1000000000 = USD",
+            "inputs": [
+              "$.domains.market.total_crypto_market_cap.value",
+              "$.domains.market.total_crypto_market_cap.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "total_crypto_volume_24h": {
+          "value": 118500000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:20:00.000Z",
+          "source_refs": [
+            "source:market-index"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 600,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_MILLION * 1000000 = USD",
+            "inputs": [
+              "$.domains.market.total_crypto_volume_24h.value",
+              "$.domains.market.total_crypto_volume_24h.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "btc_dominance": {
+          "value": 54.2,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:20:00.000Z",
+          "source_refs": [
+            "source:market-index"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 600,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "eth_dominance": {
+          "value": 17.8,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:20:00.000Z",
+          "source_refs": [
+            "source:market-index"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 600,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "fear_greed_index": {
+          "value": 58,
+          "unit": "index_points",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:market-index"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "market_regime_proxy": {
+          "value": "neutral",
+          "status": "available",
+          "method": "fixture categorical context only",
+          "source_refs": [
+            "source:market-index"
+          ]
+        }
+      },
+      "assets": [
+        {
+          "symbol": "BTC",
+          "asset_id": "crypto:bitcoin",
+          "name": "Bitcoin",
+          "identity_status": "verified",
+          "price": {
+            "value": 106000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 2100000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 48000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": 1.2,
+            "unit": "percent",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:derived-normalization"
+            ],
+            "quality": 88.25,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": {
+              "method": "fixture_return",
+              "formula": "(price_t / price_t_minus_24h - 1) * 100",
+              "inputs": [
+                "BTC.price"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "up",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "ETH",
+          "asset_id": "crypto:ethereum",
+          "name": "Ethereum",
+          "identity_status": "verified",
+          "price": {
+            "value": 3500,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 420000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 22000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "USDT",
+          "asset_id": "crypto:tether-usd",
+          "name": "Tether",
+          "identity_status": "verified",
+          "price": {
+            "value": 0.9992,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 162000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 65000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "BNB",
+          "asset_id": "crypto:bnb",
+          "name": "BNB",
+          "identity_status": "verified",
+          "price": {
+            "value": 710,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 104000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 1900000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "up",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "SOL",
+          "asset_id": "crypto:solana",
+          "name": "Solana",
+          "identity_status": "verified",
+          "price": {
+            "value": 164,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 79000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 4100000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "XRP",
+          "asset_id": "crypto:xrp",
+          "name": "XRP",
+          "identity_status": "verified",
+          "price": {
+            "value": 2.4,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 138000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 5100000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "TRX",
+          "asset_id": "crypto:tron",
+          "name": "TRON",
+          "identity_status": "verified",
+          "price": {
+            "value": 0.29,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 25000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 900000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "TON",
+          "asset_id": "crypto:toncoin",
+          "name": "Toncoin",
+          "identity_status": "verified",
+          "price": {
+            "value": 3.12,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 8000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 240000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "DOGE",
+          "asset_id": "crypto:dogecoin",
+          "name": "Dogecoin",
+          "identity_status": "verified",
+          "price": {
+            "value": 0.22,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 33000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 1700000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "down",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        },
+        {
+          "symbol": "ADA",
+          "asset_id": "crypto:cardano",
+          "name": "Cardano",
+          "identity_status": "verified",
+          "price": {
+            "value": 0.72,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "market_cap": {
+            "value": 26000000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "volume_24h": {
+            "value": 820000000,
+            "unit": "USD",
+            "observed_at": "2026-07-10T06:20:00.000Z",
+            "source_refs": [
+              "source:assets-coingecko"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 600,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "change_24h": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "change_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "realized_volatility_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_7d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "relative_strength_vs_btc_30d": {
+            "value": null,
+            "unit": "percent",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 3600,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "trend_state": "neutral",
+          "source_refs": [
+            "source:assets-coingecko"
+          ]
+        }
+      ],
+      "etf": {
+        "btc": {
+          "daily_net_flow": {
+            "value": 250000000,
+            "unit": "USD",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:etf-official"
+            ],
+            "quality": 97,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": {
+              "method": "deterministic_unit_conversion",
+              "formula": "USD_MILLION * 1000000 = USD",
+              "inputs": [
+                "$.domains.etf.btc.daily_net_flow.value",
+                "$.domains.etf.btc.daily_net_flow.unit"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          },
+          "flow_7d": {
+            "value": 950000000,
+            "unit": "USD",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:derived-normalization"
+            ],
+            "quality": 88.25,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": {
+              "method": "fixture_rolling_sum",
+              "formula": "sum(valid trading day flows)",
+              "inputs": [
+                "btc.daily_net_flow"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          },
+          "flow_30d": {
+            "value": null,
+            "unit": "USD",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "flow_acceleration": {
+            "value": null,
+            "unit": "USD",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "positive_streak_days": {
+            "value": 3,
+            "unit": "days",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:etf-official"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "negative_streak_days": {
+            "value": 0,
+            "unit": "days",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:etf-official"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "latest_trading_date": "2026-07-09",
+          "fund_breakdown": [
+            {
+              "fund_id": "btc-fund-a",
+              "ticker": "BFA",
+              "issuer": "Fixture Issuer",
+              "daily_net_flow": {
+                "value": 125000000,
+                "unit": "USD",
+                "observed_at": "2026-07-09T21:00:00.000Z",
+                "source_refs": [
+                  "source:etf-official"
+                ],
+                "quality": 97,
+                "freshness": {
+                  "age_seconds": 34200,
+                  "max_age_seconds": 172800,
+                  "is_stale": false
+                },
+                "status": "available",
+                "calculation": {
+                  "method": "deterministic_unit_conversion",
+                  "formula": "USD_MILLION * 1000000 = USD",
+                  "inputs": [
+                    "$.domains.etf.btc.fund_breakdown[0].daily_net_flow.value",
+                    "$.domains.etf.btc.fund_breakdown[0].daily_net_flow.unit"
+                  ],
+                  "version": "CMIP-NORMALIZATION-POLICY-1.0"
+                }
+              },
+              "aum": {
+                "value": 30000000000,
+                "unit": "USD",
+                "observed_at": "2026-07-09T21:00:00.000Z",
+                "source_refs": [
+                  "source:etf-official"
+                ],
+                "quality": 97,
+                "freshness": {
+                  "age_seconds": 34200,
+                  "max_age_seconds": 172800,
+                  "is_stale": false
+                },
+                "status": "available",
+                "calculation": {
+                  "method": "deterministic_unit_conversion",
+                  "formula": "USD_BILLION * 1000000000 = USD",
+                  "inputs": [
+                    "$.domains.etf.btc.fund_breakdown[0].aum.value",
+                    "$.domains.etf.btc.fund_breakdown[0].aum.unit"
+                  ],
+                  "version": "CMIP-NORMALIZATION-POLICY-1.0"
+                }
+              },
+              "source_refs": [
+                "source:etf-official"
+              ]
+            }
+          ],
+          "source_refs": [
+            "source:etf-official"
+          ]
+        },
+        "eth": {
+          "daily_net_flow": {
+            "value": 65000000,
+            "unit": "USD",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:etf-official"
+            ],
+            "quality": 97,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": {
+              "method": "deterministic_unit_conversion",
+              "formula": "USD_MILLION * 1000000 = USD",
+              "inputs": [
+                "$.domains.etf.eth.daily_net_flow.value",
+                "$.domains.etf.eth.daily_net_flow.unit"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          },
+          "flow_7d": {
+            "value": 180000000,
+            "unit": "USD",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:derived-normalization"
+            ],
+            "quality": 88.25,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": {
+              "method": "fixture_rolling_sum",
+              "formula": "sum(valid trading day flows)",
+              "inputs": [
+                "eth.daily_net_flow"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          },
+          "flow_30d": {
+            "value": null,
+            "unit": "USD",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "flow_acceleration": {
+            "value": null,
+            "unit": "USD",
+            "observed_at": null,
+            "source_refs": [],
+            "quality": 0,
+            "freshness": {
+              "age_seconds": null,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "missing",
+            "calculation": null
+          },
+          "positive_streak_days": {
+            "value": 2,
+            "unit": "days",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:etf-official"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "negative_streak_days": {
+            "value": 0,
+            "unit": "days",
+            "observed_at": "2026-07-09T21:00:00.000Z",
+            "source_refs": [
+              "source:etf-official"
+            ],
+            "quality": 100,
+            "freshness": {
+              "age_seconds": 34200,
+              "max_age_seconds": 172800,
+              "is_stale": false
+            },
+            "status": "available",
+            "calculation": null
+          },
+          "latest_trading_date": "2026-07-09",
+          "fund_breakdown": [],
+          "source_refs": [
+            "source:etf-official"
+          ]
+        }
+      },
+      "stablecoins": {
+        "total_market_cap": {
+          "value": 258000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:stablecoin-api"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "change_1d": {
+          "value": 0.2,
+          "unit": "percent",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_percent_change",
+            "formula": "(current / prior - 1) * 100",
+            "inputs": [
+              "stablecoins.total_market_cap"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "change_7d": {
+          "value": 1.1,
+          "unit": "percent",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_percent_change",
+            "formula": "(current / prior - 1) * 100",
+            "inputs": [
+              "stablecoins.total_market_cap"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "change_30d": {
+          "value": 3.4,
+          "unit": "percent",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_percent_change",
+            "formula": "(current / prior - 1) * 100",
+            "inputs": [
+              "stablecoins.total_market_cap"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "usdt_supply": {
+          "value": 162000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:stablecoin-api"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "usdc_supply": {
+          "value": 54000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:stablecoin-api"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "usdt_change_7d": {
+          "value": null,
+          "unit": "percent",
+          "observed_at": null,
+          "source_refs": [],
+          "quality": 0,
+          "freshness": {
+            "age_seconds": null,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "missing",
+          "calculation": null
+        },
+        "usdt_change_30d": {
+          "value": null,
+          "unit": "percent",
+          "observed_at": null,
+          "source_refs": [],
+          "quality": 0,
+          "freshness": {
+            "age_seconds": null,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "missing",
+          "calculation": null
+        },
+        "usdc_change_7d": {
+          "value": null,
+          "unit": "percent",
+          "observed_at": null,
+          "source_refs": [],
+          "quality": 0,
+          "freshness": {
+            "age_seconds": null,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "missing",
+          "calculation": null
+        },
+        "usdc_change_30d": {
+          "value": null,
+          "unit": "percent",
+          "observed_at": null,
+          "source_refs": [],
+          "quality": 0,
+          "freshness": {
+            "age_seconds": null,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "missing",
+          "calculation": null
+        },
+        "exchange_reserves": {
+          "value": 18000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T05:45:00.000Z",
+          "source_refs": [
+            "source:stablecoin-api"
+          ],
+          "quality": 95.5,
+          "freshness": {
+            "age_seconds": 2700,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "proxy",
+          "calculation": {
+            "method": "fixture_proxy_exchange_reserve",
+            "formula": "reported reserve proxy in USD_BILLION converted to USD",
+            "inputs": [
+              "stablecoin.exchange_reserves"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "chain_flows": null
+      },
+      "derivatives": {
+        "market_open_interest": {
+          "value": 62000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_BILLION * 1000000000 = USD",
+            "inputs": [
+              "$.domains.derivatives.market_open_interest.value",
+              "$.domains.derivatives.market_open_interest.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "market_open_interest_change_24h": {
+          "value": 2.5,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_open_interest_change",
+            "formula": "(oi_t / oi_t_minus_24h - 1) * 100",
+            "inputs": [
+              "derivatives.market_open_interest"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "btc_open_interest": {
+          "value": 36000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_BILLION * 1000000000 = USD",
+            "inputs": [
+              "$.domains.derivatives.btc_open_interest.value",
+              "$.domains.derivatives.btc_open_interest.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "eth_open_interest": {
+          "value": 14000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_BILLION * 1000000000 = USD",
+            "inputs": [
+              "$.domains.derivatives.eth_open_interest.value",
+              "$.domains.derivatives.eth_open_interest.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "btc_funding": {
+          "value": 0.012,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "eth_funding": {
+          "value": 0.01,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "funding_by_exchange": [
+          {
+            "exchange": "FixtureEx",
+            "asset": "BTC",
+            "funding_rate": {
+              "value": 0.012,
+              "unit": "percent",
+              "observed_at": "2026-07-10T06:15:00.000Z",
+              "source_refs": [
+                "source:derivatives-exchange"
+              ],
+              "quality": 100,
+              "freshness": {
+                "age_seconds": 900,
+                "max_age_seconds": 3600,
+                "is_stale": false
+              },
+              "status": "available",
+              "calculation": null
+            },
+            "interval": "8h",
+            "source_refs": [
+              "source:derivatives-exchange"
+            ]
+          }
+        ],
+        "liquidations_24h": {
+          "value": 310000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_MILLION * 1000000 = USD",
+            "inputs": [
+              "$.domains.derivatives.liquidations_24h.value",
+              "$.domains.derivatives.liquidations_24h.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "long_liquidations_24h": {
+          "value": 190000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_MILLION * 1000000 = USD",
+            "inputs": [
+              "$.domains.derivatives.long_liquidations_24h.value",
+              "$.domains.derivatives.long_liquidations_24h.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "short_liquidations_24h": {
+          "value": 120000000,
+          "unit": "USD",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_MILLION * 1000000 = USD",
+            "inputs": [
+              "$.domains.derivatives.short_liquidations_24h.value",
+              "$.domains.derivatives.short_liquidations_24h.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "futures_basis": {
+          "value": 6.2,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "long_short_ratio": {
+          "value": 1.04,
+          "unit": "ratio",
+          "observed_at": "2026-07-10T06:15:00.000Z",
+          "source_refs": [
+            "source:derivatives-exchange"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 900,
+            "max_age_seconds": 3600,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        }
+      },
+      "options": {
+        "btc_put_call_ratio": {
+          "value": 0.78,
+          "unit": "ratio",
+          "observed_at": "2026-07-09T22:00:00.000Z",
+          "source_refs": [
+            "source:options-vendor"
+          ],
+          "quality": 88.75,
+          "freshness": {
+            "age_seconds": 30600,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "eth_put_call_ratio": {
+          "value": 0.82,
+          "unit": "ratio",
+          "observed_at": "2026-07-09T22:00:00.000Z",
+          "source_refs": [
+            "source:options-vendor"
+          ],
+          "quality": 88.75,
+          "freshness": {
+            "age_seconds": 30600,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "btc_iv": {
+          "value": 54,
+          "unit": "percent",
+          "observed_at": "2026-07-09T22:00:00.000Z",
+          "source_refs": [
+            "source:options-vendor"
+          ],
+          "quality": 88.75,
+          "freshness": {
+            "age_seconds": 30600,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "eth_iv": {
+          "value": 61,
+          "unit": "percent",
+          "observed_at": "2026-07-09T22:00:00.000Z",
+          "source_refs": [
+            "source:options-vendor"
+          ],
+          "quality": 88.75,
+          "freshness": {
+            "age_seconds": 30600,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "btc_25d_skew": null,
+        "eth_25d_skew": null,
+        "term_structure": [
+          {
+            "asset": "BTC",
+            "tenor": "30D",
+            "implied_volatility": {
+              "value": 54,
+              "unit": "percent",
+              "observed_at": "2026-07-09T22:00:00.000Z",
+              "source_refs": [
+                "source:options-vendor"
+              ],
+              "quality": 88.75,
+              "freshness": {
+                "age_seconds": 30600,
+                "max_age_seconds": 86400,
+                "is_stale": false
+              },
+              "status": "available",
+              "calculation": null
+            },
+            "source_refs": [
+              "source:options-vendor"
+            ]
+          }
+        ],
+        "max_pain": null,
+        "gamma_risk": null
+      },
+      "macro": {
+        "dxy": {
+          "value": 102.4,
+          "unit": "index_points",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "us_2y": {
+          "value": 3.76,
+          "unit": "percent",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "us_10y": {
+          "value": 4.18,
+          "unit": "percent",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "real_yield_10y": {
+          "value": 1.85,
+          "unit": "percent",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "yield_curve_2s10s": {
+          "value": 0.42,
+          "unit": "percent",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_spread",
+            "formula": "us_10y - us_2y",
+            "inputs": [
+              "macro.us_10y",
+              "macro.us_2y"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "nasdaq": {
+          "value": 22600,
+          "unit": "index_points",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "sp500": {
+          "value": 6200,
+          "unit": "index_points",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "vix": {
+          "value": 14.2,
+          "unit": "index_points",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "gold": {
+          "value": 3370,
+          "unit": "USD",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "oil": {
+          "value": 74.5,
+          "unit": "USD",
+          "observed_at": "2026-07-09T21:00:00.000Z",
+          "source_refs": [
+            "source:macro-market"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 34200,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "fed_policy_rate": {
+          "value": 4.5,
+          "unit": "percent",
+          "observed_at": "2026-07-01T12:00:00.000Z",
+          "source_refs": [
+            "source:macro-release"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 757800,
+            "max_age_seconds": 2678400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "fed_expectation": {
+          "value": "hold",
+          "unit": null,
+          "observed_at": "2026-07-01T12:00:00.000Z",
+          "source_refs": [
+            "source:macro-release"
+          ],
+          "quality": 100,
+          "freshness": {
+            "age_seconds": 757800,
+            "max_age_seconds": 2678400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": null
+        },
+        "us_m2": {
+          "value": 21400000000000,
+          "unit": "USD",
+          "observed_at": "2026-07-01T12:00:00.000Z",
+          "source_refs": [
+            "source:macro-release"
+          ],
+          "quality": 97,
+          "freshness": {
+            "age_seconds": 757800,
+            "max_age_seconds": 2678400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "deterministic_unit_conversion",
+            "formula": "USD_BILLION * 1000000000 = USD",
+            "inputs": [
+              "$.domains.macro.us_m2.value",
+              "$.domains.macro.us_m2.unit"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "global_liquidity_proxy": {
+          "value": 101.8,
+          "unit": "index_points",
+          "observed_at": "2026-07-01T12:00:00.000Z",
+          "source_refs": [
+            "source:macro-release"
+          ],
+          "quality": 95.5,
+          "freshness": {
+            "age_seconds": 757800,
+            "max_age_seconds": 2678400,
+            "is_stale": false
+          },
+          "status": "proxy",
+          "calculation": {
+            "method": "fixture_global_liquidity_proxy",
+            "formula": "indexed official liquidity basket",
+            "inputs": [
+              "macro.us_m2"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        }
+      },
+      "cross_asset": {
+        "btc_nasdaq_correlation": [
+          {
+            "window": "30D",
+            "value": 0.42,
+            "sample_count": 30,
+            "method": "daily log returns aligned by calendar day",
+            "observed_at": "2026-07-10T05:30:00.000Z",
+            "source_refs": [
+              "source:derived-normalization"
+            ],
+            "calculation": {
+              "method": "fixture_correlation",
+              "formula": "pearson(log_returns_btc, log_returns_nasdaq)",
+              "inputs": [
+                "BTC",
+                "NASDAQ"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          }
+        ],
+        "btc_dxy_correlation": [
+          {
+            "window": "30D",
+            "value": -0.35,
+            "sample_count": 30,
+            "method": "daily log returns aligned by calendar day",
+            "observed_at": "2026-07-10T05:30:00.000Z",
+            "source_refs": [
+              "source:derived-normalization"
+            ],
+            "calculation": {
+              "method": "fixture_correlation",
+              "formula": "pearson(log_returns_btc, log_returns_dxy)",
+              "inputs": [
+                "BTC",
+                "DXY"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          }
+        ],
+        "btc_gold_correlation": [],
+        "btc_us10y_correlation": [],
+        "btc_eth_correlation": [
+          {
+            "window": "7D",
+            "value": 0.86,
+            "sample_count": 7,
+            "method": "daily log returns aligned by calendar day",
+            "observed_at": "2026-07-10T05:30:00.000Z",
+            "source_refs": [
+              "source:derived-normalization"
+            ],
+            "calculation": {
+              "method": "fixture_correlation",
+              "formula": "pearson(log_returns_btc, log_returns_eth)",
+              "inputs": [
+                "BTC",
+                "ETH"
+              ],
+              "version": "CMIP-NORMALIZATION-POLICY-1.0"
+            }
+          }
+        ]
+      },
+      "breadth": {
+        "assets_above_ma_7d": {
+          "value": 6,
+          "unit": "count",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_breadth_count",
+            "formula": "count(assets above 7d moving average)",
+            "inputs": [
+              "ten_asset_universe"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "assets_above_ma_30d": {
+          "value": 5,
+          "unit": "count",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_breadth_count",
+            "formula": "count(assets above 30d moving average)",
+            "inputs": [
+              "ten_asset_universe"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "positive_assets_24h": {
+          "value": 7,
+          "unit": "count",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_breadth_count",
+            "formula": "count(positive 24h returns)",
+            "inputs": [
+              "ten_asset_universe"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "positive_assets_7d": {
+          "value": 6,
+          "unit": "count",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_breadth_count",
+            "formula": "count(positive 7d returns)",
+            "inputs": [
+              "ten_asset_universe"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "altcoin_season_index": {
+          "value": 48,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_public_index_proxy",
+            "formula": "normalized third-party index value",
+            "inputs": [
+              "altcoin_season_fixture"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "btc_leadership": {
+          "value": 62,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_btc_leadership",
+            "formula": "btc relative breadth proxy",
+            "inputs": [
+              "ten_asset_universe"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "eth_participation": {
+          "value": 54,
+          "unit": "percent",
+          "observed_at": "2026-07-10T06:00:00.000Z",
+          "source_refs": [
+            "source:derived-normalization"
+          ],
+          "quality": 88.25,
+          "freshness": {
+            "age_seconds": 1800,
+            "max_age_seconds": 86400,
+            "is_stale": false
+          },
+          "status": "available",
+          "calculation": {
+            "method": "fixture_eth_participation",
+            "formula": "eth ecosystem participation proxy",
+            "inputs": [
+              "ten_asset_universe"
+            ],
+            "version": "CMIP-NORMALIZATION-POLICY-1.0"
+          }
+        },
+        "selected_asset_breadth": [
+          {
+            "symbol": "BTC",
+            "above_ma_7d": true,
+            "above_ma_30d": true,
+            "return_24h_positive": true,
+            "return_7d_positive": true,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "ETH",
+            "above_ma_7d": true,
+            "above_ma_30d": true,
+            "return_24h_positive": true,
+            "return_7d_positive": true,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "USDT",
+            "above_ma_7d": null,
+            "above_ma_30d": null,
+            "return_24h_positive": null,
+            "return_7d_positive": null,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "BNB",
+            "above_ma_7d": true,
+            "above_ma_30d": true,
+            "return_24h_positive": true,
+            "return_7d_positive": true,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "SOL",
+            "above_ma_7d": true,
+            "above_ma_30d": false,
+            "return_24h_positive": true,
+            "return_7d_positive": false,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "XRP",
+            "above_ma_7d": false,
+            "above_ma_30d": true,
+            "return_24h_positive": true,
+            "return_7d_positive": true,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "TRX",
+            "above_ma_7d": true,
+            "above_ma_30d": true,
+            "return_24h_positive": true,
+            "return_7d_positive": true,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "TON",
+            "above_ma_7d": false,
+            "above_ma_30d": false,
+            "return_24h_positive": false,
+            "return_7d_positive": false,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "DOGE",
+            "above_ma_7d": false,
+            "above_ma_30d": false,
+            "return_24h_positive": false,
+            "return_7d_positive": false,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          },
+          {
+            "symbol": "ADA",
+            "above_ma_7d": true,
+            "above_ma_30d": false,
+            "return_24h_positive": true,
+            "return_7d_positive": false,
+            "source_refs": [
+              "source:derived-normalization"
+            ]
+          }
+        ]
+      },
+      "news": [
+        {
+          "news_id": "news-fixture-001",
+          "headline": "Fixture macro and ETF event summary",
+          "summary": "Concise normalized fixture event. No article body, raw page, screenshot or copied document is stored.",
+          "category": "market",
+          "importance": "medium",
+          "sentiment": "mixed",
+          "affected_assets": [
+            "BTC",
+            "ETH"
+          ],
+          "published_at": "2026-07-10T05:00:00.000Z",
+          "retrieved_at": "2026-07-10T06:10:00.000Z",
+          "source_refs": [
+            "source:news-registry"
+          ],
+          "verification_status": "verified",
+          "duplicate_group_id": "news-fixture-group-001"
+        }
+      ],
+      "historical_evidence": [
+        {
+          "evidence_id": "historical-fixture-verified-001",
+          "hypothesis": "neutral_transition",
+          "event_definition": "ETF flow expansion with neutral breadth fixture event",
+          "period_start": "2022-01-01",
+          "period_end": "2026-06-30",
+          "sample_size": 42,
+          "forward_horizons": [
+            "7D",
+            "30D"
+          ],
+          "results": [
+            {
+              "horizon": "7D",
+              "positive_rate": 57.1,
+              "median_return": 1.2,
+              "mean_return": 1.5,
+              "max_drawdown": -4.2,
+              "sample_size": 42,
+              "return_unit": "percent"
+            }
+          ],
+          "limitations": "Fixture historical record; not a live calculation.",
+          "method_version": "fixture-history-v1",
+          "source_refs": [
+            "source:historical-db"
+          ],
+          "status": "verified"
+        }
+      ],
+      "decision_memory": {
+        "status": "unavailable",
+        "previous_report": null,
+        "previous_engine_scores": [],
+        "previous_coin_postures": [],
+        "registered_decisions": [],
+        "weekly_evaluation": {
+          "accuracy": null,
+          "sample_size": null,
+          "status": "unavailable"
+        }
+      },
+      "data_quality": {
+        "overall_coverage": 42,
+        "freshness_score": 100,
+        "source_agreement": 100,
+        "critical_missing_fields": [
+          "$.cmip_runtime_input.market.total_crypto_market_cap",
+          "$.cmip_runtime_input.assets[7].price"
+        ],
+        "stale_fields": [],
+        "conflicts": [
+          "$.cmip_runtime_input.assets[7].identity_status"
+        ],
+        "failed_sources": [],
+        "quality_by_domain": {
+          "market": 90,
+          "assets": 90,
+          "etf": 90,
+          "stablecoins": 90,
+          "derivatives": 90,
+          "options": 90,
+          "macro": 90,
+          "cross_asset": 90,
+          "breadth": 90,
+          "news": 90,
+          "historical_evidence": 90,
+          "decision_memory": 90
+        }
+      }
+    }
+  },
+  "previousReport": null,
+  "execution": {
+    "executionId": "cmip-model-package-fixture-abstain-001",
+    "requestedAt": "2026-07-10T06:40:00.000Z",
+    "mode": "test",
+    "outputLanguage": "fa",
+    "timezone": "Europe/Paris",
+    "reportType": "morning_brief",
+    "requestedHorizons": [
+      "1D",
+      "7D",
+      "30D"
+    ],
+    "webSearchPolicy": "disabled",
+    "historicalPolicy": "provided_or_abstain",
+    "previousReportPolicy": "ignore",
+    "tokenBudgetProfile": "standard"
+  }
+}

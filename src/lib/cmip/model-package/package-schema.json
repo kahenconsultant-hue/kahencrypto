@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cmip.local/model-package/package-schema.v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packageVersion",
+    "packageId",
+    "executionId",
+    "createdAt",
+    "versions",
+    "messages",
+    "outputContract",
+    "toolPolicy",
+    "executionConfig",
+    "contextBudget",
+    "trace",
+    "integrity"
+  ],
+  "properties": {
+    "packageVersion": { "const": "CMIP-MODEL-PACKAGE-1.0" },
+    "packageId": { "type": "string", "minLength": 1 },
+    "executionId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architectureVersion", "outputContractVersion", "runtimeInputVersion", "intelligenceSpecVersion", "normalizationVersion", "promptBuilderVersion"],
+      "properties": {
+        "architectureVersion": { "type": "string" },
+        "outputContractVersion": { "type": "string" },
+        "runtimeInputVersion": { "type": "string" },
+        "intelligenceSpecVersion": { "type": "string" },
+        "normalizationVersion": { "type": "string" },
+        "promptBuilderVersion": { "type": "string" }
+      }
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "$ref": "#/$defs/systemMessage" },
+        { "$ref": "#/$defs/intelligenceMessage" },
+        { "$ref": "#/$defs/outputMessage" },
+        { "$ref": "#/$defs/runtimeMessage" }
+      ]
+    },
+    "outputContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaName", "schemaVersion", "strict", "schema"],
+      "properties": {
+        "schemaName": { "type": "string" },
+        "schemaVersion": { "type": "string" },
+        "strict": { "const": true },
+        "schema": { "type": "object" }
+      }
+    },
+    "toolPolicy": {
+      "type": "object",
+      "required": ["policyVersion", "webSearch"],
+      "additionalProperties": false,
+      "properties": {
+        "policyVersion": { "type": "string" },
+        "webSearch": {
+          "type": "object",
+          "required": ["mode", "allowedPurposes", "forbiddenPurposes", "maxSearchQueries", "requireSourceCitation", "allowNumericalOverride"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["disabled", "context_only", "gap_fill_only", "required_for_freshness"] },
+            "allowedPurposes": { "type": "array", "items": { "type": "string" } },
+            "forbiddenPurposes": { "type": "array", "items": { "type": "string" } },
+            "maxSearchQueries": { "type": "integer", "minimum": 0 },
+            "requireSourceCitation": { "type": "boolean" },
+            "allowNumericalOverride": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "executionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelProfile", "reasoningProfile", "responseFormat", "strictOutput", "temperaturePolicy", "maxOutputTokens", "timeoutBudgetMs", "retryPolicy"],
+      "properties": {
+        "modelProfile": { "enum": ["cmip_primary_reasoning", "cmip_fallback_reasoning", "cmip_validation_repair"] },
+        "reasoningProfile": { "enum": ["standard", "high"] },
+        "responseFormat": { "const": "json_schema" },
+        "strictOutput": { "const": true },
+        "temperaturePolicy": { "enum": ["provider_default", "fixed_zero_if_supported"] },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "timeoutBudgetMs": { "type": "integer", "minimum": 1 },
+        "retryPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxAttempts", "retryOn", "schemaRepairAttempts"],
+          "properties": {
+            "maxAttempts": { "type": "integer", "minimum": 1 },
+            "retryOn": { "type": "array", "items": { "enum": ["transport_error", "rate_limit", "timeout", "schema_invalid"] } },
+            "schemaRepairAttempts": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "contextBudget": { "$ref": "#/$defs/contextBudget" },
+    "trace": { "$ref": "#/$defs/trace" },
+    "integrity": { "$ref": "#/$defs/integrity" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "messageBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "name", "content", "contentHash"],
+      "properties": {
+        "role": { "enum": ["system", "developer", "user"] },
+        "name": { "type": "string" },
+        "content": { "type": "string", "minLength": 1 },
+        "contentHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "systemMessage": { "allOf": [{ "$ref": "#/$defs/messageBase" }, { "type": "object", "properties": { "role": { "const": "system" }, "name": { "const": "cmip_core_system_instructions" } } }] },
+    "intelligenceMessage": { "allOf": [{ "$ref": "#/$defs/messageBase" }, { "type": "object", "properties": { "role": { "const": "developer" }, "name": { "const": "cmip_static_intelligence_specification" } } }] },
+    "outputMessage": { "allOf": [{ "$ref": "#/$defs/messageBase" }, { "type": "object", "properties": { "role": { "const": "developer" }, "name": { "const": "cmip_output_contract_and_response_restrictions" } } }] },
+    "runtimeMessage": { "allOf": [{ "$ref": "#/$defs/messageBase" }, { "type": "object", "properties": { "role": { "const": "user" }, "name": { "const": "cmip_runtime_execution_context" } } }] },
+    "contextBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "estimatedInputTokens", "estimatedStaticTokens", "estimatedRuntimeTokens", "estimatedSchemaTokens", "maxInputTokens", "reservedOutputTokens", "withinBudget", "reductionsApplied"],
+      "properties": {
+        "profile": { "enum": ["compact", "standard", "extended"] },
+        "estimatedInputTokens": { "type": "integer", "minimum": 0 },
+        "estimatedStaticTokens": { "type": "integer", "minimum": 0 },
+        "estimatedRuntimeTokens": { "type": "integer", "minimum": 0 },
+        "estimatedSchemaTokens": { "type": "integer", "minimum": 0 },
+        "maxInputTokens": { "type": "integer", "minimum": 1 },
+        "reservedOutputTokens": { "type": "integer", "minimum": 1 },
+        "withinBudget": { "type": "boolean" },
+        "reductionsApplied": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["buildStartedAt", "buildCompletedAt", "inputIds", "validation", "redactions", "injectionFindings", "contextReductions", "includedSections", "excludedSections", "warnings"],
+      "properties": {
+        "buildStartedAt": { "type": "string", "format": "date-time" },
+        "buildCompletedAt": { "type": "string", "format": "date-time" },
+        "inputIds": { "type": "object" },
+        "validation": { "type": "object" },
+        "redactions": { "type": "array", "items": { "type": "object" } },
+        "injectionFindings": { "type": "array", "items": { "type": "object" } },
+        "contextReductions": { "type": "array", "items": { "type": "object" } },
+        "includedSections": { "type": "array", "items": { "type": "string" } },
+        "excludedSections": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "systemInstructionsHash", "intelligenceContextHash", "runtimeContextHash", "outputSchemaHash", "semanticPackageHash", "instancePackageHash", "fullPackageHash"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "systemInstructionsHash": { "$ref": "#/$defs/hash" },
+        "intelligenceContextHash": { "$ref": "#/$defs/hash" },
+        "runtimeContextHash": { "$ref": "#/$defs/hash" },
+        "outputSchemaHash": { "$ref": "#/$defs/hash" },
+        "semanticPackageHash": { "$ref": "#/$defs/hash" },
+        "instancePackageHash": { "$ref": "#/$defs/hash" },
+        "fullPackageHash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

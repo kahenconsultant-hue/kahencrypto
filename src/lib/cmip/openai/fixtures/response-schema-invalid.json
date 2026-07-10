@@ -1,0 +1,22 @@
+{
+  "output": {
+    "cmip_report": {
+      "meta": {
+        "spec_version": "fixture-invalid"
+      },
+      "decision": {
+        "posture": "maintain_risk",
+        "score": 101,
+        "confidence": 101,
+        "plain_language": "invalid",
+        "model_action": "invalid",
+        "drivers": {
+          "positive": [],
+          "negative": []
+        },
+        "abstention": null
+      }
+    }
+  }
+}
+

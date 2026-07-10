@@ -16,6 +16,8 @@
     "cmip:validate-runtime-input": "tsx scripts/cmip-validate-runtime-input.ts",
     "cmip:normalize-fixture": "tsx scripts/cmip-normalize-fixture.ts",
     "cmip:build-model-package": "tsx scripts/cmip-build-model-package.ts",
+    "cmip:openai-dry-run": "tsx scripts/cmip-openai-dry-run.ts",
+    "cmip:openai-live-smoke": "tsx scripts/cmip-openai-live-smoke.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"
@@ -29,9 +31,11 @@
     "framer-motion": "^12.6.2",
     "lucide-react": "^0.511.0",
     "next": "^15.3.3",
+    "openai": "^6.46.0",
     "pg": "^8.21.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.3.0",
     "zod": "^3.24.4"
   },

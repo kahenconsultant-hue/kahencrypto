@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cmip.local/openai/execution-result-schema.v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "executionVersion",
+    "executionId",
+    "packageId",
+    "packageSemanticHash",
+    "status",
+    "responseId",
+    "model",
+    "serviceTier",
+    "report",
+    "canonicalValid",
+    "errors",
+    "warnings",
+    "usage",
+    "trace",
+    "integrity"
+  ],
+  "properties": {
+    "executionVersion": { "const": "CMIP-OPENAI-EXECUTION-1.0" },
+    "executionId": { "type": "string", "minLength": 1 },
+    "packageId": { "type": "string", "minLength": 1 },
+    "packageSemanticHash": { "$ref": "#/$defs/hash" },
+    "status": { "enum": ["success", "failed", "refused", "incomplete"] },
+    "responseId": { "type": ["string", "null"] },
+    "model": { "type": ["string", "null"] },
+    "serviceTier": { "type": ["string", "null"] },
+    "report": { "type": ["object", "null"] },
+    "canonicalValid": { "type": "boolean" },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/issue" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/issue" } },
+    "usage": { "type": ["object", "null"] },
+    "trace": { "type": "object" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "requestHash", "outputTextHash", "canonicalReportHash", "executionResultHash"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "requestHash": { "$ref": "#/$defs/hash" },
+        "outputTextHash": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "canonicalReportHash": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "executionResultHash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path", "message", "severity", "retryable", "sourceRefs"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error", "critical"] },
+        "retryable": { "type": "boolean" },
+        "sourceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

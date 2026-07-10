@@ -1,0 +1,5 @@
+{
+  "fixture": "valid",
+  "description": "Fake provider emits the canonical Task 001 sample output at runtime."
+}
+

@@ -498,13 +498,15 @@ test("65. model-package source writes no output files", () => {
   assert.doesNotMatch(source, /writeFile|appendFile|createWriteStream/);
 });
 
-test("66. OpenAI SDK dependency is not added", () => {
+test("66. OpenAI SDK is isolated from Task 004 and no extra AI framework dependency is added", () => {
   const pkg = JSON.parse(readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
   };
-  assert.equal(pkg.dependencies?.openai, undefined);
+  assert.equal(typeof pkg.dependencies?.openai, "string");
   assert.equal(pkg.devDependencies?.openai, undefined);
+  assert.equal(pkg.dependencies?.langchain, undefined);
+  assert.equal(pkg.dependencies?.["@langchain/core"], undefined);
 });
 
 test("67. tool policy is contract-only and disables numerical override", () => {

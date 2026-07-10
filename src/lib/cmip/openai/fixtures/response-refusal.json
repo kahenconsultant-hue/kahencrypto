@@ -1,0 +1,7 @@
+{
+  "refusal": {
+    "message": "The fixture model refused to produce output.",
+    "category": "fixture_refusal"
+  }
+}
+

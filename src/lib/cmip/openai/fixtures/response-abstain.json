@@ -1,0 +1,5 @@
+{
+  "fixture": "abstain",
+  "description": "Fake provider emits a valid Task 001-A abstention output at runtime."
+}
+

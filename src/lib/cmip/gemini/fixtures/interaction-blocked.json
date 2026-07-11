@@ -1,0 +1,8 @@
+{
+  "id": "gemini_fixture_blocked",
+  "status": "blocked",
+  "refusal": {
+    "message": "Fixture safety block.",
+    "category": "safety"
+  }
+}

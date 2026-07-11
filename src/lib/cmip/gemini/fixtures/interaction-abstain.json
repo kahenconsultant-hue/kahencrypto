@@ -1,0 +1,6 @@
+{
+  "id": "gemini_fixture_abstain",
+  "status": "completed",
+  "model": "gemini-cmip-fixture",
+  "output_text": "{\"cmip_report\":{}}"
+}

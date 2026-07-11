@@ -1,0 +1,11 @@
+{
+  "id": "gemini_fixture_valid",
+  "status": "completed",
+  "model": "gemini-cmip-fixture",
+  "output_text": "{\"cmip_report\":{}}",
+  "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 420,
+    "total_tokens": 1420
+  }
+}

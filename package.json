@@ -18,12 +18,16 @@
     "cmip:build-model-package": "tsx scripts/cmip-build-model-package.ts",
     "cmip:openai-dry-run": "tsx scripts/cmip-openai-dry-run.ts",
     "cmip:openai-live-smoke": "tsx scripts/cmip-openai-live-smoke.ts",
+    "cmip:gemini-dry-run": "tsx scripts/cmip-gemini-dry-run.ts",
+    "cmip:gemini-live-smoke": "tsx scripts/cmip-gemini-live-smoke.ts",
+    "cmip:provider-compare-dry-run": "tsx scripts/cmip-provider-compare-dry-run.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@fontsource/vazirmatn": "^5.2.8",
+    "@google/genai": "^2.11.0",
     "@supabase/supabase-js": "^2.49.4",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

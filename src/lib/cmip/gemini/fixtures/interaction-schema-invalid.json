@@ -1,0 +1,11 @@
+{
+  "id": "gemini_fixture_schema_invalid",
+  "status": "completed",
+  "output": {
+    "cmip_report": {
+      "decision": {
+        "posture": "maintain_risk"
+      }
+    }
+  }
+}

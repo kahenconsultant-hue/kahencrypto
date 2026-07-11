@@ -6,6 +6,8 @@ import { buildCmipModelExecutionPackage } from "@/lib/cmip/model-package/build-m
 import type { CmipModelPackageBuildRequest } from "@/lib/cmip/model-package/types";
 import { executeCmipModelPackage } from "@/lib/cmip/openai/execute-model-package";
 import { FakeCmipOpenAiProvider } from "@/lib/cmip/openai/provider/fake-provider";
+import { executeCmipGeminiModelPackage } from "@/lib/cmip/gemini/execute-model-package";
+import { FakeCmipGeminiProvider } from "@/lib/cmip/gemini/provider/fake-gemini-provider";
 import { requireAdminAccount } from "@/server/auth/session";
 
 export const runtime = "nodejs";
@@ -14,8 +16,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type FixtureName = "valid" | "partial" | "abstain";
+type PreviewProvider = "openai" | "gemini";
 type PreviewBody = {
   readonly fixture?: FixtureName;
+  readonly provider?: PreviewProvider;
 };
 
 const MAX_BODY_BYTES = 4096;
@@ -41,10 +45,34 @@ export async function POST(request: Request) {
       return json({ ok: false, errors: [{ code: "INVALID_PREVIEW_REQUEST", path: "$" }] }, 400);
     }
     const fixtureName = body.fixture === "partial" || body.fixture === "abstain" || body.fixture === "valid" ? body.fixture : "valid";
+    const providerName = body.provider === "gemini" || body.provider === "openai" ? body.provider : "openai";
     const packageResult = buildCmipModelExecutionPackage(fixtures[fixtureName] as CmipModelPackageBuildRequest);
     if (!packageResult.ok) {
       return json({ ok: false, errors: publicIssues(packageResult.errors) }, 422);
     }
+    if (providerName === "gemini") {
+      const execution = await executeCmipGeminiModelPackage(
+        {
+          modelPackage: packageResult.package,
+          executionMode: "preview",
+        },
+        {
+          provider: new FakeCmipGeminiProvider({ fixtures: [fixtureName === "abstain" ? "abstain" : "valid"] }),
+        },
+      );
+      if (execution.status !== "success") return json({ ok: false, warnings: publicIssues(execution.warnings), errors: publicIssues(execution.errors) }, 422);
+      return json({
+        ok: true,
+        status: execution.status,
+        provider: providerName,
+        providerStatus: execution.provider.rawStatus,
+        canonicalValid: execution.validation.canonicalValid,
+        warnings: publicIssues(execution.warnings),
+        usage: execution.usage,
+        responseId: execution.provider.responseId,
+      }, 200);
+    }
+
     const execution = await executeCmipModelPackage(
       {
         modelPackage: packageResult.package,
@@ -58,6 +86,7 @@ export async function POST(request: Request) {
     return json({
       ok: true,
       status: execution.result.status,
+      provider: providerName,
       providerStatus: execution.result.trace.attempts.at(-1)?.providerStatus ?? null,
       canonicalValid: execution.result.canonicalValid,
       warnings: publicIssues(execution.warnings),
@@ -69,7 +98,7 @@ export async function POST(request: Request) {
   }
 }
 
-function parsePreviewBody(rawBody: string): { readonly valid: true; readonly fixture?: FixtureName } | { readonly valid: false } {
+function parsePreviewBody(rawBody: string): { readonly valid: true; readonly fixture?: FixtureName; readonly provider?: PreviewProvider } | { readonly valid: false } {
   if (!rawBody.trim()) return { valid: true };
   let parsed: unknown;
   try {
@@ -79,9 +108,10 @@ function parsePreviewBody(rawBody: string): { readonly valid: true; readonly fix
   }
   if (!isRecord(parsed)) return { valid: false };
   const keys = Object.keys(parsed);
-  if (keys.some((key) => key !== "fixture")) return { valid: false };
-  if (parsed.fixture === undefined) return { valid: true };
-  if (parsed.fixture === "valid" || parsed.fixture === "partial" || parsed.fixture === "abstain") return { valid: true, fixture: parsed.fixture };
+  if (keys.some((key) => key !== "fixture" && key !== "provider")) return { valid: false };
+  const fixtureValid = parsed.fixture === undefined || parsed.fixture === "valid" || parsed.fixture === "partial" || parsed.fixture === "abstain";
+  const providerValid = parsed.provider === undefined || parsed.provider === "openai" || parsed.provider === "gemini";
+  if (fixtureValid && providerValid) return { valid: true, fixture: parsed.fixture as FixtureName | undefined, provider: parsed.provider as PreviewProvider | undefined };
   return { valid: false };
 }
 

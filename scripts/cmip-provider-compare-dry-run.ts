@@ -23,7 +23,7 @@ async function main() {
   const openaiExecutor: CmipProviderExecutor = {
     execute: async (request) => {
       const result = await executeCmipModelPackage(
-        { modelPackage: request.modelPackage, executionMode: "dry_run" },
+        { modelPackage: request.modelPackage, taskType: "full_report_experimental", executionMode: "dry_run" },
         { provider: new FakeCmipOpenAiProvider({ fixtures: ["valid"] }), env: { CMIP_OPENAI_MODEL_PRIMARY: "gpt-5-cmip-dry-run" } },
       );
       if (!result.ok) throw new Error("Fake OpenAI comparison failed.");
@@ -33,7 +33,7 @@ async function main() {
   const geminiExecutor: CmipProviderExecutor = {
     execute: async (request) => {
       const result = await executeCmipGeminiModelPackage(
-        { modelPackage: request.modelPackage, executionMode: "dry_run" },
+        { modelPackage: request.modelPackage, taskType: "full_report_experimental", executionMode: "dry_run" },
         { provider: new FakeCmipGeminiProvider({ fixtures: ["valid"] }), env: { CMIP_GEMINI_MODEL_PRIMARY: "gemini-cmip-dry-run" } },
       );
       if (result.status !== "success") throw new Error("Fake Gemini comparison failed.");
@@ -42,8 +42,8 @@ async function main() {
   };
 
   const pkg = packageResult.package;
-  const openai = await executeCmipProviderPackage({ modelPackage: pkg, executionMode: "dry_run", selection: { primary: "openai", fallback: null, fallbackPolicy: "disabled" } }, { openai: openaiExecutor, gemini: geminiExecutor });
-  const gemini = await executeCmipProviderPackage({ modelPackage: pkg, executionMode: "dry_run", selection: { primary: "gemini", fallback: null, fallbackPolicy: "disabled" } }, { openai: openaiExecutor, gemini: geminiExecutor });
+  const openai = await executeCmipProviderPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "openai", fallback: null, fallbackPolicy: "disabled" } }, { openai: openaiExecutor, gemini: geminiExecutor });
+  const gemini = await executeCmipProviderPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: null, fallbackPolicy: "disabled" } }, { openai: openaiExecutor, gemini: geminiExecutor });
 
   if (openai.status !== "success" || gemini.status !== "success" || !openai.validation.canonicalValid || !gemini.validation.canonicalValid) {
     console.error("CMIP PROVIDER COMPARISON DRY RUN INVALID");

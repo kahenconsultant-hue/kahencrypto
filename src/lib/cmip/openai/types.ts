@@ -1,4 +1,5 @@
 import type { CmipReportEnvelope } from "../contracts";
+import type { CmipProviderExecutionTaskType } from "../experimental-full-report-ai";
 import type { CmipModelExecutionPackage, CmipModelProfile } from "../model-package";
 import type { CMIP_OPENAI_EXECUTION_STATUSES } from "./constants";
 import type { CmipOpenAiIssue } from "./errors";
@@ -19,6 +20,7 @@ export type CmipOpenAiJsonValue =
 
 export interface CmipOpenAiExecutionRequest {
   readonly modelPackage: CmipModelExecutionPackage;
+  readonly taskType?: CmipProviderExecutionTaskType;
   readonly executionMode: CmipOpenAiExecutionMode;
   readonly allowLiveOpenAiSmoke?: boolean;
 }

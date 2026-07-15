@@ -1,7 +1,6 @@
-import type { CmipReportEnvelope } from "../contracts";
-import { validateCmipReport } from "../contracts/validate-report";
-import { hashCanonicalJson, sha256Hex, stableJsonClone, stableStringify } from "../model-package";
+import { sha256Hex, stableStringify } from "../model-package";
 import { cmipGeminiIssue } from "./errors";
+import { parseCmipGeminiTransportOutput, parseLooseCmipGeminiReportObject } from "./transport";
 import type { CmipGeminiProviderExecutionResponse, CmipGeminiParsedOutput } from "./types";
 
 export function parseCmipGeminiResponse(response: CmipGeminiProviderExecutionResponse): CmipGeminiParsedOutput {
@@ -40,38 +39,7 @@ export function parseCmipGeminiResponse(response: CmipGeminiProviderExecutionRes
     };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(response.outputText);
-  } catch {
-    return {
-      report: null,
-      outputTextHash: sha256Hex(response.outputText),
-      canonicalReportHash: null,
-      jsonParsed: false,
-      errors: [cmipGeminiIssue({ code: "GEMINI_OUTPUT_JSON_INVALID", path: "$.provider.outputText", message: "Gemini output text is not valid JSON.", severity: "error" })],
-    };
-  }
-
-  const validation = validateCmipReport(parsed);
-  if (!validation.valid) {
-    return {
-      report: null,
-      outputTextHash: sha256Hex(response.outputText),
-      canonicalReportHash: null,
-      jsonParsed: true,
-      errors: validation.errors.map((error) => cmipGeminiIssue({ code: "GEMINI_CANONICAL_OUTPUT_INVALID", path: error.path, message: error.message, severity: "error" })),
-    };
-  }
-
-  const report = stableJsonClone(validation.data);
-  return {
-    report,
-    outputTextHash: sha256Hex(response.outputText),
-    canonicalReportHash: hashCanonicalJson(report),
-    jsonParsed: true,
-    errors: [],
-  };
+  return parseCmipGeminiTransportOutput(response.outputText);
 }
 
 export function outputContainsSecretLikeValue(text: string | null): boolean {
@@ -89,12 +57,7 @@ export function numericalValuesChanged(original: unknown, repaired: unknown): bo
 }
 
 export function parseLooseJsonObject(text: string | null): unknown {
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+  return parseLooseCmipGeminiReportObject(text);
 }
 
 export function canonicalOutputText(report: unknown): string {

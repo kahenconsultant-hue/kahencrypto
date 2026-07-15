@@ -58,7 +58,7 @@ function deterministicOptions(provider: CmipOpenAiProvider = new FakeCmipOpenAiP
 }
 
 async function executeValid(provider: CmipOpenAiProvider = new FakeCmipOpenAiProvider({ fixtures: ["valid"] })) {
-  return executeCmipModelPackage({ modelPackage: buildPackage(), executionMode: "dry_run" }, deterministicOptions(provider));
+  return executeCmipModelPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions(provider));
 }
 
 test("1. valid fixture executes through fake provider", async () => {
@@ -70,13 +70,13 @@ test("1. valid fixture executes through fake provider", async () => {
 
 test("2. partial package fixture executes with fake provider", async () => {
   const pkg = buildPackage(partialFixture);
-  const result = await executeCmipModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, deterministicOptions());
+  const result = await executeCmipModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
   assert.equal(result.ok, true);
 });
 
 test("3. abstain fixture context can produce valid abstain output", async () => {
   const pkg = buildPackage(abstainFixture);
-  const result = await executeCmipModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, deterministicOptions(new FakeCmipOpenAiProvider({ fixtures: ["abstain"] })));
+  const result = await executeCmipModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions(new FakeCmipOpenAiProvider({ fixtures: ["abstain"] })));
   assert.equal(result.ok, true);
   assert.equal(result.result.report?.cmip_report.decision.posture, "abstain");
   assert.equal(result.result.report?.cmip_report.decision.score, null);
@@ -85,7 +85,7 @@ test("3. abstain fixture context can produce valid abstain output", async () => 
 test("4. invalid model package fails before provider call", async () => {
   const pkg = stableJsonClone(buildPackage()) as Record<string, unknown>;
   pkg.messages = [];
-  const result = await executeCmipModelPackage({ modelPackage: pkg as CmipModelExecutionPackage, executionMode: "dry_run" }, deterministicOptions());
+  const result = await executeCmipModelPackage({ modelPackage: pkg as CmipModelExecutionPackage, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
   assert.equal(result.ok, false);
   assert.equal(result.errors[0].code, "MODEL_PACKAGE_INVALID");
 });
@@ -93,13 +93,16 @@ test("4. invalid model package fails before provider call", async () => {
 test("5. package integrity mismatch fails before provider call", async () => {
   const pkg = stableJsonClone(buildPackage()) as CmipModelExecutionPackage & { messages: Array<{ content: string }> };
   pkg.messages[0].content = `${pkg.messages[0].content}\nchanged`;
-  const result = await executeCmipModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, deterministicOptions());
+  const result = await executeCmipModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
   assert.equal(result.ok, false);
   assert.equal(result.errors[0].code, "MODEL_PACKAGE_INTEGRITY_INVALID");
 });
 
 test("6. missing OpenAI config fails live execution", async () => {
-  const result = await executeCmipModelPackage({ modelPackage: buildPackage(), executionMode: "preview" }, { env: {}, now: () => "2026-07-10T07:00:00.000Z" });
+  const result = await executeCmipModelPackage(
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "preview" },
+    { env: { CMIP_ENABLE_EXPERIMENTAL_FULL_REPORT_AI: "true" }, now: () => "2026-07-10T07:00:00.000Z" },
+  );
   assert.equal(result.ok, false);
   assert.equal(result.errors.some((error) => error.code === "OPENAI_CONFIG_MISSING"), true);
 });
@@ -112,15 +115,15 @@ test("7. missing primary model fails live execution", async () => {
 
 test("8. live smoke requires request and environment gates", async () => {
   const result = await executeCmipModelPackage(
-    { modelPackage: buildPackage(), executionMode: "live_smoke", allowLiveOpenAiSmoke: false },
-    { env: { OPENAI_API_KEY: "sk-test-placeholder-with-enough-length", CMIP_OPENAI_MODEL_PRIMARY: "gpt-5-test" }, now: () => "2026-07-10T07:00:00.000Z" },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "live_smoke", allowLiveOpenAiSmoke: false },
+    { env: { OPENAI_API_KEY: "sk-test-placeholder-with-enough-length", CMIP_OPENAI_MODEL_PRIMARY: "gpt-5-test", CMIP_ENABLE_EXPERIMENTAL_FULL_REPORT_AI: "true" }, now: () => "2026-07-10T07:00:00.000Z" },
   );
   assert.equal(result.ok, false);
   assert.equal(result.errors[0].code, "OPENAI_LIVE_SMOKE_NOT_ALLOWED");
 });
 
 test("9. fake provider bypasses env secrets for dry run", async () => {
-  const result = await executeCmipModelPackage({ modelPackage: buildPackage(), executionMode: "dry_run" }, deterministicOptions());
+  const result = await executeCmipModelPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
   assert.equal(result.ok, true);
 });
 
@@ -185,7 +188,7 @@ test("21. output schema hash matches canonical Task 001 schema", () => {
 test("22. output schema mismatch blocks execution", async () => {
   const pkg = stableJsonClone(buildPackage()) as CmipModelExecutionPackage & { outputContract: { schema: Record<string, unknown> } };
   pkg.outputContract.schema = { ...pkg.outputContract.schema, title: "mutated" };
-  const result = await executeCmipModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, deterministicOptions());
+  const result = await executeCmipModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
   assert.equal(result.ok, false);
   assert.equal(result.errors.some((error) => error.code === "MODEL_PACKAGE_INTEGRITY_INVALID" || error.code === "OUTPUT_SCHEMA_MISMATCH"), true);
 });
@@ -371,7 +374,7 @@ test("50. tool sources are captured when web search is mapped", async () => {
   mutable.toolPolicy.webSearch.maxSearchQueries = 1;
   refreshPackageHashes(mutable);
   const result = await executeCmipModelPackage(
-    { modelPackage: mutable, executionMode: "dry_run" },
+    { modelPackage: mutable, taskType: "full_report_experimental", executionMode: "dry_run" },
     {
       ...deterministicOptions(new FakeCmipOpenAiProvider({ fixtures: ["valid"] })),
       env: {
@@ -402,8 +405,8 @@ test("53. meaningful package value change changes request hash", async () => {
   changed.messages[3].content = changed.messages[3].content.replace("CMIP RUNTIME EXECUTION REQUEST", "CMIP RUNTIME EXECUTION REQUEST CHANGED");
   changed.messages[3].contentHash = sha256Hex(changed.messages[3].content);
   refreshPackageHashes(changed);
-  const a = await executeCmipModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, deterministicOptions());
-  const b = await executeCmipModelPackage({ modelPackage: changed, executionMode: "dry_run" }, deterministicOptions());
+  const a = await executeCmipModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
+  const b = await executeCmipModelPackage({ modelPackage: changed, taskType: "full_report_experimental", executionMode: "dry_run" }, deterministicOptions());
   assert.equal(a.ok && b.ok && a.result.integrity.requestHash !== b.result.integrity.requestHash, true);
 });
 

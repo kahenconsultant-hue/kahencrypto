@@ -35,6 +35,7 @@ async function main() {
 
   const result = await executeCmipGeminiModelPackage({
     modelPackage: packageResult.package,
+    taskType: "full_report_experimental",
     executionMode: "live_smoke",
     allowLiveGeminiSmoke: true,
   });

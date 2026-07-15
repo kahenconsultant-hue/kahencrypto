@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import validFixture from "../src/lib/cmip/model-package/fixtures/package-input-valid.json";
 import outputSchema from "../src/lib/cmip/contracts/output-schema.json";
+import { CMIP_OUTPUT_SCHEMA_VERSION } from "../src/lib/cmip/contracts/constants";
 import { validateCmipReport } from "../src/lib/cmip/contracts/validate-report";
 import { buildCmipModelExecutionPackage } from "../src/lib/cmip/model-package/build-model-package";
 import type { CmipModelExecutionPackage, CmipModelPackageBuildRequest } from "../src/lib/cmip/model-package/types";
@@ -20,15 +23,21 @@ import { mapCmipPackageToGeminiInteractionRequest } from "../src/lib/cmip/gemini
 import { mapCmipGeminiTools } from "../src/lib/cmip/gemini/source-policy";
 import { FakeCmipGeminiProvider } from "../src/lib/cmip/gemini/provider/fake-gemini-provider";
 import { mapGeminiInteraction } from "../src/lib/cmip/gemini/provider/gemini-provider";
+import { buildCmipGeminiTransportEnvelope, CMIP_GEMINI_TRANSPORT_SCHEMA, CMIP_GEMINI_TRANSPORT_SCHEMA_BYTE_BUDGET, parseCmipGeminiTransportOutput, validateCmipGeminiTransportEnvelope } from "../src/lib/cmip/gemini/transport";
 import { parseCmipGeminiResponse, numericalValuesChanged, outputContainsSecretLikeValue } from "../src/lib/cmip/gemini/response-parser";
 import { normalizeCmipGeminiUsage } from "../src/lib/cmip/gemini/usage";
 import { classifyGeminiProviderException, deterministicGeminiRetryDelayMs, isCmipGeminiRetryable } from "../src/lib/cmip/gemini/retry";
 import { runGeminiWithTimeout } from "../src/lib/cmip/gemini/timeout";
 import { validateCmipGeminiExecutionResult } from "../src/lib/cmip/gemini/validate-execution-result";
+import { createOpenAiProviderSchema } from "../src/lib/cmip/openai/schema-compatibility";
+import { buildAbstainOutput } from "../src/lib/cmip/openai/provider/fake-provider";
 import executionResultSchema from "../src/lib/cmip/gemini/execution-result-schema.json";
+import type { CmipReportEnvelope } from "../src/lib/cmip/contracts";
+import type { CmipGeminiProviderExecutionResponse } from "../src/lib/cmip/gemini/types";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const fixedNow = "2026-07-10T07:00:00.000Z";
+type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] };
 
 function buildPackage(input: unknown = validFixture): CmipModelExecutionPackage {
   const result = buildCmipModelExecutionPackage(input as CmipModelPackageBuildRequest);
@@ -51,7 +60,7 @@ function geminiEnv(extra: Partial<Record<string, string>> = {}) {
 
 async function execGemini(fixtures: ConstructorParameters<typeof FakeCmipGeminiProvider>[0]["fixtures"], env = geminiEnv()) {
   return executeCmipGeminiModelPackage(
-    { modelPackage: buildPackage(), executionMode: "dry_run" },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run" },
     {
       provider: new FakeCmipGeminiProvider({ fixtures }),
       env,
@@ -94,6 +103,49 @@ function walkSource(dir: string): string {
   return files.map((file) => readFileSync(file, "utf8")).join("\n");
 }
 
+function withTempEnvFile(contents: string, run: (envFile: string) => void) {
+  const dir = mkdtempSync(join(tmpdir(), "cmip-gemini-env-"));
+  const envFile = join(dir, ".env.local");
+  writeFileSync(envFile, contents, "utf8");
+  try {
+    run(envFile);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function runLiveSmokeGateWithEnvFile(envFile: string) {
+  return spawnSync(process.execPath, ["--env-file", envFile, "--import", "tsx", "scripts/cmip-gemini-live-smoke.ts"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { PATH: process.env.PATH ?? "" },
+  });
+}
+
+function sampleReport(): Mutable<CmipReportEnvelope> {
+  return stableJsonClone(awaitImportSample()) as Mutable<CmipReportEnvelope>;
+}
+
+function completedGeminiResponse(outputText: string): CmipGeminiProviderExecutionResponse {
+  return {
+    responseId: "gemini_transport_test",
+    status: "completed",
+    model: "gemini-cmip-test",
+    serviceTier: null,
+    outputText,
+    refusal: null,
+    incompleteDetails: null,
+    error: null,
+    usage: null,
+    toolCalls: 0,
+    toolSources: [],
+  };
+}
+
+function parseTransportOutput(output: unknown) {
+  return parseCmipGeminiResponse(completedGeminiResponse(typeof output === "string" ? output : JSON.stringify(output)));
+}
+
 test("1. valid Gemini fixture builds provider-neutral package result", async () => {
   const result = await execGemini(["valid"]);
   assert.equal(result.status, "success");
@@ -113,7 +165,7 @@ test("3. runtime package preserves abstain-ready context", () => {
 test("4. invalid runtime model package fails closed", async () => {
   const pkg = stableJsonClone(buildPackage()) as unknown as CmipModelExecutionPackage & { messages: unknown[] };
   pkg.messages = [];
-  const result = await executeCmipGeminiModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider(), env: geminiEnv() });
+  const result = await executeCmipGeminiModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider(), env: geminiEnv() });
   assert.equal(result.status, "failed");
   assert.equal(result.errors.some((error) => error.code === "MODEL_PACKAGE_INVALID"), true);
 });
@@ -187,6 +239,38 @@ test("17. Gemini request uses store=false", () => {
   assert.equal(mappedRequest().body.store, false);
 });
 
+test("17a. Gemini AI Studio request omits Enterprise-only labels", () => {
+  assert.equal(Object.hasOwn(mappedRequest().body as unknown as Record<string, unknown>, "labels"), false);
+});
+
+test("17b. Gemini AI Studio request omits unsupported thinking_config", () => {
+  assert.equal(Object.hasOwn(mappedRequest().body.generation_config as unknown as Record<string, unknown>, "thinking_config"), false);
+});
+
+test("17c. Gemini provider request uses compact transport schema", () => {
+  const schema = mappedRequest().body.response_format.schema as { required?: string[]; properties?: Record<string, unknown> };
+  assert.deepEqual(schema.required, ["schema_version", "cmip_report"]);
+  assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ["cmip_report", "schema_version"]);
+});
+
+test("17d. full Task 001 schema is not sent in Gemini response_format", () => {
+  const schema = mappedRequest().body.response_format.schema as { properties?: Record<string, unknown> };
+  const cmipReportSchema = (schema.properties?.cmip_report ?? {}) as Record<string, unknown>;
+  const providerSchemaText = JSON.stringify(mappedRequest().body.response_format.schema);
+  assert.equal(Object.hasOwn(cmipReportSchema, "properties"), false);
+  assert.doesNotMatch(providerSchemaText, /engine_scores|decision_memory|"audit"/);
+  assert.notEqual(hashCanonicalJson(mappedRequest().body.response_format.schema), hashCanonicalJson(outputSchema));
+});
+
+test("17e. canonical schema remains present in trusted output instructions", () => {
+  const input = mappedRequest().body.input;
+  assert.match(input, /CMIP OUTPUT CONTRACT AND RESPONSE RESTRICTIONS/);
+  assert.match(input, /"cmip_report"/);
+  assert.match(input, /GEMINI COMPACT CANONICAL-ROOT TRANSPORT REQUIREMENT/);
+  assert.match(input, /Do not return a property named report/);
+  assert.match(input, /The application will reconstruct/);
+});
+
 test("18. no previous interaction state is used", () => {
   assert.equal(Object.hasOwn(mappedRequest().body as unknown as Record<string, unknown>, "previous_interaction_id"), false);
 });
@@ -210,22 +294,209 @@ test("22. provider schema projection is deterministic", () => {
 });
 
 test("23. schema hash is stable", () => {
-  assert.equal(createGeminiProviderSchema(outputSchema as Record<string, unknown>).canonicalSchemaHash, hashCanonicalJson(outputSchema));
+  const schema = createGeminiProviderSchema(outputSchema as Record<string, unknown>);
+  assert.equal(schema.canonicalSchemaHash, hashCanonicalJson(outputSchema));
+  assert.equal(schema.providerTransportSchemaHash, hashCanonicalJson(CMIP_GEMINI_TRANSPORT_SCHEMA));
+  assert.equal(schema.transportMode, "compact_canonical_root_v3");
+  assert.equal(schema.canonicalPostValidationRequired, true);
+  assert.equal(schema.reconstructedEnvelope, true);
+  assert.equal(schema.transformedKeywords.some((item) => item.providerRepresentation.includes("application reconstructs canonical envelope")), true);
 });
 
-test("24. required fields are preserved", () => {
+test("24. compact transport required fields are preserved", () => {
   const schema = createGeminiProviderSchema(outputSchema as Record<string, unknown>).providerSchema;
-  assert.deepEqual(schema.required, ["cmip_report"]);
+  assert.deepEqual(schema.required, ["schema_version", "cmip_report"]);
 });
 
-test("25. enum values are preserved", () => {
+test("25. compact transport schema version enum is preserved", () => {
   const schema = createGeminiProviderSchema(outputSchema as Record<string, unknown>).providerSchema;
-  assert.match(JSON.stringify(schema), /increase_selective_risk/);
-  assert.match(JSON.stringify(schema), /abstain/);
+  assert.match(JSON.stringify(schema), new RegExp(CMIP_OUTPUT_SCHEMA_VERSION));
 });
 
-test("26. abstain contract is preserved", () => {
-  assert.match(JSON.stringify(createGeminiProviderSchema(outputSchema as Record<string, unknown>).providerSchema), /abstention/);
+test("26. abstain contract is preserved in trusted canonical instructions", () => {
+  assert.match(mappedRequest().body.input, /abstention/);
+});
+
+test("26a. compact transport schema compiles and validates a valid envelope", () => {
+  const envelope = buildCmipGeminiTransportEnvelope(awaitImportSample());
+  assert.equal(validateCmipGeminiTransportEnvelope(envelope).valid, true);
+});
+
+test("26b. compact transport schema stays below the byte-size budget", () => {
+  assert.ok(Buffer.byteLength(JSON.stringify(CMIP_GEMINI_TRANSPORT_SCHEMA), "utf8") < CMIP_GEMINI_TRANSPORT_SCHEMA_BYTE_BUDGET);
+});
+
+test("26c. valid canonical-root transport envelope succeeds", () => {
+  const output = JSON.stringify(buildCmipGeminiTransportEnvelope(awaitImportSample()));
+  const parsed = parseTransportOutput(output);
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.report?.cmip_report.meta.schema_version, CMIP_OUTPUT_SCHEMA_VERSION);
+});
+
+test("26d. valid abstention report inside canonical-root transport succeeds", () => {
+  const output = JSON.stringify(buildCmipGeminiTransportEnvelope(buildAbstainOutput()));
+  const parsed = parseTransportOutput(output);
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.report?.cmip_report.decision.posture, "abstain");
+});
+
+test("26e. invalid transport JSON fails", () => {
+  const parsed = parseTransportOutput("{not-json");
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_TRANSPORT_ENVELOPE_INVALID"), true);
+});
+
+test("26f. missing cmip_report fails", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CMIP_REPORT_MISSING"), true);
+});
+
+test("26g. report property is rejected", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, report: { cmip_report: {} } });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CMIP_REPORT_MISSING" || error.code === "GEMINI_TRANSPORT_ENVELOPE_INVALID"), true);
+});
+
+test("26h. wrong transport schema_version fails", () => {
+  const parsed = parseTransportOutput({ schema_version: "CMIP-REPORT-1.0", cmip_report: {} });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_TRANSPORT_VERSION_MISMATCH"), true);
+});
+
+test("26i. null cmip_report fails", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: null });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CMIP_REPORT_INVALID"), true);
+});
+
+test("26j. string cmip_report fails", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: JSON.stringify({ meta: {} }) });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CMIP_REPORT_INVALID"), true);
+});
+
+test("26k. array cmip_report fails", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: [] });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CMIP_REPORT_INVALID"), true);
+});
+
+test("26l. nested report wrapper fails", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, report: { cmip_report: sampleReport().cmip_report } });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CMIP_REPORT_MISSING" || error.code === "GEMINI_TRANSPORT_ENVELOPE_INVALID"), true);
+});
+
+test("26m. double nested cmip_report fails canonical validation", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: { cmip_report: sampleReport().cmip_report } });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CANONICAL_OUTPUT_INVALID"), true);
+});
+
+test("26n. valid inner cmip_report is reconstructed into canonical envelope", () => {
+  const report = sampleReport();
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: report.cmip_report });
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(validateCmipReport({ cmip_report: report.cmip_report }).valid, true);
+  assert.equal(parsed.report?.cmip_report.meta.schema_version, CMIP_OUTPUT_SCHEMA_VERSION);
+});
+
+test("26o. canonically invalid inner cmip_report fails", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: {} });
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CANONICAL_OUTPUT_INVALID"), true);
+});
+
+test("26p. missing one of ten assets in inner cmip_report fails", () => {
+  const report = sampleReport();
+  report.cmip_report.coins = report.cmip_report.coins.filter((coin) => coin.symbol !== "TON");
+  const parsed = parseTransportOutput(JSON.stringify(buildCmipGeminiTransportEnvelope(report)));
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CANONICAL_OUTPUT_INVALID"), true);
+});
+
+test("26q. invalid abstention semantics in inner cmip_report fail", () => {
+  const report = sampleReport();
+  report.cmip_report.decision.posture = "abstain";
+  report.cmip_report.decision.score = null;
+  report.cmip_report.decision.abstention = null;
+  const parsed = parseTransportOutput(JSON.stringify(buildCmipGeminiTransportEnvelope(report)));
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CANONICAL_OUTPUT_INVALID"), true);
+});
+
+test("26r. missing source reference in inner cmip_report fails", () => {
+  const report = sampleReport();
+  report.cmip_report.reasons[0].source_refs = ["missing-source-ref"];
+  const parsed = parseTransportOutput(JSON.stringify(buildCmipGeminiTransportEnvelope(report)));
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CANONICAL_OUTPUT_INVALID"), true);
+});
+
+test("26s. additional canonical properties fail", () => {
+  const report = sampleReport() as Mutable<CmipReportEnvelope> & { cmip_report: Mutable<CmipReportEnvelope["cmip_report"]> & { extra_field?: string } };
+  report.cmip_report.extra_field = "not allowed";
+  const parsed = parseTransportOutput(JSON.stringify(buildCmipGeminiTransportEnvelope(report)));
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_CANONICAL_OUTPUT_INVALID"), true);
+});
+
+test("26t. Gemini transport validity alone cannot produce success", () => {
+  const transport = { schema_version: CMIP_OUTPUT_SCHEMA_VERSION, cmip_report: {} };
+  const parsed = parseTransportOutput(JSON.stringify(transport));
+  assert.equal(validateCmipGeminiTransportEnvelope(transport).valid, true);
+  assert.equal(parsed.report, null);
+});
+
+test("26u. OpenAI provider schema still uses the canonical report schema", () => {
+  const openai = createOpenAiProviderSchema(outputSchema as Record<string, unknown>).schema;
+  assert.match(JSON.stringify(openai), /cmip_report/);
+  assert.match(JSON.stringify(openai), /engine_scores/);
+});
+
+test("26v. same report produces deterministic transport validation results", () => {
+  const output = JSON.stringify(buildCmipGeminiTransportEnvelope(awaitImportSample()));
+  assert.deepEqual(parseCmipGeminiTransportOutput(output), parseCmipGeminiTransportOutput(output));
+});
+
+test("26w. transport validation does not mutate output", () => {
+  const envelope = buildCmipGeminiTransportEnvelope(awaitImportSample());
+  const before = JSON.stringify(envelope);
+  validateCmipGeminiTransportEnvelope(envelope);
+  assert.equal(JSON.stringify(envelope), before);
+});
+
+test("26x. only one outer JSON parse occurs for a valid canonical-root envelope", () => {
+  const transportSource = source(["src/lib/cmip/gemini/transport.ts"]);
+  const start = transportSource.indexOf("export function parseCmipGeminiTransportOutput");
+  const end = transportSource.indexOf("export function parseLooseCmipGeminiReportObject");
+  const productionParserSource = transportSource.slice(start, end);
+  assert.equal((productionParserSource.match(/JSON\.parse\(outputText\)/g) ?? []).length, 1);
+  assert.doesNotMatch(productionParserSource, /JSON\.parse\(transportValidation\.envelope\.cmip_report/);
+});
+
+test("26y. production transport path has no nested JSON-string parsing", () => {
+  const transportSource = source(["src/lib/cmip/gemini/transport.ts"]);
+  assert.doesNotMatch(transportSource, /report_json/);
+  assert.doesNotMatch(transportSource, /JSON\.parse\(validated\.envelope\.cmip_report/);
+});
+
+test("26z. Markdown fenced transport output is not stripped", () => {
+  const output = JSON.stringify(buildCmipGeminiTransportEnvelope(awaitImportSample()));
+  const parsed = parseTransportOutput(`\`\`\`json\n${output}\n\`\`\``);
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_TRANSPORT_ENVELOPE_INVALID"), true);
+});
+
+test("26aa. transport parser performs no regex repair", () => {
+  const output = `${JSON.stringify(buildCmipGeminiTransportEnvelope(awaitImportSample()))}\nextra`;
+  const parsed = parseTransportOutput(output);
+  assert.equal(parsed.errors.some((error) => error.code === "GEMINI_TRANSPORT_ENVELOPE_INVALID"), true);
+});
+
+test("26ab. no arbitrary unwrapping or root repair exists", () => {
+  const parsed = parseTransportOutput({ schema_version: CMIP_OUTPUT_SCHEMA_VERSION, report: { cmip_report: sampleReport().cmip_report } });
+  assert.equal(parsed.report, null);
+});
+
+test("26ac. repair uses compact_canonical_root_v3 transport", async () => {
+  const result = await execGemini(["schema_invalid", "valid"]);
+  assert.equal(result.validation.repairAttempted, true);
+  assert.equal(result.trace.providerTrace?.schemaCompatibility.transportMode, "compact_canonical_root_v3");
+  assert.equal(result.status, "success");
+});
+
+test("26ad. full canonical schema is never passed to Gemini response_format", () => {
+  const schema = mappedRequest().body.response_format.schema;
+  assert.equal(Object.hasOwn(schema, "$defs"), false);
+  const cmipReportSchema = ((schema as { properties?: Record<string, unknown> }).properties ?? {}).cmip_report as Record<string, unknown>;
+  assert.equal(Object.hasOwn(cmipReportSchema ?? {}, "properties"), false);
 });
 
 test("27. unsupported keyword is recorded", () => {
@@ -237,7 +508,7 @@ test("27. unsupported keyword is recorded", () => {
 test("28. unsafe weakening blocks execution", async () => {
   const pkg = stableJsonClone(buildPackage()) as unknown as CmipModelExecutionPackage & { outputContract: { schema: Record<string, unknown> } };
   pkg.outputContract.schema = { type: "object", patternProperties: { "^x": { type: "string" } } };
-  const result = await executeCmipGeminiModelPackage({ modelPackage: pkg, executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider(), env: geminiEnv() });
+  const result = await executeCmipGeminiModelPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider(), env: geminiEnv() });
   assert.equal(result.status, "failed");
 });
 
@@ -307,7 +578,7 @@ test("45. missing output returns controlled error", async () => {
 
 test("46. invalid JSON returns controlled error", async () => {
   const result = await execGemini(["invalid_json"]);
-  assert.equal(result.errors.some((error) => error.code === "GEMINI_OUTPUT_JSON_INVALID"), true);
+  assert.equal(result.errors.some((error) => error.code === "GEMINI_TRANSPORT_ENVELOPE_INVALID"), true);
 });
 
 test("47. provider response ID is captured", async () => {
@@ -394,7 +665,7 @@ test("65. retry attempts are bounded", async () => {
 });
 
 test("66. jitter is injectable", async () => {
-  const result = await executeCmipGeminiModelPackage({ modelPackage: buildPackage(), executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider({ fixtures: ["rate_limit", "valid"] }), env: geminiEnv(), now: () => fixedNow, sleepMs: async () => undefined, jitterMs: () => 7 });
+  const result = await executeCmipGeminiModelPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider({ fixtures: ["rate_limit", "valid"] }), env: geminiEnv(), now: () => fixedNow, sleepMs: async () => undefined, jitterMs: () => 7 });
   assert.equal(result.attempts[0].retryDelayMs, 257);
 });
 
@@ -455,78 +726,159 @@ test("79. live smoke refuses without allow flag", () => {
   assert.match(source(["scripts/cmip-gemini-live-smoke.ts"]), /CMIP_ALLOW_LIVE_GEMINI_SMOKE/);
 });
 
-test("80. live smoke refuses without key", () => {
+test("80. package live smoke command explicitly loads .env.local", () => {
+  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+  assert.equal(pkg.scripts?.["cmip:gemini-live-smoke"], "node --env-file=.env.local --import tsx scripts/cmip-gemini-live-smoke.ts");
+});
+
+test("81. Node env-file exposes smoke env values to a standalone process", () => {
+  withTempEnvFile(
+    [
+      "GEMINI_API_KEY=GeminiSmokeSecretShouldNeverPrint",
+      "CMIP_GEMINI_MODEL_PRIMARY=gemini-3.5-flash",
+      "CMIP_ALLOW_LIVE_GEMINI_SMOKE=true",
+      "CMIP_GEMINI_ENABLE_GOOGLE_SEARCH=false",
+    ].join("\n"),
+    (envFile) => {
+      const output = execFileSync(
+        process.execPath,
+        [
+          "--env-file",
+          envFile,
+          "-e",
+          "process.stdout.write(`${Boolean(process.env.GEMINI_API_KEY)}|${process.env.CMIP_GEMINI_MODEL_PRIMARY}|${process.env.CMIP_ALLOW_LIVE_GEMINI_SMOKE}|${process.env.CMIP_GEMINI_ENABLE_GOOGLE_SEARCH}`)",
+        ],
+        { encoding: "utf8", env: { PATH: process.env.PATH ?? "" } },
+      );
+      assert.equal(output, "true|gemini-3.5-flash|true|false");
+      assert.doesNotMatch(output, /GeminiSmokeSecretShouldNeverPrint/);
+    },
+  );
+});
+
+test("82. live smoke without allow flag exits before provider execution", () => {
+  withTempEnvFile(
+    [
+      "GEMINI_API_KEY=GeminiSmokeSecretShouldNeverPrint",
+      "CMIP_GEMINI_MODEL_PRIMARY=gemini-3.5-flash",
+      "CMIP_GEMINI_ENABLE_GOOGLE_SEARCH=false",
+    ].join("\n"),
+    (envFile) => {
+      const result = runLiveSmokeGateWithEnvFile(envFile);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /CMIP GEMINI LIVE SMOKE BLOCKED/);
+      assert.match(result.stderr, /CMIP_ALLOW_LIVE_GEMINI_SMOKE=true/);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /GeminiSmokeSecretShouldNeverPrint/);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /CMIP GEMINI RESPONSE ID/);
+    },
+  );
+});
+
+test("83. live smoke with missing key exits before provider execution", () => {
+  withTempEnvFile(
+    [
+      "CMIP_ALLOW_LIVE_GEMINI_SMOKE=true",
+      "CMIP_GEMINI_MODEL_PRIMARY=gemini-3.5-flash",
+      "CMIP_GEMINI_ENABLE_GOOGLE_SEARCH=false",
+    ].join("\n"),
+    (envFile) => {
+      const result = runLiveSmokeGateWithEnvFile(envFile);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /GEMINI_API_KEY is required/);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /CMIP GEMINI RESPONSE ID/);
+    },
+  );
+});
+
+test("84. live smoke with missing model exits before provider execution", () => {
+  withTempEnvFile(
+    [
+      "GEMINI_API_KEY=GeminiSmokeSecretShouldNeverPrint",
+      "CMIP_ALLOW_LIVE_GEMINI_SMOKE=true",
+      "CMIP_GEMINI_ENABLE_GOOGLE_SEARCH=false",
+    ].join("\n"),
+    (envFile) => {
+      const result = runLiveSmokeGateWithEnvFile(envFile);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /CMIP_GEMINI_MODEL_PRIMARY is required/);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /GeminiSmokeSecretShouldNeverPrint/);
+      assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /CMIP GEMINI RESPONSE ID/);
+    },
+  );
+});
+
+test("85. live smoke refuses without key", () => {
   assert.match(source(["scripts/cmip-gemini-live-smoke.ts"]), /GEMINI_API_KEY is required/);
 });
 
-test("81. live smoke refuses without model", () => {
+test("86. live smoke refuses without model", () => {
   assert.match(source(["scripts/cmip-gemini-live-smoke.ts"]), /CMIP_GEMINI_MODEL_PRIMARY is required/);
 });
 
-test("82. live smoke never runs in tests", () => {
+test("87. live smoke never runs in tests", () => {
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
   assert.doesNotMatch(pkg.scripts?.test ?? "", /gemini-live-smoke/);
 });
 
-test("83. Gemini modules write no filesystem output", () => {
+test("88. Gemini modules write no filesystem output", () => {
   assert.doesNotMatch(walkSource("src/lib/cmip/gemini"), /writeFile|appendFile|mkdir|createWriteStream/);
 });
 
-test("84. Gemini modules perform no DB writes", () => {
+test("89. Gemini modules perform no DB writes", () => {
   assert.doesNotMatch(walkSource("src/lib/cmip/gemini"), /supabase|insert\(|upsert\(|prisma|pg\./i);
 });
 
-test("85. Gemini modules do not publish reports", () => {
+test("90. Gemini modules do not publish reports", () => {
   assert.doesNotMatch(walkSource("src/lib/cmip/gemini"), /wordpress|telegram|sendEmail|publicationTarget/i);
 });
 
-test("86. Gemini modules create no cron", () => {
+test("91. Gemini modules create no cron", () => {
   assert.doesNotMatch(walkSource("src/lib/cmip/gemini"), /cron|schedule/i);
 });
 
-test("87. no browser-side Gemini code exists", () => {
+test("92. no browser-side Gemini code exists", () => {
   assert.doesNotMatch(walkSource("src/app"), /@google\/genai/);
 });
 
-test("88. existing canonical contracts still pass", () => {
+test("93. existing canonical contracts still pass", () => {
   assert.equal(validateCmipReport(stableJsonClone((awaitImportSample()))).valid, true);
 });
 
-test("89. production package validates without Gemini key", async () => {
-  const result = await executeCmipGeminiModelPackage({ modelPackage: buildPackage(), executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider(), env: {} });
+test("94. production package validates without Gemini key", async () => {
+  const result = await executeCmipGeminiModelPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run" }, { provider: new FakeCmipGeminiProvider(), env: {} });
   assert.equal(result.status, "success");
 });
 
-test("90. canonical result schema rejects provider statuses as canonical status", async () => {
+test("95. canonical result schema rejects provider statuses as canonical status", async () => {
   const result = await execGemini(["valid"]);
   for (const status of ["completed", "cancelled", "queued", "in_progress"]) {
     assert.equal(validateCmipGeminiExecutionResult({ ...result, status }).valid, false, status);
   }
 });
 
-test("91. package schema Draft 2020-12 enum is canonical", () => {
+test("96. package schema Draft 2020-12 enum is canonical", () => {
   assert.deepEqual((executionResultSchema as { properties: { status: { enum: string[] } } }).properties.status.enum, ["success", "failed", "refused", "incomplete"]);
 });
 
-test("92. Task 002 runtime input remains valid", () => {
+test("97. Task 002 runtime input remains valid", () => {
   assert.equal(validateCmipRuntimeInput((validFixture as CmipModelPackageBuildRequest).runtimeInput).valid, true);
 });
 
-test("93. Task 2.5 version remains visible", () => {
+test("98. Task 2.5 version remains visible", () => {
   assert.match(JSON.stringify(buildPackage().versions), new RegExp(CMIP_INTELLIGENCE_SPEC_VERSION));
 });
 
-test("94. official Google SDK dependency is isolated to Gemini client", () => {
+test("99. official Google SDK dependency is isolated to Gemini client", () => {
   assert.match(source(["src/lib/cmip/gemini/client.ts"]), /@google\/genai/);
 });
 
-test("95. OpenAI SDK remains installed and referenced", () => {
+test("100. OpenAI SDK remains installed and referenced", () => {
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { dependencies?: Record<string, string> };
   assert.equal(typeof pkg.dependencies?.openai, "string");
 });
 
-test("96. Gemini API key is never exposed in result errors", async () => {
-  const result = await executeCmipGeminiModelPackage({ modelPackage: buildPackage(), executionMode: "preview" }, { env: { GEMINI_API_KEY: "AIzaSafePlaceholderNotARealSecret" } });
+test("101. Gemini API key is never exposed in result errors", async () => {
+  const result = await executeCmipGeminiModelPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "preview" }, { env: { GEMINI_API_KEY: "AIzaSafePlaceholderNotARealSecret" } });
   assert.doesNotMatch(JSON.stringify(result), /AIzaSafePlaceholder/);
 });
 

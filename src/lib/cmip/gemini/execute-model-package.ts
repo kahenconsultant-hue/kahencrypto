@@ -1,4 +1,5 @@
 import outputSchema from "../contracts/output-schema.json";
+import { isCmipExperimentalFullReportAiEnabled, isCmipFullReportExperimentalTask } from "../experimental-full-report-ai";
 import { hashCanonicalJson, sha256Hex } from "../model-package";
 import type { CmipModelExecutionPackage } from "../model-package";
 import { validateCmipModelExecutionPackage } from "../model-package/validate-model-package";
@@ -50,6 +51,9 @@ export async function executeCmipGeminiModelPackageResult(
   if (!isExecutionRequest(request)) {
     return fail([issue("INVALID_GEMINI_EXECUTION_REQUEST", "$", "Gemini execution request must include modelPackage and executionMode.", "critical")], warnings);
   }
+
+  const safetyErrors = experimentalFullReportSafetyErrors(request, dependencies);
+  if (safetyErrors.length) return fail(safetyErrors, warnings);
 
   const packageValidation = validateCmipModelExecutionPackage(request.modelPackage);
   if (!packageValidation.valid) {
@@ -502,6 +506,32 @@ function dedupeIssues(issues: readonly CmipGeminiIssue[]): readonly CmipGeminiIs
 
 function isExecutionRequest(value: unknown): value is CmipGeminiExecutionRequest {
   return Boolean(value) && typeof value === "object" && isRecord((value as Record<string, unknown>).modelPackage) && typeof (value as Record<string, unknown>).executionMode === "string";
+}
+
+function experimentalFullReportSafetyErrors(request: CmipGeminiExecutionRequest, dependencies: CmipGeminiExecutionDependencies): readonly CmipGeminiIssue[] {
+  if (!isCmipFullReportExperimentalTask(request.taskType)) {
+    return [
+      issue(
+        "CMIP_FULL_REPORT_TASK_TYPE_UNSUPPORTED",
+        "$.taskType",
+        "Gemini full-report execution accepts only the full_report_experimental task type.",
+        "critical",
+      ),
+    ];
+  }
+  const fakeDryRun = request.executionMode === "dry_run" && dependencies.provider !== undefined;
+  if (fakeDryRun) return [];
+  if (!isCmipExperimentalFullReportAiEnabled(dependencies.env ?? process.env)) {
+    return [
+      issue(
+        "CMIP_EXPERIMENTAL_FULL_REPORT_AI_DISABLED",
+        "$.env.CMIP_ENABLE_EXPERIMENTAL_FULL_REPORT_AI",
+        "Experimental full-report AI execution is disabled by server configuration.",
+        "critical",
+      ),
+    ];
+  }
+  return [];
 }
 
 function toProviderIssue(issueValue: CmipGeminiIssue) {

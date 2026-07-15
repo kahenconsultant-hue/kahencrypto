@@ -4,6 +4,7 @@ export * from "./errors";
 export * from "./env";
 export * from "./model-registry";
 export * from "./schema-compatibility";
+export * from "./transport";
 export * from "./request-mapper";
 export * from "./response-parser";
 export * from "./usage";

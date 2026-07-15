@@ -1,5 +1,6 @@
 import { executeCmipModelPackage } from "../openai/execute-model-package";
-import { executeCmipGeminiModelPackage } from "../gemini/execute-model-package";
+import { executeCmipGeminiSectionedModelPackage } from "../gemini-sectioned/execute-sectioned-package";
+import { isCmipExperimentalFullReportAiEnabled, isCmipFullReportExperimentalTask } from "../experimental-full-report-ai";
 import { CMIP_PROVIDER_EXECUTION_VERSION, CMIP_PROVIDER_ROUTER_VERSION } from "./constants";
 import type {
   CmipProviderError,
@@ -16,6 +17,11 @@ export async function executeCmipProviderPackage(
   dependencies: CmipProviderRouterDependencies = {},
 ): Promise<CmipProviderNeutralExecutionResult> {
   const startedAt = dependencies.now?.() ?? new Date().toISOString();
+  const safetyIssue = experimentalFullReportSafetyIssue(request, dependencies);
+  if (safetyIssue) {
+    return failedRouterResult(request, startedAt, [safetyIssue]);
+  }
+
   const executor = executorFor(request.selection.primary, dependencies);
   if (!executor) {
     return failedRouterResult(request, startedAt, [issue("PROVIDER_UNSUPPORTED", "$.selection.primary", `Unsupported provider: ${request.selection.primary}.`, "critical")]);
@@ -98,6 +104,7 @@ function executorFor(providerId: CmipProviderId, dependencies: CmipProviderRoute
       execute: async (request) => {
         const result = await executeCmipModelPackage({
           modelPackage: request.modelPackage,
+          taskType: "full_report_experimental",
           executionMode: request.executionMode === "live_smoke" ? "live_smoke" : request.executionMode,
           allowLiveOpenAiSmoke: request.allowLiveOpenAiSmoke,
         });
@@ -108,12 +115,46 @@ function executorFor(providerId: CmipProviderId, dependencies: CmipProviderRoute
   if (providerId === "gemini") {
     return dependencies.gemini ?? {
       execute: (request) =>
-        executeCmipGeminiModelPackage({
+        executeCmipGeminiSectionedModelPackage({
           modelPackage: request.modelPackage,
+          taskType: "full_report_experimental",
           executionMode: request.executionMode,
-          allowLiveGeminiSmoke: request.allowLiveGeminiSmoke,
+          allowLiveGeminiSectionedSmoke: request.allowLiveGeminiSectionedSmoke ?? request.allowLiveGeminiSmoke,
         }),
     };
+  }
+  return null;
+}
+
+function experimentalFullReportSafetyIssue(
+  request: CmipProviderExecutionRequest,
+  dependencies: CmipProviderRouterDependencies,
+): CmipProviderIssue | null {
+  if (!isCmipFullReportExperimentalTask(request.taskType)) {
+    return issue(
+      "CMIP_FULL_REPORT_TASK_TYPE_UNSUPPORTED",
+      "$.taskType",
+      "Current full-report provider adapters accept only the full_report_experimental task type.",
+      "critical",
+    );
+  }
+
+  const injectedExecutor =
+    request.selection.primary === "openai"
+      ? dependencies.openai !== undefined
+      : request.selection.primary === "gemini"
+        ? dependencies.gemini !== undefined
+        : false;
+  const fakeDryRun = request.executionMode === "dry_run" && injectedExecutor;
+  if (fakeDryRun) return null;
+
+  if (!isCmipExperimentalFullReportAiEnabled(dependencies.env ?? process.env)) {
+    return issue(
+      "CMIP_EXPERIMENTAL_FULL_REPORT_AI_DISABLED",
+      "$.env.CMIP_ENABLE_EXPERIMENTAL_FULL_REPORT_AI",
+      "Experimental full-report AI execution is disabled by server configuration.",
+      "critical",
+    );
   }
   return null;
 }

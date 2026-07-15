@@ -10,6 +10,7 @@ export type CmipGeminiEnvResult =
 export function loadCmipGeminiEnv(env: Partial<Record<string, string | undefined>> = process.env): CmipGeminiEnvResult {
   const apiKey = trimOrNull(env.GEMINI_API_KEY);
   const modelPrimary = trimOrNull(env.CMIP_GEMINI_MODEL_PRIMARY);
+  const maxThinkingLevel = parseMaxThinkingLevel(env.CMIP_GEMINI_MAX_THINKING_LEVEL);
   const errors: CmipGeminiIssue[] = [];
 
   if (!apiKey) {
@@ -36,7 +37,16 @@ export function loadCmipGeminiEnv(env: Partial<Record<string, string | undefined
       severity: "critical",
     }));
   }
+  if (maxThinkingLevel === "invalid") {
+    errors.push(cmipGeminiIssue({
+      code: "GEMINI_CONFIG_MISSING",
+      path: "$.env.CMIP_GEMINI_MAX_THINKING_LEVEL",
+      message: "CMIP_GEMINI_MAX_THINKING_LEVEL must be unset, minimal, or low.",
+      severity: "critical",
+    }));
+  }
   if (errors.length) return { ok: false, warnings: [], errors };
+  const resolvedMaxThinkingLevel = maxThinkingLevel === "invalid" ? null : maxThinkingLevel;
 
   return {
     ok: true,
@@ -50,6 +60,7 @@ export function loadCmipGeminiEnv(env: Partial<Record<string, string | undefined
       timeoutMs: parsePositiveInteger(env.CMIP_GEMINI_TIMEOUT_MS, CMIP_GEMINI_DEFAULTS.timeoutMs),
       maxAttempts: parsePositiveInteger(env.CMIP_GEMINI_MAX_ATTEMPTS, CMIP_GEMINI_DEFAULTS.maxAttempts),
       thinkingLevel: parseThinkingLevel(env.CMIP_GEMINI_THINKING_LEVEL),
+      maxThinkingLevel: resolvedMaxThinkingLevel,
       allowLiveSmoke: parseBoolean(env.CMIP_ALLOW_LIVE_GEMINI_SMOKE, false),
     },
     warnings: [],
@@ -68,6 +79,7 @@ export function dryRunGeminiConfig(env: Partial<Record<string, string | undefine
     timeoutMs: parsePositiveInteger(env?.CMIP_GEMINI_TIMEOUT_MS, CMIP_GEMINI_DEFAULTS.timeoutMs),
     maxAttempts: parsePositiveInteger(env?.CMIP_GEMINI_MAX_ATTEMPTS, CMIP_GEMINI_DEFAULTS.maxAttempts),
     thinkingLevel: parseThinkingLevel(env?.CMIP_GEMINI_THINKING_LEVEL),
+    maxThinkingLevel: parseMaxThinkingLevelOrNull(env?.CMIP_GEMINI_MAX_THINKING_LEVEL),
     allowLiveSmoke: false,
   };
 }
@@ -92,4 +104,16 @@ function parseThinkingLevel(value: string | undefined): CmipGeminiEnvConfig["thi
   if (value === "low" || value === "medium" || value === "high" || value === "auto") return value;
   if (value === "off" || value === "none" || value === "false") return null;
   return CMIP_GEMINI_DEFAULTS.thinkingLevel;
+}
+
+function parseMaxThinkingLevel(value: string | undefined): CmipGeminiEnvConfig["maxThinkingLevel"] | "invalid" {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+  if (normalized === "minimal" || normalized === "low") return normalized;
+  return "invalid";
+}
+
+function parseMaxThinkingLevelOrNull(value: string | undefined): CmipGeminiEnvConfig["maxThinkingLevel"] {
+  const parsed = parseMaxThinkingLevel(value);
+  return parsed === "invalid" ? null : parsed;
 }

@@ -24,6 +24,7 @@ async function main() {
 
   const result = await executeCmipModelPackage({
     modelPackage: packageResult.package,
+    taskType: "full_report_experimental",
     executionMode: "live_smoke",
     allowLiveOpenAiSmoke: true,
   });

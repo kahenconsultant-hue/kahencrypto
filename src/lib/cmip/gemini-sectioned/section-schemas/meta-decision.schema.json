@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "decision", "executive_summary"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["spec_version", "generated_at", "data_cutoff", "timezone", "report_id", "model_version", "prompt_version", "schema_version", "scoring_version"],
+      "properties": {
+        "spec_version": { "type": "string" },
+        "generated_at": { "type": "string" },
+        "data_cutoff": { "type": "string" },
+        "timezone": { "type": "string" },
+        "report_id": { "type": "string" },
+        "model_version": { "type": "string" },
+        "prompt_version": { "type": "string" },
+        "schema_version": { "type": "string" },
+        "scoring_version": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "decision": {
+      "type": "object",
+      "required": ["posture", "score", "confidence", "plain_language", "model_action", "drivers", "abstention"],
+      "properties": {
+        "posture": { "type": "string", "enum": ["increase_selective_risk", "maintain_risk", "reduce_risk", "defensive", "abstain"] },
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 100 },
+        "plain_language": { "type": "string" },
+        "model_action": { "type": "string" },
+        "drivers": { "type": "object" },
+        "abstention": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "executive_summary": {
+      "type": "object",
+      "required": ["summary_30s", "watch_list", "view_change_conditions"],
+      "properties": {
+        "summary_30s": { "type": "string" },
+        "watch_list": { "type": "array" },
+        "view_change_conditions": { "type": "array" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

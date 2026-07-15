@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["coins"],
+  "properties": {
+    "coins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "TON", "DOGE", "ADA"],
+      "properties": {
+        "BTC": { "type": "object" },
+        "ETH": { "type": "object" },
+        "USDT": { "type": "object" },
+        "BNB": { "type": "object" },
+        "SOL": { "type": "object" },
+        "XRP": { "type": "object" },
+        "TRX": { "type": "object" },
+        "TON": { "type": "object" },
+        "DOGE": { "type": "object" },
+        "ADA": { "type": "object" }
+      }
+    }
+  }
+}

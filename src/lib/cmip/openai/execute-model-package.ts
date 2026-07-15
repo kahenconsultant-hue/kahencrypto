@@ -1,5 +1,6 @@
 import outputSchema from "../contracts/output-schema.json";
 import type { CmipReportEnvelope } from "../contracts";
+import { isCmipExperimentalFullReportAiEnabled, isCmipFullReportExperimentalTask } from "../experimental-full-report-ai";
 import { validateCmipModelExecutionPackage } from "../model-package/validate-model-package";
 import { hashCanonicalJson, sha256Hex } from "../model-package";
 import type { CmipModelExecutionPackage } from "../model-package";
@@ -38,6 +39,9 @@ export async function executeCmipModelPackage(request: CmipOpenAiExecutionReques
   if (!isExecutionRequest(request)) {
     return fail([issue("INVALID_EXECUTION_REQUEST", "$", "Execution request must include modelPackage and executionMode.", "critical")], warnings);
   }
+
+  const safetyErrors = experimentalFullReportSafetyErrors(request, options);
+  if (safetyErrors.length) return fail(safetyErrors, warnings);
 
   const packageValidation = validateCmipModelExecutionPackage(request.modelPackage);
   if (!packageValidation.valid) {
@@ -420,6 +424,32 @@ function dedupeIssues(issues: readonly CmipOpenAiIssue[]): readonly CmipOpenAiIs
 
 function isExecutionRequest(value: unknown): value is CmipOpenAiExecutionRequest {
   return Boolean(value) && typeof value === "object" && isRecord((value as Record<string, unknown>).modelPackage) && typeof (value as Record<string, unknown>).executionMode === "string";
+}
+
+function experimentalFullReportSafetyErrors(request: CmipOpenAiExecutionRequest, options: CmipOpenAiExecutionOptions): readonly CmipOpenAiIssue[] {
+  if (!isCmipFullReportExperimentalTask(request.taskType)) {
+    return [
+      issue(
+        "CMIP_FULL_REPORT_TASK_TYPE_UNSUPPORTED",
+        "$.taskType",
+        "OpenAI full-report execution accepts only the full_report_experimental task type.",
+        "critical",
+      ),
+    ];
+  }
+  const fakeDryRun = request.executionMode === "dry_run" && options.provider !== undefined;
+  if (fakeDryRun) return [];
+  if (!isCmipExperimentalFullReportAiEnabled(options.env ?? process.env)) {
+    return [
+      issue(
+        "CMIP_EXPERIMENTAL_FULL_REPORT_AI_DISABLED",
+        "$.env.CMIP_ENABLE_EXPERIMENTAL_FULL_REPORT_AI",
+        "Experimental full-report AI execution is disabled by server configuration.",
+        "critical",
+      ),
+    ];
+  }
+  return [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

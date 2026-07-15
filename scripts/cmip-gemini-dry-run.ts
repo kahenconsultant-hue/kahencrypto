@@ -18,6 +18,7 @@ async function main() {
   const result = await executeCmipGeminiModelPackage(
     {
       modelPackage: packageResult.package,
+      taskType: "full_report_experimental",
       executionMode: "dry_run",
     },
     {

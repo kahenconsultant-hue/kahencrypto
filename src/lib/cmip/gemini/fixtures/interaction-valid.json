@@ -2,7 +2,7 @@
   "id": "gemini_fixture_valid",
   "status": "completed",
   "model": "gemini-cmip-fixture",
-  "output_text": "{\"cmip_report\":{}}",
+  "output_text": "{\"cmip_report\":{},\"schema_version\":\"cmip-output-schema-v1.0\"}",
   "usage": {
     "input_tokens": 1000,
     "output_tokens": 420,

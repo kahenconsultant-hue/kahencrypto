@@ -2,6 +2,7 @@ import sampleOutput from "../../contracts/sample-output.json";
 import { stableJsonClone, stableStringify } from "../../model-package";
 import type { CmipReportEnvelope } from "../../contracts";
 import { buildAbstainOutput } from "../../openai/provider/fake-provider";
+import { buildCmipGeminiTransportEnvelope } from "../transport";
 import type { CmipGeminiProvider, CmipGeminiProviderExecutionRequest, CmipGeminiProviderExecutionResponse } from "../types";
 import interactionIncomplete from "../fixtures/interaction-incomplete.json";
 import interactionBlocked from "../fixtures/interaction-blocked.json";
@@ -47,7 +48,9 @@ export class FakeCmipGeminiProvider implements CmipGeminiProvider {
       toolCalls: request.body.tools?.length ? 1 : 0,
       toolSources: request.body.tools?.length ? [{ url: "https://example.com/cmip-gemini-source", title: "Fixture Gemini source" }] : [],
       refusal: null,
+      incompleteReason: null,
       incompleteDetails: null,
+      finishReason: null,
       error: null,
     } as const;
 
@@ -67,10 +70,10 @@ export class FakeCmipGeminiProvider implements CmipGeminiProvider {
       return { ...base, status: "completed", outputText: null };
     }
     if (fixture === "schema_invalid") {
-      return { ...base, status: "completed", outputText: stableStringify(interactionSchemaInvalid.output) };
+      return { ...base, status: "completed", outputText: stableStringify(buildCmipGeminiTransportEnvelope(interactionSchemaInvalid.output)) };
     }
 
     const report = fixture === "abstain" ? buildAbstainOutput() : (stableJsonClone(sampleOutput) as unknown as CmipReportEnvelope);
-    return { ...base, status: "completed", outputText: stableStringify(report) };
+    return { ...base, status: "completed", outputText: stableStringify(buildCmipGeminiTransportEnvelope(report)) };
   }
 }

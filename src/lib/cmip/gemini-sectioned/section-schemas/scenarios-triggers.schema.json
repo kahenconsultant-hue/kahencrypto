@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scenarios", "triggers"],
+  "properties": {
+    "scenarios": { "type": "array", "minItems": 3 },
+    "triggers": { "type": "array" }
+  }
+}

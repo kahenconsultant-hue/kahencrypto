@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["cmip-output-schema-v1.0"]
+    },
+    "cmip_report": {
+      "type": "object",
+      "description": "The inner value of the canonical CMIP envelope. The application reconstructs { cmip_report: this value } and applies the complete Task 001 validator."
+    }
+  },
+  "required": ["schema_version", "cmip_report"]
+}

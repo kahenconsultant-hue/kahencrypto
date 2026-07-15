@@ -8,6 +8,7 @@ import { executeCmipModelPackage } from "@/lib/cmip/openai/execute-model-package
 import { FakeCmipOpenAiProvider } from "@/lib/cmip/openai/provider/fake-provider";
 import { executeCmipGeminiModelPackage } from "@/lib/cmip/gemini/execute-model-package";
 import { FakeCmipGeminiProvider } from "@/lib/cmip/gemini/provider/fake-gemini-provider";
+import { isCmipExperimentalFullReportAiEnabled } from "@/lib/cmip/server/experimental-full-report-ai";
 import { requireAdminAccount } from "@/server/auth/session";
 
 export const runtime = "nodejs";
@@ -36,6 +37,9 @@ const fixtures: Record<FixtureName, unknown> = {
 export async function POST(request: Request) {
   try {
     await requireAdminAccount();
+    if (!isCmipExperimentalFullReportAiEnabled()) {
+      return json({ ok: false, errors: [{ code: "CMIP_EXPERIMENTAL_FULL_REPORT_AI_DISABLED", path: "$.env.CMIP_ENABLE_EXPERIMENTAL_FULL_REPORT_AI" }] }, 403);
+    }
     const rawBody = await request.text();
     if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
       return json({ ok: false, errors: [{ code: "REQUEST_TOO_LARGE", path: "$" }] }, 413);
@@ -54,6 +58,7 @@ export async function POST(request: Request) {
       const execution = await executeCmipGeminiModelPackage(
         {
           modelPackage: packageResult.package,
+          taskType: "full_report_experimental",
           executionMode: "preview",
         },
         {
@@ -76,6 +81,7 @@ export async function POST(request: Request) {
     const execution = await executeCmipModelPackage(
       {
         modelPackage: packageResult.package,
+        taskType: "full_report_experimental",
         executionMode: "preview",
       },
       {

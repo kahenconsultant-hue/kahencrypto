@@ -1,4 +1,5 @@
 import type { CmipReportEnvelope } from "../contracts";
+import type { CmipProviderExecutionTaskType } from "../experimental-full-report-ai";
 import type { CmipModelExecutionPackage } from "../model-package";
 import type {
   CMIP_PROVIDER_ERROR_CODES,
@@ -23,8 +24,10 @@ export interface CmipProviderSelection {
 export interface CmipProviderExecutionRequest {
   readonly modelPackage: CmipModelExecutionPackage;
   readonly selection: CmipProviderSelection;
+  readonly taskType?: CmipProviderExecutionTaskType;
   readonly executionMode: "dry_run" | "preview" | "live_smoke";
   readonly allowLiveGeminiSmoke?: boolean;
+  readonly allowLiveGeminiSectionedSmoke?: boolean;
   readonly allowLiveOpenAiSmoke?: boolean;
 }
 
@@ -114,5 +117,6 @@ export interface CmipProviderExecutor {
 export interface CmipProviderRouterDependencies {
   readonly openai?: CmipProviderExecutor;
   readonly gemini?: CmipProviderExecutor;
+  readonly env?: Partial<Record<string, string | undefined>>;
   readonly now?: () => string;
 }

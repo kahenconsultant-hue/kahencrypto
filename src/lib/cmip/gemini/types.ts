@@ -1,4 +1,5 @@
 import type { CmipReportEnvelope } from "../contracts";
+import type { CmipProviderExecutionTaskType } from "../experimental-full-report-ai";
 import type { CmipModelExecutionPackage, CmipModelProfile, CmipToolPolicy } from "../model-package";
 import type { CmipProviderNeutralExecutionResult } from "../providers";
 import type { CMIP_GEMINI_MODEL_PROFILES, CMIP_GEMINI_PROVIDER_STATUSES } from "./constants";
@@ -11,6 +12,7 @@ export type CmipGeminiRetryReason = "rate_limit" | "transport_error" | "timeout"
 
 export interface CmipGeminiExecutionRequest {
   readonly modelPackage: CmipModelExecutionPackage;
+  readonly taskType?: CmipProviderExecutionTaskType;
   readonly executionMode: CmipGeminiExecutionMode;
   readonly allowLiveGeminiSmoke?: boolean;
 }
@@ -33,6 +35,7 @@ export interface CmipGeminiEnvConfig {
   readonly timeoutMs: number;
   readonly maxAttempts: number;
   readonly thinkingLevel: "low" | "medium" | "high" | "auto" | null;
+  readonly maxThinkingLevel: "minimal" | "low" | null;
   readonly allowLiveSmoke: boolean;
 }
 
@@ -43,7 +46,9 @@ export interface CmipGeminiResolvedModelProfile {
   readonly supportsInteractionsApi: boolean;
   readonly supportsStructuredOutput: boolean;
   readonly supportsGoogleSearch: boolean;
-  readonly supportsThinkingConfig: boolean;
+  readonly supportsThinkingLevel: boolean;
+  readonly supportedThinkingLevels: readonly ("minimal" | "low" | "medium" | "high")[];
+  readonly approvedThinkingLevels: readonly ("minimal" | "low")[];
   readonly maxInputTokens?: number;
   readonly maxOutputTokens?: number;
   readonly classification: "configured" | "preview" | "stable" | "experimental" | "test";
@@ -54,6 +59,10 @@ export interface CmipGeminiSchemaCompatibilityResult {
   readonly providerSchema: Record<string, unknown>;
   readonly canonicalSchemaHash: string;
   readonly providerSchemaHash: string;
+  readonly providerTransportSchemaHash: string;
+  readonly transportMode: "compact_canonical_root_v3";
+  readonly canonicalPostValidationRequired: true;
+  readonly reconstructedEnvelope: true;
   readonly transformedKeywords: readonly {
     readonly path: string;
     readonly canonicalKeyword: string;
@@ -80,12 +89,8 @@ export interface CmipGeminiMappedRequest {
   };
   readonly generation_config: {
     readonly max_output_tokens: number;
-    readonly thinking_config?: {
-      readonly thinking_level: "low" | "medium" | "high" | "auto";
-      readonly include_thoughts: false;
-    };
+    readonly thinking_level?: "minimal" | "low" | "medium" | "high";
   };
-  readonly labels: Record<string, string>;
   readonly tools?: readonly CmipGeminiMappedTool[];
 }
 
@@ -108,7 +113,9 @@ export interface CmipGeminiProviderExecutionResponse {
   readonly serviceTier: string | null;
   readonly outputText: string | null;
   readonly refusal: CmipGeminiProviderRefusal | null;
+  readonly incompleteReason: string | null;
   readonly incompleteDetails: string | null;
+  readonly finishReason: string | null;
   readonly error: CmipGeminiProviderError | null;
   readonly usage: CmipGeminiUsage | null;
   readonly toolCalls: number;

@@ -45,24 +45,24 @@ function executor(providerId: CmipProviderId, status: CmipProviderNeutralExecuti
 }
 
 test("1. Gemini primary resolves correctly", async () => {
-  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: null, fallbackPolicy: "disabled" } }, { gemini: executor("gemini") });
+  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: null, fallbackPolicy: "disabled" } }, { gemini: executor("gemini") });
   assert.equal(result.providerId, "gemini");
 });
 
 test("2. OpenAI primary remains functional", async () => {
-  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "openai", fallback: null, fallbackPolicy: "disabled" } }, { openai: executor("openai") });
+  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "openai", fallback: null, fallbackPolicy: "disabled" } }, { openai: executor("openai") });
   assert.equal(result.providerId, "openai");
 });
 
 test("3. unsupported provider fails", async () => {
-  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "anthropic" as never, fallback: null, fallbackPolicy: "disabled" } });
+  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "anthropic" as never, fallback: null, fallbackPolicy: "disabled" } });
   assert.equal(result.status, "failed");
 });
 
 test("4. fallback disabled prevents switching", async () => {
   const fallbackCalls = { count: 0 };
   const result = await executeCmipProviderPackage(
-    { modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "disabled" } },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "disabled" } },
     { gemini: executor("gemini", "failed", true), openai: executor("openai", "success", false, fallbackCalls) },
   );
   assert.equal(result.providerId, "gemini");
@@ -72,7 +72,7 @@ test("4. fallback disabled prevents switching", async () => {
 test("5. explicit fallback policy permits approved failure class", async () => {
   const fallbackCalls = { count: 0 };
   const result = await executeCmipProviderPackage(
-    { modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "explicit_manual" } },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "explicit_manual" } },
     { gemini: executor("gemini", "failed", false), openai: executor("openai", "success", false, fallbackCalls) },
   );
   assert.equal(result.providerId, "openai");
@@ -81,7 +81,7 @@ test("5. explicit fallback policy permits approved failure class", async () => {
 
 test("6. retryable transport fallback policy permits retryable failure", async () => {
   const result = await executeCmipProviderPackage(
-    { modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "retryable_transport_only" } },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "retryable_transport_only" } },
     { gemini: executor("gemini", "failed", true), openai: executor("openai") },
   );
   assert.equal(result.providerId, "openai");
@@ -89,7 +89,7 @@ test("6. retryable transport fallback policy permits retryable failure", async (
 
 test("7. provider-unavailable fallback policy rejects output-quality failure", async () => {
   const result = await executeCmipProviderPackage(
-    { modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "provider_unavailable" } },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "provider_unavailable" } },
     { gemini: executor("gemini", "failed", false), openai: executor("openai") },
   );
   assert.equal(result.providerId, "gemini");
@@ -97,20 +97,20 @@ test("7. provider-unavailable fallback policy rejects output-quality failure", a
 
 test("8. no fallback loop occurs", async () => {
   const result = await executeCmipProviderPackage(
-    { modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: "gemini", fallbackPolicy: "explicit_manual" } },
+    { modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: "gemini", fallbackPolicy: "explicit_manual" } },
     { gemini: executor("gemini", "failed", true) },
   );
   assert.equal(result.trace.fallbackDecisions.at(-1)?.allowed, false);
 });
 
 test("9. provider selection is recorded in trace", async () => {
-  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "disabled" } }, { gemini: executor("gemini") });
+  const result = await executeCmipProviderPackage({ modelPackage: buildPackage(), taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: "openai", fallbackPolicy: "disabled" } }, { gemini: executor("gemini") });
   assert.equal(result.trace.selectedProvider, "gemini");
 });
 
 test("10. runtime context cannot change provider", async () => {
   const pkg = buildPackage();
-  const result = await executeCmipProviderPackage({ modelPackage: pkg, executionMode: "dry_run", selection: { primary: "gemini", fallback: null, fallbackPolicy: "disabled" } }, { gemini: executor("gemini"), openai: executor("openai") });
+  const result = await executeCmipProviderPackage({ modelPackage: pkg, taskType: "full_report_experimental", executionMode: "dry_run", selection: { primary: "gemini", fallback: null, fallbackPolicy: "disabled" } }, { gemini: executor("gemini"), openai: executor("openai") });
   assert.equal(result.providerId, "gemini");
 });
 

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["charts", "audit"],
+  "properties": {
+    "charts": { "type": "array" },
+    "audit": {
+      "type": "object",
+      "required": ["sources", "calculations", "missing_data", "conflicts", "warnings"],
+      "properties": {
+        "sources": { "type": "array" },
+        "calculations": { "type": "array" },
+        "missing_data": { "type": "array" },
+        "conflicts": { "type": "array" },
+        "warnings": { "type": "array" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

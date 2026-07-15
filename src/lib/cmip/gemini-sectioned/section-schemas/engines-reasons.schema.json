@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["engine_scores", "reasons"],
+  "properties": {
+    "engine_scores": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["engine_id", "score", "status", "weight", "contribution", "data_quality", "inputs", "missing_reasons", "method_version"],
+        "properties": {
+          "engine_id": { "type": "string", "maxLength": 80 },
+          "score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "status": { "type": "string", "maxLength": 80 },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "contribution": { "type": ["number", "null"] },
+          "data_quality": { "type": "number", "minimum": 0, "maximum": 100 },
+          "inputs": { "type": "object" },
+          "missing_reasons": { "type": "array", "maxItems": 4 },
+          "method_version": { "type": "string", "maxLength": 80 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["reason_id", "title", "current_observation", "meaning", "why_it_matters", "historical_evidence", "today_vs_history", "evidence_verdict", "decision_impact", "invalidation", "source_refs"],
+        "properties": {
+          "reason_id": { "type": "string", "maxLength": 100 },
+          "title": { "type": "string", "maxLength": 140 },
+          "current_observation": { "type": "string", "maxLength": 480 },
+          "meaning": { "type": "string", "maxLength": 420 },
+          "why_it_matters": { "type": "string", "maxLength": 420 },
+          "historical_evidence": {
+            "type": "object",
+            "required": ["status", "sample_definition", "sample_size", "period", "result", "limitations"],
+            "properties": {
+              "status": { "type": "string" },
+              "sample_definition": { "type": "string", "maxLength": 420 },
+              "sample_size": {},
+              "period": { "type": "object" },
+              "result": {},
+              "limitations": { "type": "string", "maxLength": 500 }
+            },
+            "additionalProperties": true
+          },
+          "today_vs_history": { "type": "string", "maxLength": 420 },
+          "evidence_verdict": { "type": "string", "enum": ["confirmed", "partially_confirmed", "not_confirmed", "contradicted", "insufficient_data"] },
+          "decision_impact": { "type": "string", "maxLength": 360 },
+          "invalidation": { "type": "string", "maxLength": 360 },
+          "source_refs": { "type": "array", "maxItems": 6 }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

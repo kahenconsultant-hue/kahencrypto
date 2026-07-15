@@ -25,7 +25,9 @@ export function mapGeminiInteraction(interaction: unknown): CmipGeminiProviderEx
     serviceTier: typeof record.service_tier === "string" ? record.service_tier : null,
     outputText: typeof record.output_text === "string" ? record.output_text : extractOutputText(record),
     refusal: extractRefusal(record),
+    incompleteReason: extractIncompleteReason(record),
     incompleteDetails: extractIncomplete(record),
+    finishReason: extractFinishReason(record),
     error: extractError(record),
     usage: normalizeCmipGeminiUsage(record.usage),
     toolCalls: countToolCalls(record.steps),
@@ -76,7 +78,44 @@ function extractRefusal(record: Record<string, unknown>): CmipGeminiProviderExec
 function extractIncomplete(record: Record<string, unknown>): string | null {
   if (typeof record.incomplete_details === "string") return record.incomplete_details;
   if (isRecord(record.incomplete_details)) return JSON.stringify(record.incomplete_details);
-  if (record.status === "incomplete") return "Gemini interaction incomplete.";
+  return null;
+}
+
+function extractIncompleteReason(record: Record<string, unknown>): string | null {
+  if (typeof record.incomplete_reason === "string") return record.incomplete_reason;
+  if (typeof record.incompleteReason === "string") return record.incompleteReason;
+  if (isRecord(record.incomplete_details)) {
+    const reason = record.incomplete_details.reason ?? record.incomplete_details.code ?? record.incomplete_details.status;
+    return typeof reason === "string" ? reason : null;
+  }
+  return null;
+}
+
+function extractFinishReason(record: Record<string, unknown>): string | null {
+  if (typeof record.finish_reason === "string") return record.finish_reason;
+  if (typeof record.finishReason === "string") return record.finishReason;
+  const steps = Array.isArray(record.steps) ? record.steps : [];
+  const stepReason = findStringKey(steps, ["finish_reason", "finishReason"]);
+  if (stepReason) return stepReason;
+  return null;
+}
+
+function findStringKey(value: unknown, keys: readonly string[]): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringKey(item, keys);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  for (const key of keys) {
+    if (typeof value[key] === "string") return value[key];
+  }
+  for (const child of Object.values(value)) {
+    const found = findStringKey(child, keys);
+    if (found) return found;
+  }
   return null;
 }
 

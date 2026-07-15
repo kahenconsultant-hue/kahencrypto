@@ -7,6 +7,8 @@ export const CMIP_PROVIDER_STATUSES = ["success", "failed", "refused", "incomple
 export const CMIP_PROVIDER_FALLBACK_POLICIES = ["disabled", "retryable_transport_only", "provider_unavailable", "explicit_manual"] as const;
 
 export const CMIP_PROVIDER_ERROR_CODES = [
+  "CMIP_EXPERIMENTAL_FULL_REPORT_AI_DISABLED",
+  "CMIP_FULL_REPORT_TASK_TYPE_UNSUPPORTED",
   "PROVIDER_PACKAGE_INVALID",
   "PROVIDER_PACKAGE_INTEGRITY_INVALID",
   "PROVIDER_UNSUPPORTED",

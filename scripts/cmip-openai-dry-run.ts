@@ -19,6 +19,7 @@ async function main() {
   const result = await executeCmipModelPackage(
     {
       modelPackage: packageResult.package,
+      taskType: "full_report_experimental",
       executionMode: "dry_run",
     },
     {
